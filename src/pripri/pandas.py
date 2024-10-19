@@ -157,7 +157,11 @@ class DataFrame(Prisoner):
         return self._value.dtypes
 
     def reset_index(self, *args, **kwargs):
-        return DataFrame(data=self._value.reset_index(*args, **kwargs))
+        if kwargs.get("inplace", False):
+            self._value.reset_index(*args, **kwargs)
+            return None
+        else:
+            return DataFrame(data=self._value.reset_index(*args, **kwargs))
 
 class Series(Prisoner):
     def __init__(self, *args, **kwargs):
@@ -278,6 +282,15 @@ class Series(Prisoner):
     @property
     def dtypes(self):
         return self._value.dtypes
+
+    def reset_index(self, *args, **kwargs):
+        if kwargs.get("inplace", False):
+            self._value.reset_index(*args, **kwargs)
+            return None
+        elif kwargs.get("drop", False):
+            return Series(data=self._value.reset_index(*args, **kwargs))
+        else:
+            return DataFrame(data=self._value.reset_index(*args, **kwargs))
 
 def read_csv(*args, **kwargs):
     return DataFrame(data=_pd.read_csv(*args, **kwargs))

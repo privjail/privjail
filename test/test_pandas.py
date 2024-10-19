@@ -174,3 +174,22 @@ def test_dataframe_setitem():
     with pytest.raises(Exception): pdf[pdf["a"] > 3] = [1, 2, 3, 4, 5]
     with pytest.raises(Exception): pdf[x] = 10
     with pytest.raises(Exception): pdf[2:5] = 0
+
+def test_dataframe_reset_index():
+    pdf, df = load_dataframe()
+
+    assert (pdf.reset_index()._value == df.reset_index()).all().all()
+
+    assert pdf.reset_index(inplace=True) == None
+    assert (pdf._value == df.reset_index()).all().all()
+
+def test_series_reset_index():
+    pdf, df = load_dataframe()
+
+    assert isinstance(pdf["a"].reset_index(), ppd.DataFrame)
+    assert (pdf["a"].reset_index()._value == df["a"].reset_index()).all().all()
+    assert isinstance(pdf["a"].reset_index(drop=True), ppd.Series)
+    assert (pdf["a"].reset_index(drop=True)._value == df["a"].reset_index(drop=True)).all().all()
+    assert pdf["a"].reset_index(drop=True, inplace=True) == None
+    assert df["a"].reset_index(drop=True, inplace=True) == None
+    assert (pdf._value == df).all().all()
