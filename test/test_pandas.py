@@ -107,8 +107,11 @@ def test_dataframe_getitem():
     assert isinstance(pdf[pdf["a"] > 3], ppd.DataFrame)
     assert (pdf[pdf["a"] > 3]._value == df[df["a"] > 3]).all().all()
 
-    assert isinstance(pdf[pdf["a"] > 3], ppd.DataFrame)
-    assert (pdf[pdf["a"] > 3]._value == df[df["a"] > 3]).all().all()
+    with pytest.raises(Exception): pdf["a"][2:5]
+    with pytest.raises(Exception): pdf["a"][[True, True, False, False, True]]
+
+    assert isinstance(pdf["a"][pdf["a"] > 3], ppd.Series)
+    assert (pdf["a"][pdf["a"] > 3]._value == df["a"][df["a"] > 3]).all()
 
 def test_dataframe_setitem():
     pdf, df = load_dataframe()
@@ -133,10 +136,41 @@ def test_dataframe_setitem():
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
+    pdf[pdf["a"] < 3] = 8
+    df[df["a"] < 3] = 8
+    assert (pdf.columns == df.columns).all()
+    assert (pdf._value == df).all().all()
+
+    pdf[pdf["a"] == 8] = list(range(len(pdf.columns)))
+    df[df["a"] == 8] = list(range(len(df.columns)))
+    assert (pdf.columns == df.columns).all()
+    assert (pdf._value == df).all().all()
+
+    pdf[pdf["a"] < 3] = pdf[pdf["a"] > 3].reset_index(drop=True)
+    df[df["a"] < 3] = df[df["a"] > 3].reset_index(drop=True)
+    assert (pdf.columns == df.columns).all()
+    assert (pdf._value == df).all().all()
+
+    pdf["i"] = df["c"]
+    df["i"] = df["c"]
+    assert (pdf.columns == df.columns).all()
+    assert (pdf._value == df).all().all()
+
+    pdf[["j", "k"]] = df[["a", "b"]]
+    df[["j", "k"]] = df[["a", "b"]]
+    assert (pdf.columns == df.columns).all()
+    assert (pdf._value == df).all().all()
+
+    pdf[pdf["a"] > 3] = df
+    df[df["a"] > 3] = df
+    assert (pdf.columns == df.columns).all()
+    assert (pdf._value == df).all().all()
+
     x = pripri.Prisoner(value=0, sensitivity=1)
     with pytest.raises(Exception): pdf["x"] = x
-    with pytest.raises(Exception): pdf[["x", "y"]] = x
-    with pytest.raises(Exception): pdf[x] = 10
-
     with pytest.raises(Exception): pdf["x"] = [1, 2, 3, 4, 5]
-    with pytest.raises(Exception): pdf["x", "y"] = df[["a", "b"]]
+    with pytest.raises(Exception): pdf[["x", "y"]] = x
+    with pytest.raises(Exception): pdf[pdf["a"] > 3] = x
+    with pytest.raises(Exception): pdf[pdf["a"] > 3] = [1, 2, 3, 4, 5]
+    with pytest.raises(Exception): pdf[x] = 10
+    with pytest.raises(Exception): pdf[2:5] = 0
