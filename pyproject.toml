@@ -5,7 +5,10 @@ description = "Add your description here"
 authors = [
     { name = "Shumpei Shiina", email = "shumpei_shiina@toyota-tokyo.tech" }
 ]
-dependencies = []
+dependencies = [
+    "numpy>=2.1.2",
+    "pandas>=2.2.3",
+]
 readme = "README.md"
 requires-python = ">= 3.8"
 
