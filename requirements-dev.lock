@@ -8,10 +8,18 @@
 #   with-sources: false
 
 -e file:.
+iniconfig==2.0.0
+    # via pytest
 numpy==2.1.2
     # via pandas
     # via pripri
+packaging==24.1
+    # via pytest
 pandas==2.2.3
+    # via pripri
+pluggy==1.5.0
+    # via pytest
+pytest==8.3.3
     # via pripri
 python-dateutil==2.9.0.post0
     # via pandas
