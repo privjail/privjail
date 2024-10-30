@@ -1,3 +1,4 @@
+from .util import DPError
 from .prisoner import Prisoner
 import numpy as _np
 import pandas as _pd
@@ -23,17 +24,17 @@ class DataFrame(Prisoner):
 
     def __len__(self):
         # We cannot return Prisoner() here because len() must be an integer value
-        raise Exception("len(df) is not supported. Use df.shape[0] instead.")
+        raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
     def __getitem__(self, key):
         if isinstance(key, slice):
-            raise Exception("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
+            raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
 
         if isinstance(key, Prisoner) and not is_bool_indexer(key._value):
-            raise Exception("df[key] is not allowed for sensitive keys other than boolean vectors.")
+            raise DPError("df[key] is not allowed for sensitive keys other than boolean vectors.")
 
         if not isinstance(key, Prisoner) and is_bool_indexer(key):
-            raise Exception("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
+            raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
 
         data = self._value.__getitem__(unwrap_prisoner(key))
         if isinstance(data, _pd.DataFrame):
@@ -45,26 +46,26 @@ class DataFrame(Prisoner):
 
     def __setitem__(self, key, value):
         if isinstance(key, slice):
-            raise Exception("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
+            raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
 
         if isinstance(key, Prisoner) and not is_bool_indexer(key._value):
-            raise Exception("df[key] is not allowed for sensitive keys other than boolean vectors.")
+            raise DPError("df[key] is not allowed for sensitive keys other than boolean vectors.")
 
         if not isinstance(key, Prisoner) and is_bool_indexer(key):
-            raise Exception("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
+            raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
 
         if isinstance(value, Prisoner) and not isinstance(value, (DataFrame, Series)):
-            raise Exception("Sensitive values (other than DataFrame and Series) cannot be assigned to dataframe.")
+            raise DPError("Sensitive values (other than DataFrame and Series) cannot be assigned to dataframe.")
 
         if isinstance(key, Prisoner) and is_bool_indexer(key._value) and isinstance(value, Series):
-            raise Exception("Sensitive Series cannot be assigned to filtered rows because Series is treated as columns here.")
+            raise DPError("Sensitive Series cannot be assigned to filtered rows because Series is treated as columns here.")
 
         if is_2d_array(value):
-            raise Exception("2D array cannot be assigned because len(df) can be leaked.")
+            raise DPError("2D array cannot be assigned because len(df) can be leaked.")
 
         if not isinstance(key, Prisoner) and not is_bool_indexer(key) and \
                 not isinstance(value, Prisoner) and is_list_like(value) and not isinstance(value, (_pd.DataFrame, _pd.Series)):
-            raise Exception("List-like values (other than DataFrame and Series) cannot be assigned because len(df) can be leaked.")
+            raise DPError("List-like values (other than DataFrame and Series) cannot be assigned because len(df) can be leaked.")
 
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
@@ -73,9 +74,9 @@ class DataFrame(Prisoner):
             # FIXME: length leakage problem
             return DataFrame(data=self._value == other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
             return DataFrame(data=self._value == other)
 
@@ -84,9 +85,9 @@ class DataFrame(Prisoner):
             # FIXME: length leakage problem
             return DataFrame(data=self._value != other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
             return DataFrame(data=self._value != other)
 
@@ -95,9 +96,9 @@ class DataFrame(Prisoner):
             # FIXME: length leakage problem
             return DataFrame(data=self._value < other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
             return DataFrame(data=self._value < other)
 
@@ -106,9 +107,9 @@ class DataFrame(Prisoner):
             # FIXME: length leakage problem
             return DataFrame(data=self._value <= other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
             return DataFrame(data=self._value <= other)
 
@@ -117,9 +118,9 @@ class DataFrame(Prisoner):
             # FIXME: length leakage problem
             return DataFrame(data=self._value > other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
             return DataFrame(data=self._value > other)
 
@@ -128,9 +129,9 @@ class DataFrame(Prisoner):
             # FIXME: length leakage problem
             return DataFrame(data=self._value >= other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
             return DataFrame(data=self._value >= other)
 
@@ -169,38 +170,38 @@ class Series(Prisoner):
 
     def __len__(self):
         # We cannot return Prisoner() here because len() must be an integer value
-        raise Exception("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
+        raise DPError("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
 
     def __getitem__(self, key):
         if isinstance(key, slice):
-            raise Exception("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
+            raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
 
         if not isinstance(key, Prisoner):
-            raise Exception("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
+            raise DPError("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
 
         if not is_bool_indexer(key._value):
-            raise Exception("ser[key] is not allowed for sensitive keys other than boolean vectors.")
+            raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
 
         return Series(data=self._value.__getitem__(unwrap_prisoner(key)))
 
     def __setitem__(self, key, value):
         if isinstance(key, slice):
-            raise Exception("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
+            raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
 
         if not isinstance(key, Prisoner):
-            raise Exception("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
+            raise DPError("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
 
         if not is_bool_indexer(key._value):
-            raise Exception("ser[key] is not allowed for sensitive keys other than boolean vectors.")
+            raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
 
         if isinstance(value, Prisoner) and not isinstance(value, (DataFrame, Series)):
-            raise Exception("Sensitive values (other than DataFrame and Series) cannot be assigned to dataframe.")
+            raise DPError("Sensitive values (other than DataFrame and Series) cannot be assigned to dataframe.")
 
         if isinstance(value, Series):
-            raise Exception("Sensitive Series cannot be assigned to filtered rows because Series is treated as columns here.")
+            raise DPError("Sensitive Series cannot be assigned to filtered rows because Series is treated as columns here.")
 
         if is_2d_array(value):
-            raise Exception("2D array cannot be assigned because len(df) can be leaked.")
+            raise DPError("2D array cannot be assigned because len(df) can be leaked.")
 
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
@@ -209,9 +210,9 @@ class Series(Prisoner):
             # FIXME: length leakage problem
             return Series(data=self._value == other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against series because len(ser) can be leaked.")
+            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
             return Series(data=self._value == other)
 
@@ -220,9 +221,9 @@ class Series(Prisoner):
             # FIXME: length leakage problem
             return Series(data=self._value != other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against series because len(ser) can be leaked.")
+            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
             return Series(data=self._value != other)
 
@@ -231,9 +232,9 @@ class Series(Prisoner):
             # FIXME: length leakage problem
             return Series(data=self._value < other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against series because len(ser) can be leaked.")
+            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
             return Series(data=self._value < other)
 
@@ -242,9 +243,9 @@ class Series(Prisoner):
             # FIXME: length leakage problem
             return Series(data=self._value <= other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against series because len(ser) can be leaked.")
+            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
             return Series(data=self._value <= other)
 
@@ -253,9 +254,9 @@ class Series(Prisoner):
             # FIXME: length leakage problem
             return Series(data=self._value > other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against series because len(ser) can be leaked.")
+            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
             return Series(data=self._value > other)
 
@@ -264,9 +265,9 @@ class Series(Prisoner):
             # FIXME: length leakage problem
             return Series(data=self._value >= other._value)
         elif isinstance(other, Prisoner):
-            raise Exception("Sensitive values cannot be used for comparison.")
+            raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
-            raise Exception("List-like values cannot be compared against series because len(ser) can be leaked.")
+            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
             return Series(data=self._value >= other)
 

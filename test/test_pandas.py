@@ -28,7 +28,7 @@ def test_dataframe_size():
     assert pdf.size._value == df.size
     assert pdf.size.sensitivity == len(pdf.columns) == len(df.columns)
 
-    with pytest.raises(Exception): len(pdf)
+    with pytest.raises(pripri.DPError): len(pdf)
 
 def test_dataframe_comp():
     pdf, df = load_dataframe()
@@ -59,35 +59,35 @@ def test_dataframe_comp():
     assert ((pdf["a"] >  3)._value == (df["a"] >  3)).all()
     assert ((pdf["a"] >= 3)._value == (df["a"] >= 3)).all()
 
-    with pytest.raises(Exception): pdf == df
-    with pytest.raises(Exception): pdf != df
-    with pytest.raises(Exception): pdf <  df
-    with pytest.raises(Exception): pdf <= df
-    with pytest.raises(Exception): pdf >  df
-    with pytest.raises(Exception): pdf >= df
+    with pytest.raises(pripri.DPError): pdf == df
+    with pytest.raises(pripri.DPError): pdf != df
+    with pytest.raises(pripri.DPError): pdf <  df
+    with pytest.raises(pripri.DPError): pdf <= df
+    with pytest.raises(pripri.DPError): pdf >  df
+    with pytest.raises(pripri.DPError): pdf >= df
 
-    with pytest.raises(Exception): pdf["a"] == [0, 1, 2, 3, 4]
-    with pytest.raises(Exception): pdf["a"] != [0, 1, 2, 3, 4]
-    with pytest.raises(Exception): pdf["a"] <  [0, 1, 2, 3, 4]
-    with pytest.raises(Exception): pdf["a"] <= [0, 1, 2, 3, 4]
-    with pytest.raises(Exception): pdf["a"] >  [0, 1, 2, 3, 4]
-    with pytest.raises(Exception): pdf["a"] >= [0, 1, 2, 3, 4]
+    with pytest.raises(pripri.DPError): pdf["a"] == [0, 1, 2, 3, 4]
+    with pytest.raises(pripri.DPError): pdf["a"] != [0, 1, 2, 3, 4]
+    with pytest.raises(pripri.DPError): pdf["a"] <  [0, 1, 2, 3, 4]
+    with pytest.raises(pripri.DPError): pdf["a"] <= [0, 1, 2, 3, 4]
+    with pytest.raises(pripri.DPError): pdf["a"] >  [0, 1, 2, 3, 4]
+    with pytest.raises(pripri.DPError): pdf["a"] >= [0, 1, 2, 3, 4]
 
     x = pripri.Prisoner(value=0, sensitivity=1)
 
-    with pytest.raises(Exception): pdf == x
-    with pytest.raises(Exception): pdf != x
-    with pytest.raises(Exception): pdf <  x
-    with pytest.raises(Exception): pdf <= x
-    with pytest.raises(Exception): pdf >  x
-    with pytest.raises(Exception): pdf >= x
+    with pytest.raises(pripri.DPError): pdf == x
+    with pytest.raises(pripri.DPError): pdf != x
+    with pytest.raises(pripri.DPError): pdf <  x
+    with pytest.raises(pripri.DPError): pdf <= x
+    with pytest.raises(pripri.DPError): pdf >  x
+    with pytest.raises(pripri.DPError): pdf >= x
 
-    with pytest.raises(Exception): pdf["a"] == x
-    with pytest.raises(Exception): pdf["a"] != x
-    with pytest.raises(Exception): pdf["a"] <  x
-    with pytest.raises(Exception): pdf["a"] <= x
-    with pytest.raises(Exception): pdf["a"] >  x
-    with pytest.raises(Exception): pdf["a"] >= x
+    with pytest.raises(pripri.DPError): pdf["a"] == x
+    with pytest.raises(pripri.DPError): pdf["a"] != x
+    with pytest.raises(pripri.DPError): pdf["a"] <  x
+    with pytest.raises(pripri.DPError): pdf["a"] <= x
+    with pytest.raises(pripri.DPError): pdf["a"] >  x
+    with pytest.raises(pripri.DPError): pdf["a"] >= x
 
 def test_dataframe_getitem():
     pdf, df = load_dataframe()
@@ -99,16 +99,16 @@ def test_dataframe_getitem():
     assert (pdf[["a", "b"]]._value == df[["a", "b"]]).all().all()
 
     x = pripri.Prisoner(value=0, sensitivity=1)
-    with pytest.raises(Exception): pdf[x]
+    with pytest.raises(pripri.DPError): pdf[x]
 
-    with pytest.raises(Exception): pdf[2:5]
-    with pytest.raises(Exception): pdf[[True, True, False, False, True]]
+    with pytest.raises(pripri.DPError): pdf[2:5]
+    with pytest.raises(pripri.DPError): pdf[[True, True, False, False, True]]
 
     assert isinstance(pdf[pdf["a"] > 3], ppd.DataFrame)
     assert (pdf[pdf["a"] > 3]._value == df[df["a"] > 3]).all().all()
 
-    with pytest.raises(Exception): pdf["a"][2:5]
-    with pytest.raises(Exception): pdf["a"][[True, True, False, False, True]]
+    with pytest.raises(pripri.DPError): pdf["a"][2:5]
+    with pytest.raises(pripri.DPError): pdf["a"][[True, True, False, False, True]]
 
     assert isinstance(pdf["a"][pdf["a"] > 3], ppd.Series)
     assert (pdf["a"][pdf["a"] > 3]._value == df["a"][df["a"] > 3]).all()
@@ -167,13 +167,13 @@ def test_dataframe_setitem():
     assert (pdf._value == df).all().all()
 
     x = pripri.Prisoner(value=0, sensitivity=1)
-    with pytest.raises(Exception): pdf["x"] = x
-    with pytest.raises(Exception): pdf["x"] = [1, 2, 3, 4, 5]
-    with pytest.raises(Exception): pdf[["x", "y"]] = x
-    with pytest.raises(Exception): pdf[pdf["a"] > 3] = x
-    with pytest.raises(Exception): pdf[pdf["a"] > 3] = [1, 2, 3, 4, 5]
-    with pytest.raises(Exception): pdf[x] = 10
-    with pytest.raises(Exception): pdf[2:5] = 0
+    with pytest.raises(pripri.DPError): pdf["x"] = x
+    with pytest.raises(pripri.DPError): pdf["x"] = [1, 2, 3, 4, 5]
+    with pytest.raises(pripri.DPError): pdf[["x", "y"]] = x
+    with pytest.raises(pripri.DPError): pdf[pdf["a"] > 3] = x
+    with pytest.raises(pripri.DPError): pdf[pdf["a"] > 3] = [1, 2, 3, 4, 5]
+    with pytest.raises(pripri.DPError): pdf[x] = 10
+    with pytest.raises(pripri.DPError): pdf[2:5] = 0
 
 def test_dataframe_reset_index():
     pdf, df = load_dataframe()
