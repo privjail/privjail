@@ -14,7 +14,7 @@ def load_dataframe():
     assert (pdf._value == df).all().all()
     return pdf, df
 
-def test_dataframe_size():
+def test_priv_dataframe_size():
     pdf, df = load_dataframe()
 
     # The `shape` member should be a pair of a sensitive value (row) and a non-sensitive value (column)
@@ -34,7 +34,7 @@ def test_dataframe_size():
     with pytest.raises(pripri.DPError):
         len(pdf)
 
-def test_dataframe_comp():
+def test_priv_dataframe_comp():
     pdf, df = load_dataframe()
 
     # A non-sensitive value should be successfully compared against a private dataframe
@@ -107,7 +107,7 @@ def test_dataframe_comp():
     with pytest.raises(pripri.DPError): pdf["a"] >  x
     with pytest.raises(pripri.DPError): pdf["a"] >= x
 
-def test_dataframe_getitem():
+def test_priv_dataframe_getitem():
     pdf, df = load_dataframe()
 
     # A single-column view should be successfully retrieved from a private dataframe
@@ -150,7 +150,7 @@ def test_dataframe_getitem():
     with pytest.raises(pripri.DPError):
         pdf["a"][2:5]
 
-def test_dataframe_setitem():
+def test_priv_dataframe_setitem():
     pdf, df = load_dataframe()
 
     # A non-sensitive value should be successfully assigned to a single-column view
@@ -250,7 +250,7 @@ def test_dataframe_setitem():
     with pytest.raises(pripri.DPError):
         pdf[2:5] = 0
 
-def test_dataframe_reset_index():
+def test_priv_dataframe_reset_index():
     pdf, df = load_dataframe()
 
     # Default behaviour
@@ -260,7 +260,7 @@ def test_dataframe_reset_index():
     assert pdf.reset_index(inplace=True) == None
     assert (pdf._value == df.reset_index()).all().all()
 
-def test_series_reset_index():
+def test_priv_series_reset_index():
     pdf, df = load_dataframe()
 
     # Default behaviour
@@ -275,3 +275,57 @@ def test_series_reset_index():
     assert pdf["a"].reset_index(drop=True, inplace=True) == None
     assert df["a"].reset_index(drop=True, inplace=True) == None
     assert (pdf._value == df).all().all()
+
+def test_priv_series_value_counts():
+    pdf, df = load_dataframe()
+
+    # Should return an error without arguments
+    with pytest.raises(pripri.DPError):
+        pdf["b"].value_counts()
+
+    # Should return an error with `sort=True`
+    with pytest.raises(pripri.DPError):
+        pdf["b"].value_counts(values=[1, 2, 3, 4, 5])
+
+    # Should return an error without specifying values
+    with pytest.raises(pripri.DPError):
+        pdf["b"].value_counts(sort=False)
+
+    # Should return correct counts when all possible values are provided
+    values = [2, 3, 4]
+    counts = pdf["b"].value_counts(sort=False, values=values)
+    assert isinstance(counts, ppd.SensitiveSeries)
+    assert (counts.index == values).all()
+    assert counts.sensitivity == 1
+    assert (counts._value == pd.Series({2: 1, 3: 1, 4: 3})).all().all()
+
+    # Should return correct counts when only a part of possible values are provided
+    values = [3, 4]
+    counts = pdf["b"].value_counts(sort=False, values=values)
+    assert isinstance(counts, ppd.SensitiveSeries)
+    assert (counts.index == values).all()
+    assert counts.sensitivity == 1
+    assert (counts._value == pd.Series({3: 1, 4: 3})).all().all()
+
+    # Should return correct counts when non-existent values are provided
+    values = [1, 3, 4, 5]
+    counts = pdf["b"].value_counts(sort=False, values=values)
+    assert isinstance(counts, ppd.SensitiveSeries)
+    assert (counts.index == values).all()
+    assert counts.sensitivity == 1
+    assert (counts._value == pd.Series({1: 0, 3: 1, 4: 3, 5: 0})).all().all()
+
+    # Should be able to get a sensitive value from a sensitive series
+    c4 = counts[4]
+    assert isinstance(c4, pripri.Prisoner)
+    assert c4.sensitivity == 1
+    assert c4._value == 3
+
+    # Should be able to get a sensitive view from a sensitive series
+    c3 = counts[1:3][3]
+    c4 = counts[1:3][4]
+    assert isinstance(c3, pripri.Prisoner)
+    assert isinstance(c4, pripri.Prisoner)
+    assert c3.sensitivity == c4.sensitivity == 1
+    assert c3._value == 1
+    assert c4._value == 3

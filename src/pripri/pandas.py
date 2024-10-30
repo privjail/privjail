@@ -1,5 +1,6 @@
 from .util import DPError
 from .prisoner import Prisoner
+import warnings
 import numpy as _np
 import pandas as _pd
 from pandas.api.types import is_list_like
@@ -19,6 +20,12 @@ def is_2d_array(x):
     )
 
 class PrivDataFrame(Prisoner):
+    """Private DataFrame.
+
+    Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
+    Therefore, the number of rows is treated as a sensitive value.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(value=_pd.DataFrame(*args, **kwargs), sensitivity=-1)
 
@@ -165,6 +172,12 @@ class PrivDataFrame(Prisoner):
             return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
 
 class PrivSeries(Prisoner):
+    """Private Series.
+
+    Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
+    Therefore, the number of values is treated as a sensitive value.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(value=_pd.Series(*args, **kwargs), sensitivity=-1)
 
@@ -292,6 +305,187 @@ class PrivSeries(Prisoner):
             return PrivSeries(data=self._value.reset_index(*args, **kwargs))
         else:
             return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
+
+    def value_counts(self, normalize=False, sort=True, ascending=False, bins=None, dropna=True,
+                     values=None): # extra arguments for pripri
+        if normalize:
+            # TODO: what is the sensitivity?
+            raise NotImplementedError
+
+        if bins is not None:
+            # TODO: support continuous values
+            raise NotImplementedError
+
+        if sort:
+            raise DPError("The `sort` argument must be False.")
+
+        if values is None:
+            # TODO: track the value domain to automatically determine the output dimension
+            raise DPError("Please provide the `values` argument to prevent privacy leakage.")
+
+        if isinstance(values, Prisoner):
+            raise DPError("`values` cannot be sensitive values.")
+
+        if not dropna and not any(_np.isnan(values)):
+            # TODO: consider handling for pd.NA
+            warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `values`", UserWarning)
+
+        counts = self._value.value_counts(normalize, sort, ascending, bins, dropna)
+
+        # Select only the specified values and fill non-existent counts with 0
+        counts = counts.reindex(values, axis="index").fillna(0).astype(int)
+
+        return SensitiveSeries(data=counts, sensitivity=1)
+
+class SensitiveDataFrame(Prisoner):
+    """Sensitive DataFrame.
+
+    Each value in this dataframe object is considered a sensitive value.
+    The numbers of rows and columns are not sensitive.
+    This is typically created by counting queries like `pandas.crosstab()` and `pandas.pivot_table()`.
+    """
+
+    def __init__(self, sensitivity, *args, **kwargs):
+        if "sensitivity" not in kwargs:
+            raise ValueError("sensitivity must be provided as a keyword argument.")
+
+        sensitivity = kwargs["sensitivity"]
+        kwargs.pop("sensitivity")
+        super().__init__(value=_pd.DataFrame(*args, **kwargs), sensitivity=sensitivity)
+
+    def __len__(self):
+        return len(self._value)
+
+    @property
+    def shape(self):
+        return self._value.shape
+
+    @property
+    def size(self):
+        return self._value.size
+
+    @property
+    def index(self):
+        return self._value.index
+
+    @index.setter
+    def index(self, value):
+        self._value.index = value
+
+    @property
+    def columns(self):
+        return self._value.columns
+
+    @columns.setter
+    def columns(self, value):
+        self._value.columns = value
+
+    @property
+    def dtypes(self):
+        return self._value.dtypes
+
+    def __getitem__(self, key):
+        if isinstance(key, Prisoner):
+            raise DPError("Sensitive values cannot be accepted as keys for sensitive dataframe.")
+
+        data = self._value.__getitem__(key)
+        if isinstance(data, _pd.DataFrame):
+            return SensitiveDataFrame(data=data, sensitivity=self.sensitivity)
+        elif isinstance(data, _pd.Series):
+            return SensitiveSeries(data=data, sensitivity=self.sensitivity)
+        else:
+            return RuntimeError
+
+    def __setitem__(self, key, value):
+        raise DPError("Assignment to sensitive datais not allowed.")
+
+    def __eq__(self, other):
+        raise DPError("Comparison against sensitive dataframe is not allowed.")
+
+    def __ne__(self, other):
+        raise DPError("Comparison against sensitive dataframe is not allowed.")
+
+    def __lt__(self, other):
+        raise DPError("Comparison against sensitive dataframe is not allowed.")
+
+    def __le__(self, other):
+        raise DPError("Comparison against sensitive dataframe is not allowed.")
+
+    def __gt__(self, other):
+        raise DPError("Comparison against sensitive dataframe is not allowed.")
+
+    def __ge__(self, other):
+        raise DPError("Comparison against sensitive dataframe is not allowed.")
+
+class SensitiveSeries(Prisoner):
+    """Sensitive Series.
+
+    Each value in this series object is considered a sensitive value.
+    The numbers of values are not sensitive.
+    This is typically created by counting queries like `PrivSeries.value_counts()`.
+    """
+
+    def __init__(self, *args, **kwargs):
+        if "sensitivity" not in kwargs:
+            raise ValueError("sensitivity must be provided as a keyword argument.")
+
+        sensitivity = kwargs["sensitivity"]
+        kwargs.pop("sensitivity")
+        super().__init__(value=_pd.Series(*args, **kwargs), sensitivity=sensitivity)
+
+    def __len__(self):
+        return len(self._value)
+
+    @property
+    def shape(self):
+        return self._value.shape
+
+    @property
+    def size(self):
+        return self._value.size
+
+    @property
+    def index(self):
+        return self._value.index
+
+    @index.setter
+    def index(self, value):
+        self._value.index = value
+
+    @property
+    def dtypes(self):
+        return self._value.dtypes
+
+    def __getitem__(self, key):
+        if isinstance(key, Prisoner):
+            raise DPError("Sensitive values cannot be accepted as keys for sensitive series.")
+
+        data = self._value.__getitem__(key)
+        if isinstance(data, _pd.Series):
+            return SensitiveSeries(data=data, sensitivity=self.sensitivity)
+        else:
+            return Prisoner(value=data, sensitivity=self.sensitivity)
+
+    def __setitem__(self, key, value):
+        raise DPError("Assignment to sensitive series is not allowed.")
+
+    def __eq__(self, other):
+        raise DPError("Comparison against sensitive series is not allowed.")
+
+    def __ne__(self, other):
+        raise DPError("Comparison against sensitive series is not allowed.")
+
+    def __lt__(self, other):
+        raise DPError("Comparison against sensitive series is not allowed.")
+
+    def __le__(self, other):
+        raise DPError("Comparison against sensitive series is not allowed.")
+
+    def __gt__(self, other):
+        raise DPError("Comparison against sensitive series is not allowed.")
+
+    def __ge__(self, other):
+        raise DPError("Comparison against sensitive series is not allowed.")
 
 def read_csv(*args, **kwargs):
     return PrivDataFrame(data=_pd.read_csv(*args, **kwargs))
