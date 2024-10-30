@@ -1,16 +1,31 @@
-provenance_roots = {}
-provenance_tag_counts = {}
+from __future__ import annotations
+from typing import NamedTuple, Literal
+
+class ProvenanceTag(NamedTuple):
+    name : str
+    cnt  : int
+
+provenance_tag_counts: dict[str, int] = {}
+
+ChildrenType = Literal["inclusive", "exclusive"]
 
 class ProvenanceEntity:
-    def __init__(self, parent, tag, children_type):
-        self.parent = parent
-        self.tag = tag
-        self.children_type = children_type
-        self.privacy_budget_local = 0
-        self.privacy_budget = 0
-        self.children = []
+    parent               : ProvenanceEntity | None
+    tag                  : ProvenanceTag
+    children_type        : ChildrenType
+    privacy_budget_local : float
+    privacy_budget       : float
+    children             : list[ProvenanceEntity]
 
-    def update_privacy_budget(self):
+    def __init__(self, parent: ProvenanceEntity | None, tag: ProvenanceTag, children_type: ChildrenType):
+        self.parent               = parent
+        self.tag                  = tag
+        self.children_type        = children_type
+        self.privacy_budget_local = 0
+        self.privacy_budget       = 0
+        self.children             = []
+
+    def update_privacy_budget(self) -> None:
         if self.children_type == "inclusive":
             self.privacy_budget = self.privacy_budget_local + sum([c.privacy_budget for c in self.children])
 
@@ -26,19 +41,19 @@ class ProvenanceEntity:
         else:
             raise RuntimeError
 
-    def accumulate_privacy_budget(self, privacy_budget):
+    def accumulate_privacy_budget(self, privacy_budget: float) -> None:
         assert self.children_type == "inclusive"
 
         self.privacy_budget_local += privacy_budget
 
         self.update_privacy_budget()
 
-    def add_child(self, children_type):
+    def add_child(self, children_type: ChildrenType) -> ProvenanceEntity:
         pe = ProvenanceEntity(self, self.tag, children_type)
         self.children.append(pe)
         return pe
 
-    def new_tag(self):
+    def new_tag(self) -> None:
         global provenance_tag_counts
 
         name, count = self.tag
@@ -46,9 +61,11 @@ class ProvenanceEntity:
         assert name in provenance_tag_counts
         provenance_tag_counts[name] += 1
 
-        self.tag = (name, provenance_tag_counts[name])
+        self.tag = ProvenanceTag(name, provenance_tag_counts[name])
 
-def new_provenance_root(name):
+provenance_roots: dict[str, ProvenanceEntity] = {}
+
+def new_provenance_root(name: str) -> ProvenanceEntity:
     global provenance_roots
     global provenance_tag_counts
 
@@ -58,12 +75,12 @@ def new_provenance_root(name):
     initial_tag_count = 0
     provenance_tag_counts[name] = initial_tag_count
 
-    pe = ProvenanceEntity(None, (name, initial_tag_count), "inclusive")
+    pe = ProvenanceEntity(None, ProvenanceTag(name, initial_tag_count), "inclusive")
     provenance_roots[name] = pe
 
     return pe
 
-def get_privacy_budget(name):
+def get_privacy_budget(name: str) -> float:
     global provenance_roots
 
     if name not in provenance_roots:
@@ -71,11 +88,11 @@ def get_privacy_budget(name):
 
     return provenance_roots[name].privacy_budget
 
-def have_same_tag(pe1, pe2):
+def have_same_tag(pe1: ProvenanceEntity, pe2: ProvenanceEntity) -> bool:
     return pe1.tag == pe2.tag
 
 # should not be exposed
-def clear_global_states():
+def clear_global_states() -> None:
     global provenance_roots
     global provenance_tag_counts
 

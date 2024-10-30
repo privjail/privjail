@@ -1,39 +1,53 @@
-from .util import DPError
-from .prisoner import Prisoner
+from __future__ import annotations
+from typing import overload, TypeVar, Any, Sequence
 import warnings
+
 import numpy as _np
 import pandas as _pd
 from pandas.api.types import is_list_like
 # FIXME: pandas.core.common API is not public
 from pandas.core.common import is_bool_indexer
 
-def unwrap_prisoner(x):
+from .util import DPError
+from .prisoner import Prisoner
+
+T = TypeVar("T")
+
+@overload
+def unwrap_prisoner(x: Prisoner[T]) -> T:
+    ...
+
+@overload
+def unwrap_prisoner(x: T) -> T:
+    ...
+
+def unwrap_prisoner(x: Prisoner[T] | T) -> T:
     if isinstance(x, Prisoner):
         return x._value
     else:
         return x
 
-def is_2d_array(x):
+def is_2d_array(x: Any) -> bool:
     return (
         (isinstance(x, _np.ndarray) and x.ndim >= 2) or
         (isinstance(x, list) and all(isinstance(i, list) for i in x))
     )
 
-class PrivDataFrame(Prisoner):
+class PrivDataFrame(Prisoner[_pd.DataFrame]):
     """Private DataFrame.
 
     Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of rows is treated as a sensitive value.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(value=_pd.DataFrame(*args, **kwargs), sensitivity=-1)
 
-    def __len__(self):
+    def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> PrivDataFrame | PrivSeries:
         if isinstance(key, slice):
             raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
 
@@ -51,7 +65,7 @@ class PrivDataFrame(Prisoner):
         else:
             raise RuntimeError
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, slice):
             raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
 
@@ -76,7 +90,7 @@ class PrivDataFrame(Prisoner):
 
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
         if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
             return PrivDataFrame(data=self._value == other._value)
@@ -87,7 +101,7 @@ class PrivDataFrame(Prisoner):
         else:
             return PrivDataFrame(data=self._value == other)
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
         if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
             return PrivDataFrame(data=self._value != other._value)
@@ -98,7 +112,7 @@ class PrivDataFrame(Prisoner):
         else:
             return PrivDataFrame(data=self._value != other)
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
             return PrivDataFrame(data=self._value < other._value)
@@ -109,7 +123,7 @@ class PrivDataFrame(Prisoner):
         else:
             return PrivDataFrame(data=self._value < other)
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
             return PrivDataFrame(data=self._value <= other._value)
@@ -120,7 +134,7 @@ class PrivDataFrame(Prisoner):
         else:
             return PrivDataFrame(data=self._value <= other)
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
             return PrivDataFrame(data=self._value > other._value)
@@ -131,7 +145,7 @@ class PrivDataFrame(Prisoner):
         else:
             return PrivDataFrame(data=self._value > other)
 
-    def __ge__(self, other):
+    def __ge__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
             return PrivDataFrame(data=self._value >= other._value)
@@ -143,49 +157,49 @@ class PrivDataFrame(Prisoner):
             return PrivDataFrame(data=self._value >= other)
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[Prisoner[int], int]:
         nrows = Prisoner(value=self._value.shape[0], sensitivity=1)
         ncols = self._value.shape[1]
         return (nrows, ncols)
 
     @property
-    def size(self):
+    def size(self) -> Prisoner[int]:
         return Prisoner(value=self._value.size, sensitivity=len(self._value.columns))
 
     @property
-    def columns(self):
+    def columns(self) -> _pd.Index[str]:
         return self._value.columns
 
     @columns.setter
-    def columns(self, value):
+    def columns(self, value: _pd.Index[str]) -> None:
         self._value.columns = value
 
     @property
-    def dtypes(self):
+    def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
 
-    def reset_index(self, *args, **kwargs):
+    def reset_index(self, *args: Any, **kwargs: Any) -> PrivDataFrame | None:
         if kwargs.get("inplace", False):
             self._value.reset_index(*args, **kwargs)
             return None
         else:
             return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
 
-class PrivSeries(Prisoner):
+class PrivSeries(Prisoner[_pd.Series[Any]]):
     """Private Series.
 
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of values is treated as a sensitive value.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(value=_pd.Series(*args, **kwargs), sensitivity=-1)
 
-    def __len__(self):
+    def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> PrivSeries:
         if isinstance(key, slice):
             raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
 
@@ -197,7 +211,7 @@ class PrivSeries(Prisoner):
 
         return PrivSeries(data=self._value.__getitem__(unwrap_prisoner(key)))
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, slice):
             raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
 
@@ -218,7 +232,7 @@ class PrivSeries(Prisoner):
 
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> PrivSeries: # type: ignore[override]
         if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
             return PrivSeries(data=self._value == other._value)
@@ -229,7 +243,7 @@ class PrivSeries(Prisoner):
         else:
             return PrivSeries(data=self._value == other)
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> PrivSeries: # type: ignore[override]
         if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
             return PrivSeries(data=self._value != other._value)
@@ -240,7 +254,7 @@ class PrivSeries(Prisoner):
         else:
             return PrivSeries(data=self._value != other)
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
             return PrivSeries(data=self._value < other._value)
@@ -251,7 +265,7 @@ class PrivSeries(Prisoner):
         else:
             return PrivSeries(data=self._value < other)
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
             return PrivSeries(data=self._value <= other._value)
@@ -262,7 +276,7 @@ class PrivSeries(Prisoner):
         else:
             return PrivSeries(data=self._value <= other)
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
             return PrivSeries(data=self._value > other._value)
@@ -273,7 +287,7 @@ class PrivSeries(Prisoner):
         else:
             return PrivSeries(data=self._value > other)
 
-    def __ge__(self, other):
+    def __ge__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
             return PrivSeries(data=self._value >= other._value)
@@ -285,19 +299,19 @@ class PrivSeries(Prisoner):
             return PrivSeries(data=self._value >= other)
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[Prisoner[int]]:
         nrows = Prisoner(value=self._value.shape[0], sensitivity=1)
         return (nrows,)
 
     @property
-    def size(self):
+    def size(self) -> Prisoner[int]:
         return Prisoner(value=self._value.size, sensitivity=1)
 
     @property
-    def dtypes(self):
+    def dtypes(self) -> Any:
         return self._value.dtypes
 
-    def reset_index(self, *args, **kwargs):
+    def reset_index(self, *args: Any, **kwargs: Any) -> PrivDataFrame | PrivSeries | None:
         if kwargs.get("inplace", False):
             self._value.reset_index(*args, **kwargs)
             return None
@@ -306,8 +320,14 @@ class PrivSeries(Prisoner):
         else:
             return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
 
-    def value_counts(self, normalize=False, sort=True, ascending=False, bins=None, dropna=True,
-                     values=None): # extra arguments for pripri
+    def value_counts(self,
+                     normalize : bool                               = False,
+                     sort      : bool                               = True,
+                     ascending : bool                               = False,
+                     bins      : int | None                         = None,
+                     dropna    : bool                               = True,
+                     values    : list[Any] | _pd.Series[Any] | None = None, # extra argument for pripri
+                     ) -> SensitiveSeries:
         if normalize:
             # TODO: what is the sensitivity?
             raise NotImplementedError
@@ -333,11 +353,11 @@ class PrivSeries(Prisoner):
         counts = self._value.value_counts(normalize, sort, ascending, bins, dropna)
 
         # Select only the specified values and fill non-existent counts with 0
-        counts = counts.reindex(values, axis="index").fillna(0).astype(int)
+        counts = counts.reindex(values).fillna(0).astype(int)
 
         return SensitiveSeries(data=counts, sensitivity=1)
 
-class SensitiveDataFrame(Prisoner):
+class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     """Sensitive DataFrame.
 
     Each value in this dataframe object is considered a sensitive value.
@@ -345,7 +365,7 @@ class SensitiveDataFrame(Prisoner):
     This is typically created by counting queries like `pandas.crosstab()` and `pandas.pivot_table()`.
     """
 
-    def __init__(self, sensitivity, *args, **kwargs):
+    def __init__(self, sensitivity: float, *args: Any, **kwargs: Any):
         if "sensitivity" not in kwargs:
             raise ValueError("sensitivity must be provided as a keyword argument.")
 
@@ -353,38 +373,38 @@ class SensitiveDataFrame(Prisoner):
         kwargs.pop("sensitivity")
         super().__init__(value=_pd.DataFrame(*args, **kwargs), sensitivity=sensitivity)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._value)
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, int]:
         return self._value.shape
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self._value.size
 
     @property
-    def index(self):
+    def index(self) -> _pd.Index[Any]:
         return self._value.index
 
     @index.setter
-    def index(self, value):
+    def index(self, value: _pd.Index[Any]) -> None:
         self._value.index = value
 
     @property
-    def columns(self):
+    def columns(self) -> _pd.Index[str]:
         return self._value.columns
 
     @columns.setter
-    def columns(self, value):
+    def columns(self, value: _pd.Index[str]) -> None:
         self._value.columns = value
 
     @property
-    def dtypes(self):
+    def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> SensitiveDataFrame | SensitiveSeries:
         if isinstance(key, Prisoner):
             raise DPError("Sensitive values cannot be accepted as keys for sensitive dataframe.")
 
@@ -394,30 +414,30 @@ class SensitiveDataFrame(Prisoner):
         elif isinstance(data, _pd.Series):
             return SensitiveSeries(data=data, sensitivity=self.sensitivity)
         else:
-            return RuntimeError
+            raise RuntimeError
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Any, value: Any) -> None:
         raise DPError("Assignment to sensitive datais not allowed.")
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-    def __ge__(self, other):
+    def __ge__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-class SensitiveSeries(Prisoner):
+class SensitiveSeries(Prisoner[_pd.Series[Any]]):
     """Sensitive Series.
 
     Each value in this series object is considered a sensitive value.
@@ -425,7 +445,7 @@ class SensitiveSeries(Prisoner):
     This is typically created by counting queries like `PrivSeries.value_counts()`.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         if "sensitivity" not in kwargs:
             raise ValueError("sensitivity must be provided as a keyword argument.")
 
@@ -433,30 +453,30 @@ class SensitiveSeries(Prisoner):
         kwargs.pop("sensitivity")
         super().__init__(value=_pd.Series(*args, **kwargs), sensitivity=sensitivity)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._value)
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int]:
         return self._value.shape
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self._value.size
 
     @property
-    def index(self):
+    def index(self) -> _pd.Index[Any]:
         return self._value.index
 
     @index.setter
-    def index(self, value):
+    def index(self, value: _pd.Index[Any]) -> None:
         self._value.index = value
 
     @property
-    def dtypes(self):
+    def dtypes(self) -> Any:
         return self._value.dtypes
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> SensitiveSeries | Prisoner[Any]:
         if isinstance(key, Prisoner):
             raise DPError("Sensitive values cannot be accepted as keys for sensitive series.")
 
@@ -466,26 +486,26 @@ class SensitiveSeries(Prisoner):
         else:
             return Prisoner(value=data, sensitivity=self.sensitivity)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Any, value: Any) -> None:
         raise DPError("Assignment to sensitive series is not allowed.")
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive series is not allowed.")
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive series is not allowed.")
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive series is not allowed.")
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive series is not allowed.")
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive series is not allowed.")
 
-    def __ge__(self, other):
+    def __ge__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive series is not allowed.")
 
-def read_csv(*args, **kwargs):
+def read_csv(*args: Any, **kwargs: Any) -> PrivDataFrame:
     return PrivDataFrame(data=_pd.read_csv(*args, **kwargs))
