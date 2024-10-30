@@ -3,7 +3,7 @@ import pandas as pd
 import pripri
 from pripri import pandas as ppd
 
-def load_dataframe():
+def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     data = {
         "a": [1, 2, 3, 4, 5],
         "b": [2, 4, 4, 4, 3],
@@ -14,7 +14,7 @@ def load_dataframe():
     assert (pdf._value == df).all().all()
     return pdf, df
 
-def test_priv_dataframe_size():
+def test_priv_dataframe_size() -> None:
     pdf, df = load_dataframe()
 
     # The `shape` member should be a pair of a sensitive value (row) and a non-sensitive value (column)
@@ -34,7 +34,7 @@ def test_priv_dataframe_size():
     with pytest.raises(pripri.DPError):
         len(pdf)
 
-def test_priv_dataframe_comp():
+def test_priv_dataframe_comp() -> None:
     pdf, df = load_dataframe()
 
     # A non-sensitive value should be successfully compared against a private dataframe
@@ -107,7 +107,7 @@ def test_priv_dataframe_comp():
     with pytest.raises(pripri.DPError): pdf["a"] >  x
     with pytest.raises(pripri.DPError): pdf["a"] >= x
 
-def test_priv_dataframe_getitem():
+def test_priv_dataframe_getitem() -> None:
     pdf, df = load_dataframe()
 
     # A single-column view should be successfully retrieved from a private dataframe
@@ -150,7 +150,7 @@ def test_priv_dataframe_getitem():
     with pytest.raises(pripri.DPError):
         pdf["a"][2:5]
 
-def test_priv_dataframe_setitem():
+def test_priv_dataframe_setitem() -> None:
     pdf, df = load_dataframe()
 
     # A non-sensitive value should be successfully assigned to a single-column view
@@ -250,7 +250,7 @@ def test_priv_dataframe_setitem():
     with pytest.raises(pripri.DPError):
         pdf[2:5] = 0
 
-def test_priv_dataframe_reset_index():
+def test_priv_dataframe_reset_index() -> None:
     pdf, df = load_dataframe()
 
     # Default behaviour
@@ -260,7 +260,7 @@ def test_priv_dataframe_reset_index():
     assert pdf.reset_index(inplace=True) == None
     assert (pdf._value == df.reset_index()).all().all()
 
-def test_priv_series_reset_index():
+def test_priv_series_reset_index() -> None:
     pdf, df = load_dataframe()
 
     # Default behaviour
@@ -276,7 +276,7 @@ def test_priv_series_reset_index():
     assert df["a"].reset_index(drop=True, inplace=True) == None
     assert (pdf._value == df).all().all()
 
-def test_priv_series_value_counts():
+def test_priv_series_value_counts() -> None:
     pdf, df = load_dataframe()
 
     # Should return an error without arguments

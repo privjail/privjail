@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Sequence
+from typing import overload, TypeVar, Any
 import warnings
 
 import numpy as _np
@@ -185,7 +185,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         else:
             return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
 
-class PrivSeries(Prisoner[_pd.Series[Any]]):
+class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
 
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
@@ -437,7 +437,7 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     def __ge__(self, other: Any) -> Any:
         raise DPError("Comparison against sensitive dataframe is not allowed.")
 
-class SensitiveSeries(Prisoner[_pd.Series[Any]]):
+class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Sensitive Series.
 
     Each value in this series object is considered a sensitive value.

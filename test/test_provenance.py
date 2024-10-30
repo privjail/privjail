@@ -1,3 +1,4 @@
+from typing import Generator
 import pytest
 import importlib
 import sys
@@ -7,11 +8,11 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 provenance = importlib.import_module("pripri.provenance")
 
 @pytest.fixture(autouse=True)
-def setup():
+def setup() -> Generator[None]:
     provenance.clear_global_states()
     yield
 
-def test_provenance_accumulation():
+def test_provenance_accumulation() -> None:
     pe0 = provenance.new_provenance_root("foo")
     assert provenance.get_privacy_budget("foo") == pe0.privacy_budget == 0
 
@@ -55,7 +56,7 @@ def test_provenance_accumulation():
     assert provenance.get_privacy_budget("bar") == pe0_.privacy_budget == 20
     assert provenance.get_privacy_budget("foo") == pe0.privacy_budget == 120
 
-def test_provenance_tag():
+def test_provenance_tag() -> None:
     pe0 = provenance.new_provenance_root("foo")
 
     pe1 = pe0.add_child(children_type="inclusive")
