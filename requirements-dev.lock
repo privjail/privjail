@@ -10,12 +10,19 @@
 -e file:.
 iniconfig==2.0.0
     # via pytest
+mypy==1.13.0
+    # via pripri
+mypy-extensions==1.0.0
+    # via mypy
 numpy==2.1.2
     # via pandas
+    # via pandas-stubs
     # via pripri
 packaging==24.1
     # via pytest
 pandas==2.2.3
+    # via pripri
+pandas-stubs==2.2.3.241009
     # via pripri
 pluggy==1.5.0
     # via pytest
@@ -27,5 +34,9 @@ pytz==2024.2
     # via pandas
 six==1.16.0
     # via python-dateutil
+types-pytz==2024.2.0.20241003
+    # via pandas-stubs
+typing-extensions==4.12.2
+    # via mypy
 tzdata==2024.2
     # via pandas
