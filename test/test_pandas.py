@@ -171,7 +171,7 @@ def test_dataframe_setitem():
     with pytest.raises(pripri.DPError): pdf["x"] = [1, 2, 3, 4, 5]
     with pytest.raises(pripri.DPError): pdf[["x", "y"]] = x
     with pytest.raises(pripri.DPError): pdf[pdf["a"] > 3] = x
-    with pytest.raises(pripri.DPError): pdf[pdf["a"] > 3] = [1, 2, 3, 4, 5]
+    with pytest.raises(pripri.DPError): pdf[pdf["a"] > 3] = [[list(range(len(pdf.columns)))] for x in range(5)]
     with pytest.raises(pripri.DPError): pdf[x] = 10
     with pytest.raises(pripri.DPError): pdf[2:5] = 0
 
