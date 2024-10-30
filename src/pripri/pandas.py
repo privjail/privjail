@@ -18,7 +18,7 @@ def is_2d_array(x):
         (isinstance(x, list) and all(isinstance(i, list) for i in x))
     )
 
-class DataFrame(Prisoner):
+class PrivDataFrame(Prisoner):
     def __init__(self, *args, **kwargs):
         super().__init__(value=_pd.DataFrame(*args, **kwargs), sensitivity=-1)
 
@@ -38,9 +38,9 @@ class DataFrame(Prisoner):
 
         data = self._value.__getitem__(unwrap_prisoner(key))
         if isinstance(data, _pd.DataFrame):
-            return DataFrame(data)
+            return PrivDataFrame(data)
         elif isinstance(data, _pd.Series):
-            return Series(data)
+            return PrivSeries(data)
         else:
             raise RuntimeError
 
@@ -54,11 +54,11 @@ class DataFrame(Prisoner):
         if not isinstance(key, Prisoner) and is_bool_indexer(key):
             raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
 
-        if isinstance(value, Prisoner) and not isinstance(value, (DataFrame, Series)):
-            raise DPError("Sensitive values (other than DataFrame and Series) cannot be assigned to dataframe.")
+        if isinstance(value, Prisoner) and not isinstance(value, (PrivDataFrame, PrivSeries)):
+            raise DPError("Sensitive values (other than PrivDataFrame and PrivSeries) cannot be assigned to dataframe.")
 
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and isinstance(value, Series):
-            raise DPError("Sensitive Series cannot be assigned to filtered rows because Series is treated as columns here.")
+        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and isinstance(value, PrivSeries):
+            raise DPError("Private Series cannot be assigned to filtered rows because the series is treated as columns here.")
 
         if is_2d_array(value):
             raise DPError("2D array cannot be assigned because len(df) can be leaked.")
@@ -70,70 +70,70 @@ class DataFrame(Prisoner):
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
     def __eq__(self, other):
-        if isinstance(other, DataFrame):
+        if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
-            return DataFrame(data=self._value == other._value)
+            return PrivDataFrame(data=self._value == other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
-            return DataFrame(data=self._value == other)
+            return PrivDataFrame(data=self._value == other)
 
     def __ne__(self, other):
-        if isinstance(other, DataFrame):
+        if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
-            return DataFrame(data=self._value != other._value)
+            return PrivDataFrame(data=self._value != other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
-            return DataFrame(data=self._value != other)
+            return PrivDataFrame(data=self._value != other)
 
     def __lt__(self, other):
-        if isinstance(other, DataFrame):
+        if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
-            return DataFrame(data=self._value < other._value)
+            return PrivDataFrame(data=self._value < other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
-            return DataFrame(data=self._value < other)
+            return PrivDataFrame(data=self._value < other)
 
     def __le__(self, other):
-        if isinstance(other, DataFrame):
+        if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
-            return DataFrame(data=self._value <= other._value)
+            return PrivDataFrame(data=self._value <= other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
-            return DataFrame(data=self._value <= other)
+            return PrivDataFrame(data=self._value <= other)
 
     def __gt__(self, other):
-        if isinstance(other, DataFrame):
+        if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
-            return DataFrame(data=self._value > other._value)
+            return PrivDataFrame(data=self._value > other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
-            return DataFrame(data=self._value > other)
+            return PrivDataFrame(data=self._value > other)
 
     def __ge__(self, other):
-        if isinstance(other, DataFrame):
+        if isinstance(other, PrivDataFrame):
             # FIXME: length leakage problem
-            return DataFrame(data=self._value >= other._value)
+            return PrivDataFrame(data=self._value >= other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
         else:
-            return DataFrame(data=self._value >= other)
+            return PrivDataFrame(data=self._value >= other)
 
     @property
     def shape(self):
@@ -162,9 +162,9 @@ class DataFrame(Prisoner):
             self._value.reset_index(*args, **kwargs)
             return None
         else:
-            return DataFrame(data=self._value.reset_index(*args, **kwargs))
+            return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
 
-class Series(Prisoner):
+class PrivSeries(Prisoner):
     def __init__(self, *args, **kwargs):
         super().__init__(value=_pd.Series(*args, **kwargs), sensitivity=-1)
 
@@ -182,7 +182,7 @@ class Series(Prisoner):
         if not is_bool_indexer(key._value):
             raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
 
-        return Series(data=self._value.__getitem__(unwrap_prisoner(key)))
+        return PrivSeries(data=self._value.__getitem__(unwrap_prisoner(key)))
 
     def __setitem__(self, key, value):
         if isinstance(key, slice):
@@ -194,11 +194,11 @@ class Series(Prisoner):
         if not is_bool_indexer(key._value):
             raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
 
-        if isinstance(value, Prisoner) and not isinstance(value, (DataFrame, Series)):
-            raise DPError("Sensitive values (other than DataFrame and Series) cannot be assigned to dataframe.")
+        if isinstance(value, Prisoner) and not isinstance(value, (PrivDataFrame, PrivSeries)):
+            raise DPError("Sensitive values (other than PrivDataFrame and PrivSeries) cannot be assigned to dataframe.")
 
-        if isinstance(value, Series):
-            raise DPError("Sensitive Series cannot be assigned to filtered rows because Series is treated as columns here.")
+        if isinstance(value, PrivSeries):
+            raise DPError("Private Series cannot be assigned to filtered rows because the series is treated as columns here.")
 
         if is_2d_array(value):
             raise DPError("2D array cannot be assigned because len(df) can be leaked.")
@@ -206,70 +206,70 @@ class Series(Prisoner):
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
     def __eq__(self, other):
-        if isinstance(other, Series):
+        if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
-            return Series(data=self._value == other._value)
+            return PrivSeries(data=self._value == other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
-            return Series(data=self._value == other)
+            return PrivSeries(data=self._value == other)
 
     def __ne__(self, other):
-        if isinstance(other, Series):
+        if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
-            return Series(data=self._value != other._value)
+            return PrivSeries(data=self._value != other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
-            return Series(data=self._value != other)
+            return PrivSeries(data=self._value != other)
 
     def __lt__(self, other):
-        if isinstance(other, Series):
+        if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
-            return Series(data=self._value < other._value)
+            return PrivSeries(data=self._value < other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
-            return Series(data=self._value < other)
+            return PrivSeries(data=self._value < other)
 
     def __le__(self, other):
-        if isinstance(other, Series):
+        if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
-            return Series(data=self._value <= other._value)
+            return PrivSeries(data=self._value <= other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
-            return Series(data=self._value <= other)
+            return PrivSeries(data=self._value <= other)
 
     def __gt__(self, other):
-        if isinstance(other, Series):
+        if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
-            return Series(data=self._value > other._value)
+            return PrivSeries(data=self._value > other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
-            return Series(data=self._value > other)
+            return PrivSeries(data=self._value > other)
 
     def __ge__(self, other):
-        if isinstance(other, Series):
+        if isinstance(other, PrivSeries):
             # FIXME: length leakage problem
-            return Series(data=self._value >= other._value)
+            return PrivSeries(data=self._value >= other._value)
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
         else:
-            return Series(data=self._value >= other)
+            return PrivSeries(data=self._value >= other)
 
     @property
     def shape(self):
@@ -289,9 +289,9 @@ class Series(Prisoner):
             self._value.reset_index(*args, **kwargs)
             return None
         elif kwargs.get("drop", False):
-            return Series(data=self._value.reset_index(*args, **kwargs))
+            return PrivSeries(data=self._value.reset_index(*args, **kwargs))
         else:
-            return DataFrame(data=self._value.reset_index(*args, **kwargs))
+            return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
 
 def read_csv(*args, **kwargs):
-    return DataFrame(data=_pd.read_csv(*args, **kwargs))
+    return PrivDataFrame(data=_pd.read_csv(*args, **kwargs))

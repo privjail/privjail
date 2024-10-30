@@ -8,7 +8,7 @@ def load_dataframe():
         "a": [1, 2, 3, 4, 5],
         "b": [2, 4, 4, 4, 3],
     }
-    pdf = ppd.DataFrame(data)
+    pdf = ppd.PrivDataFrame(data)
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
@@ -37,13 +37,13 @@ def test_dataframe_size():
 def test_dataframe_comp():
     pdf, df = load_dataframe()
 
-    # A non-sensitive value should be successfully compared against a sensitive dataframe
-    assert isinstance(pdf == 3, ppd.DataFrame)
-    assert isinstance(pdf != 3, ppd.DataFrame)
-    assert isinstance(pdf <  3, ppd.DataFrame)
-    assert isinstance(pdf <= 3, ppd.DataFrame)
-    assert isinstance(pdf >  3, ppd.DataFrame)
-    assert isinstance(pdf >= 3, ppd.DataFrame)
+    # A non-sensitive value should be successfully compared against a private dataframe
+    assert isinstance(pdf == 3, ppd.PrivDataFrame)
+    assert isinstance(pdf != 3, ppd.PrivDataFrame)
+    assert isinstance(pdf <  3, ppd.PrivDataFrame)
+    assert isinstance(pdf <= 3, ppd.PrivDataFrame)
+    assert isinstance(pdf >  3, ppd.PrivDataFrame)
+    assert isinstance(pdf >= 3, ppd.PrivDataFrame)
     assert ((pdf == 3)._value == (df == 3)).all().all()
     assert ((pdf != 3)._value == (df != 3)).all().all()
     assert ((pdf <  3)._value == (df <  3)).all().all()
@@ -51,13 +51,13 @@ def test_dataframe_comp():
     assert ((pdf >  3)._value == (df >  3)).all().all()
     assert ((pdf >= 3)._value == (df >= 3)).all().all()
 
-    # A non-sensitive value should be successfully compared against a sensitive series
-    assert isinstance(pdf["a"] == 3, ppd.Series)
-    assert isinstance(pdf["a"] != 3, ppd.Series)
-    assert isinstance(pdf["a"] <  3, ppd.Series)
-    assert isinstance(pdf["a"] <= 3, ppd.Series)
-    assert isinstance(pdf["a"] >  3, ppd.Series)
-    assert isinstance(pdf["a"] >= 3, ppd.Series)
+    # A non-sensitive value should be successfully compared against a private series
+    assert isinstance(pdf["a"] == 3, ppd.PrivSeries)
+    assert isinstance(pdf["a"] != 3, ppd.PrivSeries)
+    assert isinstance(pdf["a"] <  3, ppd.PrivSeries)
+    assert isinstance(pdf["a"] <= 3, ppd.PrivSeries)
+    assert isinstance(pdf["a"] >  3, ppd.PrivSeries)
+    assert isinstance(pdf["a"] >= 3, ppd.PrivSeries)
     assert ((pdf["a"] == 3)._value == (df["a"] == 3)).all()
     assert ((pdf["a"] != 3)._value == (df["a"] != 3)).all()
     assert ((pdf["a"] <  3)._value == (df["a"] <  3)).all()
@@ -65,7 +65,7 @@ def test_dataframe_comp():
     assert ((pdf["a"] >  3)._value == (df["a"] >  3)).all()
     assert ((pdf["a"] >= 3)._value == (df["a"] >= 3)).all()
 
-    # An irrelevant, non-sensitive dataframe should not be compared against a sensitive dataframe
+    # An irrelevant, non-private dataframe should not be compared against a private dataframe
     with pytest.raises(pripri.DPError): pdf == df
     with pytest.raises(pripri.DPError): pdf != df
     with pytest.raises(pripri.DPError): pdf <  df
@@ -73,7 +73,7 @@ def test_dataframe_comp():
     with pytest.raises(pripri.DPError): pdf >  df
     with pytest.raises(pripri.DPError): pdf >= df
 
-    # An irrelevant, non-sensitive 2d array should not be compared against a sensitive dataframe
+    # An irrelevant, non-private 2d array should not be compared against a private dataframe
     with pytest.raises(pripri.DPError): pdf == [[list(range(len(pdf.columns)))] for x in range(5)]
     with pytest.raises(pripri.DPError): pdf != [[list(range(len(pdf.columns)))] for x in range(5)]
     with pytest.raises(pripri.DPError): pdf <  [[list(range(len(pdf.columns)))] for x in range(5)]
@@ -81,7 +81,7 @@ def test_dataframe_comp():
     with pytest.raises(pripri.DPError): pdf >  [[list(range(len(pdf.columns)))] for x in range(5)]
     with pytest.raises(pripri.DPError): pdf >= [[list(range(len(pdf.columns)))] for x in range(5)]
 
-    # An irrelevant, non-sensitive array should not be compared against a sensitive series
+    # An irrelevant, non-private array should not be compared against a private series
     with pytest.raises(pripri.DPError): pdf["a"] == [0, 1, 2, 3, 4]
     with pytest.raises(pripri.DPError): pdf["a"] != [0, 1, 2, 3, 4]
     with pytest.raises(pripri.DPError): pdf["a"] <  [0, 1, 2, 3, 4]
@@ -91,7 +91,7 @@ def test_dataframe_comp():
 
     x = pripri.Prisoner(value=0, sensitivity=1)
 
-    # A sensitive value should not be compared against a sensitive dataframe
+    # A sensitive value should not be compared against a private dataframe
     with pytest.raises(pripri.DPError): pdf == x
     with pytest.raises(pripri.DPError): pdf != x
     with pytest.raises(pripri.DPError): pdf <  x
@@ -99,7 +99,7 @@ def test_dataframe_comp():
     with pytest.raises(pripri.DPError): pdf >  x
     with pytest.raises(pripri.DPError): pdf >= x
 
-    # A sensitive value should not be compared against a sensitive series
+    # A sensitive value should not be compared against a private series
     with pytest.raises(pripri.DPError): pdf["a"] == x
     with pytest.raises(pripri.DPError): pdf["a"] != x
     with pytest.raises(pripri.DPError): pdf["a"] <  x
@@ -110,12 +110,12 @@ def test_dataframe_comp():
 def test_dataframe_getitem():
     pdf, df = load_dataframe()
 
-    # A single-column view should be successfully retrieved from a sensitive dataframe
-    assert isinstance(pdf["a"], ppd.Series)
+    # A single-column view should be successfully retrieved from a private dataframe
+    assert isinstance(pdf["a"], ppd.PrivSeries)
     assert (pdf["a"]._value == df["a"]).all()
 
-    # A multi-column view should be successfully retrieved from a sensitive dataframe
-    assert isinstance(pdf[["a", "b"]], ppd.DataFrame)
+    # A multi-column view should be successfully retrieved from a private dataframe
+    assert isinstance(pdf[["a", "b"]], ppd.PrivDataFrame)
     assert (pdf[["a", "b"]]._value == df[["a", "b"]]).all().all()
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (dataframe)
@@ -126,12 +126,12 @@ def test_dataframe_getitem():
     with pytest.raises(pripri.DPError):
         pdf["a"][[True, True, False, False, True]]
 
-    # A bool-filtered view should be successfully retrieved from a sensitive dataframe
-    assert isinstance(pdf[pdf["a"] > 3], ppd.DataFrame)
+    # A bool-filtered view should be successfully retrieved from a private dataframe
+    assert isinstance(pdf[pdf["a"] > 3], ppd.PrivDataFrame)
     assert (pdf[pdf["a"] > 3]._value == df[df["a"] > 3]).all().all()
 
-    # A bool-filtered view should be successfully retrieved from a sensitive series
-    assert isinstance(pdf["a"][pdf["a"] > 3], ppd.Series)
+    # A bool-filtered view should be successfully retrieved from a private series
+    assert isinstance(pdf["a"][pdf["a"] > 3], ppd.PrivSeries)
     assert (pdf["a"][pdf["a"] > 3]._value == df["a"][df["a"] > 3]).all()
 
     x = pripri.Prisoner(value=0, sensitivity=1)
@@ -159,7 +159,7 @@ def test_dataframe_setitem():
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # A sensitive series should be successfully assigned to a single-column view
+    # A private series should be successfully assigned to a single-column view
     pdf["d"] = pdf["a"]
     df["d"] = df["a"]
     assert (pdf.columns == df.columns).all()
@@ -171,7 +171,7 @@ def test_dataframe_setitem():
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # A sensitive dataframe should be successfully assigned to a multi-column view
+    # A private dataframe should be successfully assigned to a multi-column view
     pdf[["g", "h"]] = pdf[["a", "b"]]
     df[["g", "h"]] = df[["a", "b"]]
     assert (pdf.columns == df.columns).all()
@@ -189,13 +189,13 @@ def test_dataframe_setitem():
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # A sensitive dataframe should be successfully assigned to a bool-filtered view
+    # A private dataframe should be successfully assigned to a bool-filtered view
     pdf[pdf["a"] < 3] = pdf[pdf["a"] > 3].reset_index(drop=True)
     df[df["a"] < 3] = df[df["a"] > 3].reset_index(drop=True)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # A non-sensitive series can be assigned to a sensitive single-column view
+    # A non-private series can be assigned to a private single-column view
     # (because this operation succeeds regardless of the row number)
     # TODO: this may be disallowed if we track the value domain for each column
     pdf["i"] = df["c"]
@@ -203,7 +203,7 @@ def test_dataframe_setitem():
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # A non-sensitive dataframe can be assigned to a sensitive multi-column view
+    # A non-private dataframe can be assigned to a private multi-column view
     # (because this operation succeeds regardless of the row number)
     # TODO: this may be disallowed if we track the value domain for each column
     pdf[["j", "k"]] = df[["a", "b"]]
@@ -211,7 +211,7 @@ def test_dataframe_setitem():
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # An irrelevant, non-sensitive dataframe can be assigned to a bool-filtered view
+    # An irrelevant, non-private dataframe can be assigned to a bool-filtered view
     # (because this operation succeeds regardless of the row number)
     # TODO: this may be disallowed if we track the value domain for each column
     pdf[pdf["a"] > 3] = df
@@ -233,11 +233,11 @@ def test_dataframe_setitem():
     with pytest.raises(pripri.DPError):
         pdf[pdf["a"] > 3] = x
 
-    # An irrelevant, non-sensitive array should not be assigned to a column view
+    # An irrelevant, non-private array should not be assigned to a column view
     with pytest.raises(pripri.DPError):
         pdf["x"] = [1, 2, 3, 4, 5]
 
-    # An irrelevant, non-sensitive 2d array should not be assigned to a bool-filtered view
+    # An irrelevant, non-private 2d array should not be assigned to a bool-filtered view
     with pytest.raises(pripri.DPError):
         pdf[pdf["a"] > 3] = [[list(range(len(pdf.columns)))] for x in range(5)]
 
@@ -264,11 +264,11 @@ def test_series_reset_index():
     pdf, df = load_dataframe()
 
     # Default behaviour
-    assert isinstance(pdf["a"].reset_index(), ppd.DataFrame)
+    assert isinstance(pdf["a"].reset_index(), ppd.PrivDataFrame)
     assert (pdf["a"].reset_index()._value == df["a"].reset_index()).all().all()
 
     # Special behaviour when `drop=True`
-    assert isinstance(pdf["a"].reset_index(drop=True), ppd.Series)
+    assert isinstance(pdf["a"].reset_index(drop=True), ppd.PrivSeries)
     assert (pdf["a"].reset_index(drop=True)._value == df["a"].reset_index(drop=True)).all().all()
 
     # Special behaviour when `drop=True` and `inplace=True`
