@@ -297,7 +297,7 @@ def test_priv_series_value_counts() -> None:
     assert isinstance(counts, ppd.SensitiveSeries)
     assert (counts.index == values).all()
     assert counts.sensitivity == 1
-    assert (counts._value == pd.Series({2: 1, 3: 1, 4: 3})).all().all()
+    assert (counts._value == pd.Series({2: 1, 3: 1, 4: 3})).all()
 
     # Should return correct counts when only a part of possible values are provided
     values = [3, 4]
@@ -305,7 +305,7 @@ def test_priv_series_value_counts() -> None:
     assert isinstance(counts, ppd.SensitiveSeries)
     assert (counts.index == values).all()
     assert counts.sensitivity == 1
-    assert (counts._value == pd.Series({3: 1, 4: 3})).all().all()
+    assert (counts._value == pd.Series({3: 1, 4: 3})).all()
 
     # Should return correct counts when non-existent values are provided
     values = [1, 3, 4, 5]
@@ -313,7 +313,7 @@ def test_priv_series_value_counts() -> None:
     assert isinstance(counts, ppd.SensitiveSeries)
     assert (counts.index == values).all()
     assert counts.sensitivity == 1
-    assert (counts._value == pd.Series({1: 0, 3: 1, 4: 3, 5: 0})).all().all()
+    assert (counts._value == pd.Series({1: 0, 3: 1, 4: 3, 5: 0})).all()
 
     # Should be able to get a sensitive value from a sensitive series
     c4 = counts[4]

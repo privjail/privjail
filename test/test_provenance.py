@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Any
 import pytest
 import importlib
 import sys
@@ -8,7 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 provenance = importlib.import_module("pripri.provenance")
 
 @pytest.fixture(autouse=True)
-def setup() -> Generator[None]:
+def setup() -> Any:
     provenance.clear_global_states()
     yield
 

@@ -14,12 +14,9 @@ from .prisoner import Prisoner
 T = TypeVar("T")
 
 @overload
-def unwrap_prisoner(x: Prisoner[T]) -> T:
-    ...
-
+def unwrap_prisoner(x: Prisoner[T]) -> T: ...
 @overload
-def unwrap_prisoner(x: T) -> T:
-    ...
+def unwrap_prisoner(x: T) -> T: ...
 
 def unwrap_prisoner(x: Prisoner[T] | T) -> T:
     if isinstance(x, Prisoner):
