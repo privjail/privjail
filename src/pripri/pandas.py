@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal
+from typing import overload, TypeVar, Any, Literal, Iterator
 import warnings
 
 import numpy as _np
@@ -277,26 +277,38 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             # TODO: track the value domain to automatically determine the output dimension
             raise DPError("Please provide the `keys` argument to prevent privacy leakage.")
 
+        # TODO: handling for arguments
+
         groupby_obj = self._value.groupby(by, level=level, as_index=as_index, sort=sort,
                                           group_keys=group_keys, observed=observed, dropna=dropna)
-        return PrivDataFrameGroupBy(groupby_obj, parent=self)
 
-class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]):
-    groups : dict[Any, PrivDataFrame]
+        # exclude groups not included in the specified `keys`
+        groups = {key: df for key, df in groupby_obj if key in keys}
 
-    def __init__(self,
-                 groupby_obj : Any,
-                 *,
-                 parent      : Prisoner[Any],
-                 ):
-        # TODO: probably do not need to save groupby_obj
-        super().__init__(value=groupby_obj, sensitivity=-1, parent=parent, children_type="exclusive")
-        self.groups = {key: PrivDataFrame(df, parent=self, inherit_len=False) for key, df in groupby_obj}
+        # include empty groups for absent `keys` and sort by `keys`
+        columns = self._value.columns
+        dtypes = self._value.dtypes
+        groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys}
 
-    def __iter__(self):
+        # create a dummy prisoner to track exclusive provenance
+        prisoner_dummy = Prisoner(0, -1, parent=self, children_type="exclusive")
+
+        # wrap each group by PrivDataFrame
+        priv_groups = {key: PrivDataFrame(df, parent=prisoner_dummy, inherit_len=False) for key, df in groups.items()}
+
+        return PrivDataFrameGroupBy(priv_groups)
+
+class PrivDataFrameGroupBy:
+    def __init__(self, groups: dict[Any, PrivDataFrame]):
+        self.groups = groups
+
+    def __len__(self) -> int:
+        return len(self.groups)
+
+    def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
         return iter(self.groups.items())
 
-    def get_group(self, key):
+    def get_group(self, key: Any) -> PrivDataFrame:
         return self.groups[key]
 
 class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]

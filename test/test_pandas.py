@@ -400,6 +400,41 @@ def test_crosstab() -> None:
 
     pripri.laplace_mechanism(counts, epsilon=1.0)
 
+def test_dataframe_groupby() -> None:
+    pdf, df = load_dataframe()
+
+    # Should raise an error without `keys`
+    with pytest.raises(pripri.DPError):
+        pdf.groupby("b")
+
+    # Should be able to group by a single column
+    keys = [1, 2, 4]
+    groups = pdf.groupby("b", keys=keys)
+    assert len(groups) == len(keys)
+
+    # Should be able to loop over groups
+    for i, (key, pdf_) in enumerate(groups):
+        assert key == keys[i]
+        assert isinstance(pdf_, ppd.PrivDataFrame)
+
+    # A group with key=1 should be empty but its columns and dtypes should match the original
+    assert isinstance(groups.get_group(1), ppd.PrivDataFrame)
+    assert len(groups.get_group(1)._value) == 0
+    assert (groups.get_group(1).columns == pdf.columns).all()
+    assert (groups.get_group(1).dtypes == pdf.dtypes).all()
+
+    # Check for a group with key=2
+    assert isinstance(groups.get_group(2), ppd.PrivDataFrame)
+    assert (groups.get_group(2)._value == pd.DataFrame({"a": [1], "b": [2]}, index=[0])).all().all()
+    assert (groups.get_group(2).columns == pdf.columns).all()
+    assert (groups.get_group(2).dtypes == pdf.dtypes).all()
+
+    # Check for a group with key=4
+    assert isinstance(groups.get_group(4), ppd.PrivDataFrame)
+    assert (groups.get_group(4)._value == pd.DataFrame({"a": [2, 3, 4], "b": [4, 4, 4]}, index=[1, 2, 3])).all().all()
+    assert (groups.get_group(4).columns == pdf.columns).all()
+    assert (groups.get_group(4).dtypes == pdf.dtypes).all()
+
 def test_privacy_budget() -> None:
     pdf, df = load_dataframe()
 
