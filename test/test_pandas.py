@@ -372,7 +372,7 @@ def test_privacy_budget() -> None:
     epsilon = 0.1
     pdf1 = pdf[pdf["b"] >= 3]
     counts = pdf1["b"].value_counts(sort=False, values=[3, 4, 5])
-    pripri.laplace_mechanism(counts[3], epsilon=epsilon)
+    pripri.laplace_mechanism(counts, epsilon=epsilon)
 
     assert pripri.current_privacy_budget()[pdf.root_name] == epsilon
 
