@@ -4,6 +4,8 @@ import pandas as pd
 import pripri
 from pripri import pandas as ppd
 
+# TODO: add tests for SensitiveDataFrame/Series
+
 def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     data = {
         "a": [1, 2, 3, 4, 5],
@@ -365,6 +367,38 @@ def test_priv_series_value_counts() -> None:
     assert c3.sensitivity == c4.sensitivity == 1
     assert c3._value == 1
     assert c4._value == 3
+
+def test_crosstab() -> None:
+    pdf, df = load_dataframe()
+
+    rowvalues = [1, 2, 3, 4, 5]
+    colvalues = [1, 2, 3, 4, 5]
+
+    # Should raise an error without rowvalues/colvalues
+    with pytest.raises(pripri.DPError): ppd.crosstab(pdf["a"], pdf["b"])
+    with pytest.raises(pripri.DPError): ppd.crosstab(pdf["a"], pdf["b"], rowvalues=rowvalues)
+    with pytest.raises(pripri.DPError): ppd.crosstab(pdf["a"], pdf["b"], colvalues=colvalues)
+
+    # Should raise an error with margins=True
+    with pytest.raises(pripri.DPError):
+        ppd.crosstab(pdf["a"], pdf["b"], rowvalues=rowvalues, colvalues=colvalues, margins=True)
+
+    # Should raise an error with series of potentially different size
+    pdf_ = pdf[pdf["a"] >= 0]
+    with pytest.raises(pripri.DPError):
+        ppd.crosstab(pdf["a"], pdf_["b"], rowvalues=rowvalues, colvalues=colvalues)
+
+    # Should return correct counts when all possible values are provided
+    counts = ppd.crosstab(pdf["a"], pdf["b"], rowvalues=rowvalues, colvalues=colvalues)
+    ans = pd.DataFrame([[0, 1, 0, 0, 0],
+                        [0, 0, 0, 1, 0],
+                        [0, 0, 0, 1, 0],
+                        [0, 0, 0, 1, 0],
+                        [0, 0, 1, 0, 0]],
+                       index=rowvalues, columns=colvalues)
+    assert (counts._value == ans).all().all()
+
+    pripri.laplace_mechanism(counts, epsilon=1.0)
 
 def test_privacy_budget() -> None:
     pdf, df = load_dataframe()

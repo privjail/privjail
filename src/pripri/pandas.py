@@ -688,3 +688,70 @@ class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
 
 def read_csv(filepath: str, **kwargs: Any) -> PrivDataFrame:
     return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), root_name=filepath, inherit_len=False)
+
+def crosstab(index        : PrivSeries | list[PrivSeries],
+             columns      : PrivSeries | list[PrivSeries],
+             values       : PrivSeries | None                               = None,
+             rownames     : list[str] | None                                = None,
+             colnames     : list[str] | None                                = None,
+             rowvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for pripri
+             colvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for pripri
+             *,
+             aggfunc      : Any                                             = None,
+             margins      : bool                                            = False,
+             margins_name : str                                             = "All",
+             dropna       : bool                                            = True,
+             normalize    : bool | Literal["all", "index", "columns", 0, 1] = False,
+             ) -> SensitiveDataFrame:
+    if normalize is not False:
+        # TODO: what is the sensitivity?
+        raise NotImplementedError
+
+    if values is not None or aggfunc is not None:
+        # TODO: hard to accept arbitrary user functions
+        raise NotImplementedError
+
+    if margins:
+        # Sensitivity must be managed separately for value counts and margins
+        raise DPError("`margins=True` is not supported. Please manually calculate margins after adding noise.")
+
+    if rowvalues is None or colvalues is None:
+        # TODO: track the value domain to automatically determine the output dimension
+        raise DPError("Please provide the `rowvalues`/`colvalues` arguments to prevent privacy leakage.")
+
+    if not dropna and (not any(_np.isnan(rowvalues)) or not any(_np.isnan(colvalues))):
+        # TODO: consider handling for pd.NA
+        warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
+
+    if isinstance(index, list):
+        if len(index) == 0:
+            raise ValueError("Empty list is passed to `index`.")
+
+        # TODO: support list of series (need to accept multiindex for rowvalues/colvalues)
+        raise NotImplementedError
+    else:
+        index = [index]
+
+    if isinstance(columns, list):
+        if len(columns) == 0:
+            raise ValueError("Empty list is passed to `columns`.")
+
+        # TODO: support list of series (need to accept multiindex for rowvalues/colvalues)
+        raise NotImplementedError
+    else:
+        columns = [columns]
+
+    if not all(index[0].has_same_tag(x) for x in index + columns):
+        # TODO: reconsider whether this should be disallowed, as length difference does not cause an error
+        raise DPError("Series in `index` and `columns` must have the same length.")
+
+    counts = _pd.crosstab([x._value for x in index], [x._value for x in columns],
+                          values=None, rownames=rownames, colnames=colnames,
+                          aggfunc=None, margins=False, margins_name=margins_name,
+                          dropna=dropna, normalize=False)
+
+    # Select only the specified values and fill non-existent counts with 0
+    counts = counts.reindex(rowvalues, axis="index").reindex(colvalues, axis="columns").fillna(0).astype(int)
+
+    # TODO: is it ok to set one of the series as the parent?
+    return SensitiveDataFrame(data=counts, sensitivity=1, parent=index[0])
