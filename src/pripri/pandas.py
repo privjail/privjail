@@ -263,6 +263,42 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         else:
             return PrivDataFrame(data=self._value.reset_index(level, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
+    def groupby(self,
+                by         : str | list[str], # TODO: support more
+                level      : Any                                = None,
+                as_index   : bool                               = True,
+                sort       : bool                               = True,
+                group_keys : bool                               = True,
+                observed   : bool                               = True,
+                dropna     : bool                               = True,
+                keys       : list[Any] | _pd.Series[Any] | None = None, # extra argument for pripri
+                ) -> PrivDataFrameGroupBy:
+        if keys is None:
+            # TODO: track the value domain to automatically determine the output dimension
+            raise DPError("Please provide the `keys` argument to prevent privacy leakage.")
+
+        groupby_obj = self._value.groupby(by, level=level, as_index=as_index, sort=sort,
+                                          group_keys=group_keys, observed=observed, dropna=dropna)
+        return PrivDataFrameGroupBy(groupby_obj, parent=self)
+
+class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]):
+    groups : dict[Any, PrivDataFrame]
+
+    def __init__(self,
+                 groupby_obj : Any,
+                 *,
+                 parent      : Prisoner[Any],
+                 ):
+        # TODO: probably do not need to save groupby_obj
+        super().__init__(value=groupby_obj, sensitivity=-1, parent=parent, children_type="exclusive")
+        self.groups = {key: PrivDataFrame(df, parent=self, inherit_len=False) for key, df in groupby_obj}
+
+    def __iter__(self):
+        return iter(self.groups.items())
+
+    def get_group(self, key):
+        return self.groups[key]
+
 class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
 

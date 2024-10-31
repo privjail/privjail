@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any
-from .provenance import ProvenanceEntity, new_provenance_root, get_privacy_budget_all
+from .provenance import ProvenanceEntity, new_provenance_root, get_privacy_budget_all, ChildrenType
 
 T = TypeVar("T")
 
@@ -11,12 +11,13 @@ class Prisoner(Generic[T]):
     root_name         : str
 
     def __init__(self,
-                 value       : T,
-                 sensitivity : float,
+                 value         : T,
+                 sensitivity   : float,
                  *,
-                 parent      : Prisoner[Any] | None = None,
-                 root_name   : str | None           = None,
-                 renew_tag   : bool                 = True,
+                 parent        : Prisoner[Any] | None = None,
+                 root_name     : str | None           = None,
+                 renew_tag     : bool                 = True,
+                 children_type : ChildrenType         = "inclusive",
                  ):
         self._value = value
         self.sensitivity = sensitivity
@@ -28,7 +29,7 @@ class Prisoner(Generic[T]):
             self.provenance_entity = new_provenance_root(root_name)
             self.root_name = root_name
         else:
-            self.provenance_entity = parent.provenance_entity.add_child("inclusive")
+            self.provenance_entity = parent.provenance_entity.add_child(children_type)
             self.root_name = parent.root_name
 
         if renew_tag:
