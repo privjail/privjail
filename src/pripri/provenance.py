@@ -88,6 +88,11 @@ def get_privacy_budget(name: str) -> float:
 
     return provenance_roots[name].privacy_budget
 
+def get_privacy_budget_all() -> dict[str, float]:
+    global provenance_roots
+
+    return {name: pe.privacy_budget for name, pe in provenance_roots.items()}
+
 def have_same_tag(pe1: ProvenanceEntity, pe2: ProvenanceEntity) -> bool:
     return pe1.tag == pe2.tag
 
