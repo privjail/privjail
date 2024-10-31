@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import overload, TypeVar, Any
+from typing import overload, TypeVar, Any, Literal
 import warnings
 
 import numpy as _np
@@ -43,6 +43,11 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
+
+    @overload
+    def __getitem__(self, key: PrivDataFrame | PrivSeries | list[Any]) -> PrivDataFrame: ...
+    @overload
+    def __getitem__(self, key: Any) -> PrivSeries: ...
 
     def __getitem__(self, key: Any) -> PrivDataFrame | PrivSeries:
         if isinstance(key, slice):
@@ -175,12 +180,32 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
 
-    def reset_index(self, *args: Any, **kwargs: Any) -> PrivDataFrame | None:
-        if kwargs.get("inplace", False):
-            self._value.reset_index(*args, **kwargs)
+    @overload
+    def reset_index(self,
+                    level    : Any = ...,
+                    *,
+                    inplace  : Literal[True],
+                    **kwargs : Any,
+                    ) -> None: ...
+    @overload
+    def reset_index(self,
+                    level    : Any  = ...,
+                    *,
+                    inplace  : bool = ...,
+                    **kwargs : Any,
+                    ) -> PrivDataFrame: ...
+
+    def reset_index(self,
+                    level    : Any  = None,
+                    *,
+                    inplace  : bool = False,
+                    **kwargs : Any,
+                    ) -> PrivDataFrame | None:
+        if inplace:
+            self._value.reset_index(level, inplace=inplace, **kwargs)
             return None
         else:
-            return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
+            return PrivDataFrame(data=self._value.reset_index(level, inplace=inplace, **kwargs))
 
 class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
@@ -308,14 +333,45 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     def dtypes(self) -> Any:
         return self._value.dtypes
 
-    def reset_index(self, *args: Any, **kwargs: Any) -> PrivDataFrame | PrivSeries | None:
-        if kwargs.get("inplace", False):
-            self._value.reset_index(*args, **kwargs)
+    @overload
+    def reset_index(self,
+                    level    : Any  = ...,
+                    *,
+                    drop     : bool = ...,
+                    inplace  : Literal[True],
+                    **kwargs : Any,
+                    ) -> None: ...
+    @overload
+    def reset_index(self,
+                    level    : Any = ...,
+                    *,
+                    drop     : Literal[True],
+                    inplace  : Literal[False],
+                    **kwargs : Any,
+                    ) -> PrivSeries: ...
+    @overload
+    def reset_index(self,
+                    level    : Any  = ...,
+                    *,
+                    drop     : bool = ...,
+                    inplace  : bool = ...,
+                    **kwargs : Any,
+                    ) -> PrivDataFrame: ...
+
+    def reset_index(self,
+                    level    : Any  = None,
+                    *,
+                    drop     : bool = False,
+                    inplace  : bool = False,
+                    **kwargs : Any,
+                    ) -> PrivDataFrame | PrivSeries | None:
+        if inplace:
+            self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs)
             return None
-        elif kwargs.get("drop", False):
-            return PrivSeries(data=self._value.reset_index(*args, **kwargs))
+        elif drop:
+            return PrivSeries(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs))
         else:
-            return PrivDataFrame(data=self._value.reset_index(*args, **kwargs))
+            return PrivDataFrame(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs))
 
     def value_counts(self,
                      normalize : bool                               = False,
@@ -401,6 +457,11 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
 
+    @overload
+    def __getitem__(self, key: _pd.DataFrame | _pd.Series[Any] | list[Any]) -> SensitiveDataFrame: ...
+    @overload
+    def __getitem__(self, key: Any) -> SensitiveSeries: ...
+
     def __getitem__(self, key: Any) -> SensitiveDataFrame | SensitiveSeries:
         if isinstance(key, Prisoner):
             raise DPError("Sensitive values cannot be accepted as keys for sensitive dataframe.")
@@ -472,6 +533,11 @@ class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     @property
     def dtypes(self) -> Any:
         return self._value.dtypes
+
+    @overload
+    def __getitem__(self, key: _pd.Series[Any] | list[Any] | slice) -> SensitiveSeries: ...
+    @overload
+    def __getitem__(self, key: Any) -> Prisoner[Any]: ...
 
     def __getitem__(self, key: Any) -> SensitiveSeries | Prisoner[Any]:
         if isinstance(key, Prisoner):
