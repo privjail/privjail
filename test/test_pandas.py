@@ -1,3 +1,4 @@
+import uuid
 import pytest
 import pandas as pd
 import pripri
@@ -8,7 +9,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": [1, 2, 3, 4, 5],
         "b": [2, 4, 4, 4, 3],
     }
-    pdf = ppd.PrivDataFrame(data)
+    pdf = ppd.PrivDataFrame(data, root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
@@ -89,7 +90,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pripri.DPError): pdf["a"] >  [0, 1, 2, 3, 4]
     with pytest.raises(pripri.DPError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    x = pripri.Prisoner(value=0, sensitivity=1)
+    x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be compared against a private dataframe
     with pytest.raises(pripri.DPError): pdf == x
@@ -134,7 +135,7 @@ def test_priv_dataframe_getitem() -> None:
     assert isinstance(pdf["a"][pdf["a"] > 3], ppd.PrivSeries)
     assert (pdf["a"][pdf["a"] > 3]._value == df["a"][df["a"] > 3]).all()
 
-    x = pripri.Prisoner(value=0, sensitivity=1)
+    x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be used as a column name
     with pytest.raises(pripri.DPError):
@@ -219,7 +220,7 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    x = pripri.Prisoner(value=0, sensitivity=1)
+    x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be assigned to a single-column view
     with pytest.raises(pripri.DPError):
