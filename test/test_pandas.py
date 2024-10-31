@@ -108,6 +108,23 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pripri.DPError): pdf["a"] >  x
     with pytest.raises(pripri.DPError): pdf["a"] >= x
 
+    # Sensitive dataframes of potentially different size should not be compared
+    pdf_ = pdf[pdf["a"] >= 0]
+    with pytest.raises(pripri.DPError): pdf == pdf_
+    with pytest.raises(pripri.DPError): pdf != pdf_
+    with pytest.raises(pripri.DPError): pdf <  pdf_
+    with pytest.raises(pripri.DPError): pdf <= pdf_
+    with pytest.raises(pripri.DPError): pdf >  pdf_
+    with pytest.raises(pripri.DPError): pdf >= pdf_
+
+    # Sensitive series of potentially different size should not be compared
+    with pytest.raises(pripri.DPError): pdf["a"] == pdf_["a"]
+    with pytest.raises(pripri.DPError): pdf["a"] != pdf_["a"]
+    with pytest.raises(pripri.DPError): pdf["a"] <  pdf_["a"]
+    with pytest.raises(pripri.DPError): pdf["a"] <= pdf_["a"]
+    with pytest.raises(pripri.DPError): pdf["a"] >  pdf_["a"]
+    with pytest.raises(pripri.DPError): pdf["a"] >= pdf_["a"]
+
 def test_priv_dataframe_getitem() -> None:
     pdf, df = load_dataframe()
 
@@ -121,11 +138,11 @@ def test_priv_dataframe_getitem() -> None:
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (dataframe)
     with pytest.raises(pripri.DPError):
-        pdf[[True, True, False, False, True]]
+        pdf[[True, True, False, False, True]] # type: ignore
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (series)
     with pytest.raises(pripri.DPError):
-        pdf["a"][[True, True, False, False, True]]
+        pdf["a"][[True, True, False, False, True]] # type: ignore
 
     # A bool-filtered view should be successfully retrieved from a private dataframe
     assert isinstance(pdf[pdf["a"] > 3], ppd.PrivDataFrame)
@@ -135,21 +152,30 @@ def test_priv_dataframe_getitem() -> None:
     assert isinstance(pdf["a"][pdf["a"] > 3], ppd.PrivSeries)
     assert (pdf["a"][pdf["a"] > 3]._value == df["a"][df["a"] > 3]).all()
 
+    # A sensitve bool vector of potentially different size should not be accepted for filtering (dataframe)
+    pdf_ = pdf[pdf["a"] >= 0]
+    with pytest.raises(pripri.DPError):
+        pdf[pdf_["a"] > 3]
+
+    # A sensitve bool vector of potentially different size should not be accepted for filtering (series)
+    with pytest.raises(pripri.DPError):
+        pdf["a"][pdf_["a"] > 3]
+
     x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be used as a column name
     with pytest.raises(pripri.DPError):
-        pdf[x]
+        pdf[x] # type: ignore
 
     # A slice should not be used for selecting rows of a dataframe
     # TODO: it might be legal to accept a slice
     with pytest.raises(pripri.DPError):
-        pdf[2:5]
+        pdf[2:5] # type: ignore
 
     # A slice should not be used for selecting rows of a series
     # TODO: it might be legal to accept a slice
     with pytest.raises(pripri.DPError):
-        pdf["a"][2:5]
+        pdf["a"][2:5] # type: ignore
 
 def test_priv_dataframe_setitem() -> None:
     pdf, df = load_dataframe()
@@ -244,12 +270,21 @@ def test_priv_dataframe_setitem() -> None:
 
     # A sensitive value should not be used as a column name
     with pytest.raises(pripri.DPError):
-        pdf[x] = 10
+        pdf[x] = 10 # type: ignore
+
+    # A sensitve bool vector of potentially different size should not be accepted for filtering (dataframe)
+    pdf_ = pdf[pdf["a"] >= 0]
+    with pytest.raises(pripri.DPError):
+        pdf[pdf_["a"] > 3] = 10
+
+    # A sensitve bool vector of potentially different size should not be accepted for filtering (series)
+    with pytest.raises(pripri.DPError):
+        pdf["a"][pdf_["a"] > 3] = 10
 
     # A slice should not be used for selecting rows
     # TODO: it might be legal to accept a slice
     with pytest.raises(pripri.DPError):
-        pdf[2:5] = 0
+        pdf[2:5] = 0 # type: ignore
 
 def test_priv_dataframe_reset_index() -> None:
     pdf, df = load_dataframe()

@@ -53,7 +53,7 @@ class ProvenanceEntity:
         self.children.append(pe)
         return pe
 
-    def new_tag(self) -> None:
+    def renew_tag(self) -> None:
         global provenance_tag_counts
 
         name, count = self.tag
@@ -62,6 +62,9 @@ class ProvenanceEntity:
         provenance_tag_counts[name] += 1
 
         self.tag = ProvenanceTag(name, provenance_tag_counts[name])
+
+    def has_same_tag(self, other: ProvenanceEntity) -> bool:
+        return self.tag == other.tag
 
 provenance_roots: dict[str, ProvenanceEntity] = {}
 
@@ -92,9 +95,6 @@ def get_privacy_budget_all() -> dict[str, float]:
     global provenance_roots
 
     return {name: pe.privacy_budget for name, pe in provenance_roots.items()}
-
-def have_same_tag(pe1: ProvenanceEntity, pe2: ProvenanceEntity) -> bool:
-    return pe1.tag == pe2.tag
 
 # should not be exposed
 def clear_global_states() -> None:

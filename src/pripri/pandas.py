@@ -38,28 +38,34 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     """
 
     def __init__(self,
-                 data      : Any,
-                 index     : Any                  = None,
-                 columns   : Any                  = None,
-                 dtype     : Any                  = None,
-                 copy      : bool                 = False,
+                 data        : Any,
+                 index       : Any                  = None,
+                 columns     : Any                  = None,
+                 dtype       : Any                  = None,
+                 copy        : bool                 = False,
                  *,
-                 parent    : Prisoner[Any] | None = None,
-                 root_name : str | None           = None,
+                 parent      : Prisoner[Any] | None = None,
+                 root_name   : str | None           = None,
+                 inherit_len : bool | None          = None,
                  ):
+        if parent is None:
+            inherit_len = False
+        elif inherit_len is None:
+            raise ValueError("inherit_len is required when parent is specified.")
+
         data = _pd.DataFrame(data, index, columns, dtype, copy)
-        super().__init__(value=data, sensitivity=-1, parent=parent, root_name=root_name)
+        super().__init__(value=data, sensitivity=-1, parent=parent, root_name=root_name, renew_tag=not inherit_len)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
     @overload
-    def __getitem__(self, key: PrivDataFrame | PrivSeries | list[Any]) -> PrivDataFrame: ...
+    def __getitem__(self, key: PrivDataFrame | PrivSeries | list[str]) -> PrivDataFrame: ...
     @overload
-    def __getitem__(self, key: Any) -> PrivSeries: ...
+    def __getitem__(self, key: str) -> PrivSeries: ...
 
-    def __getitem__(self, key: Any) -> PrivDataFrame | PrivSeries:
+    def __getitem__(self, key: PrivDataFrame | PrivSeries | list[str] | str) -> PrivDataFrame | PrivSeries:
         if isinstance(key, slice):
             raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
 
@@ -69,15 +75,23 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         if not isinstance(key, Prisoner) and is_bool_indexer(key):
             raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
 
-        data = self._value.__getitem__(unwrap_prisoner(key))
-        if isinstance(data, _pd.DataFrame):
-            return PrivDataFrame(data, parent=self)
-        elif isinstance(data, _pd.Series):
-            return PrivSeries(data, parent=self)
-        else:
-            raise RuntimeError
+        if isinstance(key, str):
+            # TODO: consider duplicated column names
+            return PrivSeries(data=self._value.__getitem__(key), parent=self, inherit_len=True)
 
-    def __setitem__(self, key: Any, value: Any) -> None:
+        elif isinstance(key, list) and all(isinstance(x, str) for x in key):
+            return PrivDataFrame(data=self._value.__getitem__(key), parent=self, inherit_len=True)
+
+        elif isinstance(key, Prisoner) and is_bool_indexer(key._value):
+            if not self.has_same_tag(key):
+                raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
+
+            return PrivDataFrame(data=self._value.__getitem__(key._value), parent=self, inherit_len=False)
+
+        else:
+            raise ValueError
+
+    def __setitem__(self, key: PrivDataFrame | PrivSeries | list[str] | str, value: Any) -> None:
         if isinstance(key, slice):
             raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
 
@@ -100,73 +114,105 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 not isinstance(value, Prisoner) and is_list_like(value) and not isinstance(value, (_pd.DataFrame, _pd.Series)):
             raise DPError("List-like values (other than DataFrame and Series) cannot be assigned because len(df) can be leaked.")
 
+        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and not self.has_same_tag(key):
+            raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
+
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
     def __eq__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
         if isinstance(other, PrivDataFrame):
-            # FIXME: length leakage problem
-            return PrivDataFrame(data=self._value == other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive dataframes for comparison can be different.")
+
+            return PrivDataFrame(data=self._value == other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+
         else:
-            return PrivDataFrame(data=self._value == other, parent=self)
+            return PrivDataFrame(data=self._value == other, parent=self, inherit_len=True)
 
     def __ne__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
         if isinstance(other, PrivDataFrame):
-            # FIXME: length leakage problem
-            return PrivDataFrame(data=self._value != other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive dataframes for comparison can be different.")
+
+            return PrivDataFrame(data=self._value != other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+
         else:
-            return PrivDataFrame(data=self._value != other, parent=self)
+            return PrivDataFrame(data=self._value != other, parent=self, inherit_len=True)
 
     def __lt__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
-            # FIXME: length leakage problem
-            return PrivDataFrame(data=self._value < other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive dataframes for comparison can be different.")
+            return PrivDataFrame(data=self._value < other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+
         else:
-            return PrivDataFrame(data=self._value < other, parent=self)
+            return PrivDataFrame(data=self._value < other, parent=self, inherit_len=True)
 
     def __le__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
-            # FIXME: length leakage problem
-            return PrivDataFrame(data=self._value <= other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive dataframes for comparison can be different.")
+
+            return PrivDataFrame(data=self._value <= other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+
         else:
-            return PrivDataFrame(data=self._value <= other, parent=self)
+            return PrivDataFrame(data=self._value <= other, parent=self, inherit_len=True)
 
     def __gt__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
-            # FIXME: length leakage problem
-            return PrivDataFrame(data=self._value > other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive dataframes for comparison can be different.")
+
+            return PrivDataFrame(data=self._value > other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+
         else:
-            return PrivDataFrame(data=self._value > other, parent=self)
+            return PrivDataFrame(data=self._value > other, parent=self, inherit_len=True)
 
     def __ge__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
-            # FIXME: length leakage problem
-            return PrivDataFrame(data=self._value >= other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive dataframes for comparison can be different.")
+
+            return PrivDataFrame(data=self._value >= other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+
         else:
-            return PrivDataFrame(data=self._value >= other, parent=self)
+            return PrivDataFrame(data=self._value >= other, parent=self, inherit_len=True)
 
     @property
     def shape(self) -> tuple[Prisoner[int], int]:
@@ -215,7 +261,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             self._value.reset_index(level, inplace=inplace, **kwargs)
             return None
         else:
-            return PrivDataFrame(data=self._value.reset_index(level, inplace=inplace, **kwargs), parent=self)
+            return PrivDataFrame(data=self._value.reset_index(level, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
 class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
@@ -225,21 +271,27 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     """
 
     def __init__(self,
-                 data      : Any,
-                 index     : Any                  = None,
+                 data        : Any,
+                 index       : Any                  = None,
                  *,
-                 parent    : Prisoner[Any] | None = None,
-                 root_name : str | None           = None,
-                 **kwargs  : Any,
+                 parent      : Prisoner[Any] | None = None,
+                 root_name   : str | None           = None,
+                 inherit_len : bool | None          = None,
+                 **kwargs    : Any,
                  ):
+        if parent is None:
+            inherit_len = False
+        elif inherit_len is None:
+            raise ValueError("inherit_len is required when parent is specified.")
+
         data = _pd.Series(data, index, **kwargs)
-        super().__init__(value=data, sensitivity=-1, parent=parent, root_name=root_name)
+        super().__init__(value=data, sensitivity=-1, parent=parent, root_name=root_name, renew_tag=not inherit_len)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
 
-    def __getitem__(self, key: Any) -> PrivSeries:
+    def __getitem__(self, key: PrivSeries) -> PrivSeries:
         if isinstance(key, slice):
             raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
 
@@ -249,7 +301,10 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         if not is_bool_indexer(key._value):
             raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
 
-        return PrivSeries(data=self._value.__getitem__(unwrap_prisoner(key)), parent=self)
+        if not self.has_same_tag(key):
+            raise DPError("ser[bool_vec] cannot be accepted when len(ser) and len(bool_vec) can be different.")
+
+        return PrivSeries(data=self._value.__getitem__(unwrap_prisoner(key)), parent=self, inherit_len=False)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, slice):
@@ -270,73 +325,106 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         if is_2d_array(value):
             raise DPError("2D array cannot be assigned because len(df) can be leaked.")
 
+        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and not self.has_same_tag(key):
+            raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
+
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
     def __eq__(self, other: Any) -> PrivSeries: # type: ignore[override]
         if isinstance(other, PrivSeries):
-            # FIXME: length leakage problem
-            return PrivSeries(data=self._value == other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive series for comparison can be different.")
+
+            return PrivSeries(data=self._value == other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+
         else:
-            return PrivSeries(data=self._value == other, parent=self)
+            return PrivSeries(data=self._value == other, parent=self, inherit_len=True)
 
     def __ne__(self, other: Any) -> PrivSeries: # type: ignore[override]
         if isinstance(other, PrivSeries):
-            # FIXME: length leakage problem
-            return PrivSeries(data=self._value != other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive series for comparison can be different.")
+
+            return PrivSeries(data=self._value != other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+
         else:
-            return PrivSeries(data=self._value != other, parent=self)
+            return PrivSeries(data=self._value != other, parent=self, inherit_len=True)
 
     def __lt__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
-            # FIXME: length leakage problem
-            return PrivSeries(data=self._value < other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive series for comparison can be different.")
+
+            return PrivSeries(data=self._value < other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+
         else:
-            return PrivSeries(data=self._value < other, parent=self)
+            return PrivSeries(data=self._value < other, parent=self, inherit_len=True)
 
     def __le__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
-            # FIXME: length leakage problem
-            return PrivSeries(data=self._value <= other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive series for comparison can be different.")
+
+            return PrivSeries(data=self._value <= other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+
         else:
-            return PrivSeries(data=self._value <= other, parent=self)
+            return PrivSeries(data=self._value <= other, parent=self, inherit_len=True)
 
     def __gt__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
-            # FIXME: length leakage problem
-            return PrivSeries(data=self._value > other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive series for comparison can be different.")
+
+            return PrivSeries(data=self._value > other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+
         else:
-            return PrivSeries(data=self._value > other, parent=self)
+            return PrivSeries(data=self._value > other, parent=self, inherit_len=True)
 
     def __ge__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
-            # FIXME: length leakage problem
-            return PrivSeries(data=self._value >= other._value, parent=self)
+            if not self.has_same_tag(other):
+                raise DPError("Length of sensitive series for comparison can be different.")
+
+            return PrivSeries(data=self._value >= other._value, parent=self, inherit_len=True)
+
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
+
         elif is_list_like(other):
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+
         else:
-            return PrivSeries(data=self._value >= other, parent=self)
+            return PrivSeries(data=self._value >= other, parent=self, inherit_len=True)
 
     @property
     def shape(self) -> tuple[Prisoner[int]]:
@@ -387,9 +475,9 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs)
             return None
         elif drop:
-            return PrivSeries(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self)
+            return PrivSeries(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self, inherit_len=True)
         else:
-            return PrivDataFrame(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self)
+            return PrivDataFrame(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
     def value_counts(self,
                      normalize : bool                               = False,
@@ -599,4 +687,4 @@ class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         raise DPError("Comparison against sensitive series is not allowed.")
 
 def read_csv(filepath: str, **kwargs: Any) -> PrivDataFrame:
-    return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), root_name=filepath)
+    return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), root_name=filepath, inherit_len=False)

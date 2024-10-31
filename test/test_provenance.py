@@ -62,34 +62,34 @@ def test_provenance_tag() -> None:
     pe1 = pe0.add_child(children_type="inclusive")
     pe2 = pe0.add_child(children_type="inclusive")
 
-    assert provenance.have_same_tag(pe0, pe1)
-    assert provenance.have_same_tag(pe0, pe2)
-    assert provenance.have_same_tag(pe1, pe2)
+    assert pe0.has_same_tag(pe1)
+    assert pe0.has_same_tag(pe2)
+    assert pe1.has_same_tag(pe2)
 
-    pe1.new_tag()
+    pe1.renew_tag()
 
-    assert not provenance.have_same_tag(pe0, pe1)
-    assert provenance.have_same_tag(pe0, pe2)
-    assert not provenance.have_same_tag(pe1, pe2)
+    assert not pe0.has_same_tag(pe1)
+    assert pe0.has_same_tag(pe2)
+    assert not pe1.has_same_tag(pe2)
 
-    pe2.new_tag()
+    pe2.renew_tag()
 
-    assert not provenance.have_same_tag(pe0, pe1)
-    assert not provenance.have_same_tag(pe0, pe2)
-    assert not provenance.have_same_tag(pe1, pe2)
+    assert not pe0.has_same_tag(pe1)
+    assert not pe0.has_same_tag(pe2)
+    assert not pe1.has_same_tag(pe2)
 
     pe1e = pe1.add_child(children_type="exclusive")
     pe1e1 = pe1e.add_child(children_type="inclusive")
     pe1e2 = pe1e.add_child(children_type="inclusive")
 
-    assert provenance.have_same_tag(pe1, pe1e)
-    assert provenance.have_same_tag(pe1e, pe1e1)
-    assert provenance.have_same_tag(pe1e, pe1e2)
-    assert provenance.have_same_tag(pe1e1, pe1e2)
+    assert pe1.has_same_tag(pe1e)
+    assert pe1e.has_same_tag(pe1e1)
+    assert pe1e.has_same_tag(pe1e2)
+    assert pe1e1.has_same_tag(pe1e2)
 
     pe0_ = provenance.new_provenance_root("bar")
 
-    assert not provenance.have_same_tag(pe0_, pe0)
-    assert not provenance.have_same_tag(pe0_, pe1)
-    assert not provenance.have_same_tag(pe0_, pe2)
-    assert not provenance.have_same_tag(pe0_, pe1e)
+    assert not pe0_.has_same_tag(pe0)
+    assert not pe0_.has_same_tag(pe1)
+    assert not pe0_.has_same_tag(pe2)
+    assert not pe0_.has_same_tag(pe1e)
