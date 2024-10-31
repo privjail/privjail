@@ -15,7 +15,6 @@ class ProvenanceEntity:
     children_type        : ChildrenType
     privacy_budget_local : float
     privacy_budget       : float
-    children             : list[ProvenanceEntity]
 
     def __init__(self, parent: ProvenanceEntity | None, tag: ProvenanceTag, children_type: ChildrenType):
         self.parent               = parent
@@ -23,20 +22,20 @@ class ProvenanceEntity:
         self.children_type        = children_type
         self.privacy_budget_local = 0
         self.privacy_budget       = 0
-        self.children             = []
 
-    def update_privacy_budget(self) -> None:
+    def update_privacy_budget(self, delta: float, child_budget: float) -> None:
         if self.children_type == "inclusive":
-            self.privacy_budget = self.privacy_budget_local + sum([c.privacy_budget for c in self.children])
+            self.privacy_budget += delta
 
             if self.parent is not None:
-                self.parent.update_privacy_budget()
+                self.parent.update_privacy_budget(delta, self.privacy_budget)
 
         elif self.children_type == "exclusive":
-            self.privacy_budget = self.privacy_budget_local + max([0] + [c.privacy_budget for c in self.children])
+            prev_budget = self.privacy_budget
+            self.privacy_budget = max(self.privacy_budget, child_budget + self.privacy_budget_local)
 
             if self.parent is not None:
-                self.parent.update_privacy_budget()
+                self.parent.update_privacy_budget(self.privacy_budget - prev_budget, self.privacy_budget)
 
         else:
             raise RuntimeError
@@ -46,12 +45,10 @@ class ProvenanceEntity:
 
         self.privacy_budget_local += privacy_budget
 
-        self.update_privacy_budget()
+        self.update_privacy_budget(privacy_budget, self.privacy_budget)
 
     def add_child(self, children_type: ChildrenType) -> ProvenanceEntity:
-        pe = ProvenanceEntity(self, self.tag, children_type)
-        self.children.append(pe)
-        return pe
+        return ProvenanceEntity(self, self.tag, children_type)
 
     def renew_tag(self) -> None:
         global provenance_tag_counts
