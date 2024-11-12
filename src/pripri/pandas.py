@@ -267,6 +267,37 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         else:
             return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
+    @overload
+    def dropna(self,
+               *,
+               inplace      : Literal[True],
+               ignore_index : bool = ...,
+               **kwargs     : Any,
+               ) -> None: ...
+
+    @overload
+    def dropna(self,
+               *,
+               inplace      : bool = ...,
+               ignore_index : bool = ...,
+               **kwargs     : Any,
+               ) -> PrivDataFrame: ...
+
+    def dropna(self,
+               *,
+               inplace      : bool = False,
+               ignore_index : bool = False,
+               **kwargs : Any,
+               ) -> PrivDataFrame | None:
+        if ignore_index:
+            raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
+
+        if inplace:
+            self._value.dropna(inplace=inplace, **kwargs)
+            return None
+        else:
+            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), parent=self, inherit_len=True)
+
     def groupby(self,
                 by         : str | list[str], # TODO: support more
                 level      : Any                                = None,
@@ -522,6 +553,37 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             return None
         else:
             return PrivSeries(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), parent=self, inherit_len=True)
+
+    @overload
+    def dropna(self,
+               *,
+               inplace      : Literal[True],
+               ignore_index : bool = ...,
+               **kwargs     : Any,
+               ) -> None: ...
+
+    @overload
+    def dropna(self,
+               *,
+               inplace      : bool = ...,
+               ignore_index : bool = ...,
+               **kwargs     : Any,
+               ) -> PrivSeries: ...
+
+    def dropna(self,
+               *,
+               inplace      : bool = False,
+               ignore_index : bool = False,
+               **kwargs : Any,
+               ) -> PrivSeries | None:
+        if ignore_index:
+            raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
+
+        if inplace:
+            self._value.dropna(inplace=inplace, **kwargs)
+            return None
+        else:
+            return PrivSeries(data=self._value.dropna(inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
     def value_counts(self,
                      normalize : bool                               = False,

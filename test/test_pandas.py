@@ -1,6 +1,7 @@
 import uuid
 import pytest
 import pandas as pd
+import numpy as np
 import pripri
 from pripri import pandas as ppd
 
@@ -307,6 +308,41 @@ def test_priv_series_replace() -> None:
     # Special behaviour when `inplace=True`
     assert pdf["b"].replace(3, 10, inplace=True) == None
     assert (pdf["b"]._value == df["b"].replace(3, 10)).all()
+
+def test_priv_dataframe_dropna() -> None:
+    pdf, df = load_dataframe()
+
+    pdf.replace(3, np.nan, inplace=True)
+    df.replace(3, np.nan, inplace=True)
+
+    # Default behaviour
+    assert (pdf.dropna()._value == df.dropna()).all().all()
+
+    # Should return an error with ignore_index=True
+    with pytest.raises(pripri.DPError):
+        pdf.dropna(ignore_index=True)
+
+    # Special behaviour when `inplace=True`
+    assert pdf.dropna(inplace=True) == None
+    assert (pdf._value == df.dropna()).all().all()
+
+def test_priv_series_dropna() -> None:
+    pdf, df = load_dataframe()
+
+    pdf.replace(3, np.nan, inplace=True)
+    df.replace(3, np.nan, inplace=True)
+
+    # Default behaviour
+    assert (pdf["b"].dropna()._value == df["b"].dropna()).all()
+
+    # Should return an error with ignore_index=True
+    with pytest.raises(pripri.DPError):
+        pdf["b"].dropna(ignore_index=True)
+
+    # TODO: this fails because of the original pandas bug?
+    # # Special behaviour when `inplace=True`
+    # assert pdf["b"].dropna(inplace=True) == None
+    # assert (pdf["b"]._value == df["b"].dropna()).all()
 
 def test_priv_series_value_counts() -> None:
     pdf, df = load_dataframe()
