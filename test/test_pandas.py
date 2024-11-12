@@ -314,6 +314,26 @@ def test_priv_series_reset_index() -> None:
     assert df["a"].reset_index(drop=True, inplace=True) == None
     assert (pdf._value == df).all().all()
 
+def test_priv_dataframe_replace() -> None:
+    pdf, df = load_dataframe()
+
+    # Default behaviour
+    assert (pdf.replace(4, 10)._value == df.replace(4, 10)).all().all()
+
+    # Special behaviour when `inplace=True`
+    assert pdf.replace(3, 10, inplace=True) == None
+    assert (pdf._value == df.replace(3, 10)).all().all()
+
+def test_priv_series_replace() -> None:
+    pdf, df = load_dataframe()
+
+    # Default behaviour
+    assert (pdf["b"].replace(4, 10)._value == df["b"].replace(4, 10)).all()
+
+    # Special behaviour when `inplace=True`
+    assert pdf["b"].replace(3, 10, inplace=True) == None
+    assert (pdf["b"]._value == df["b"].replace(3, 10)).all()
+
 def test_priv_series_value_counts() -> None:
     pdf, df = load_dataframe()
 

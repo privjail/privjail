@@ -263,6 +263,37 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         else:
             return PrivDataFrame(data=self._value.reset_index(level, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
+    @overload
+    def replace(self,
+                to_replace : Any = ...,
+                value      : Any = ...,
+                *,
+                inplace    : Literal[True],
+                **kwargs   : Any,
+                ) -> None: ...
+
+    @overload
+    def replace(self,
+                to_replace : Any  = ...,
+                value      : Any  = ...,
+                *,
+                inplace    : bool = ...,
+                **kwargs   : Any,
+                ) -> PrivDataFrame: ...
+
+    def replace(self,
+                to_replace : Any  = None,
+                value      : Any  = None,
+                *,
+                inplace    : bool = False,
+                **kwargs   : Any,
+                ) -> PrivDataFrame | None:
+        if inplace:
+            self._value.replace(to_replace, value, inplace=inplace, **kwargs)
+            return None
+        else:
+            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), parent=self, inherit_len=True)
+
     def groupby(self,
                 by         : str | list[str], # TODO: support more
                 level      : Any                                = None,
@@ -300,6 +331,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
 class PrivDataFrameGroupBy:
     def __init__(self, groups: dict[Any, PrivDataFrame]):
+        # TODO: groups are ordered?
         self.groups = groups
 
     def __len__(self) -> int:
@@ -526,6 +558,37 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             return PrivSeries(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self, inherit_len=True)
         else:
             return PrivDataFrame(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self, inherit_len=True)
+
+    @overload
+    def replace(self,
+                to_replace : Any = ...,
+                value      : Any = ...,
+                *,
+                inplace    : Literal[True],
+                **kwargs   : Any,
+                ) -> None: ...
+
+    @overload
+    def replace(self,
+                to_replace : Any  = ...,
+                value      : Any  = ...,
+                *,
+                inplace    : bool = ...,
+                **kwargs   : Any,
+                ) -> PrivSeries: ...
+
+    def replace(self,
+                to_replace : Any  = None,
+                value      : Any  = None,
+                *,
+                inplace    : bool = False,
+                **kwargs   : Any,
+                ) -> PrivSeries | None:
+        if inplace:
+            self._value.replace(to_replace, value, inplace=inplace, **kwargs)
+            return None
+        else:
+            return PrivSeries(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
     def value_counts(self,
                      normalize : bool                               = False,
