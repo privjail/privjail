@@ -861,3 +861,17 @@ def crosstab(index        : PrivSeries | list[PrivSeries],
 
     # TODO: is it ok to set one of the series as the parent?
     return SensitiveDataFrame(data=counts, sensitivity=1, parent=index[0])
+
+def cut(x        : PrivSeries,
+        bins     : list[int] | list[float],
+        *args    : Any,
+        **kwargs : Any,
+        ) -> PrivSeries:
+    if not isinstance(x, PrivSeries):
+        raise DPError("`x` must be a PrivSeries.")
+
+    if not isinstance(bins, list):
+        raise DPError("`bins` must be a list.")
+
+    return PrivSeries(_pd.cut(x._value, bins, *args, **kwargs), parent=x, inherit_len=True)
+

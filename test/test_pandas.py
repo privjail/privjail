@@ -430,6 +430,17 @@ def test_crosstab() -> None:
 
     pripri.laplace_mechanism(counts, epsilon=1.0)
 
+def test_cut() -> None:
+    pdf, df = load_dataframe()
+
+    # Default behaviour
+    assert isinstance(ppd.cut(pdf["a"], bins=[0, 3, 6]), ppd.PrivSeries)
+    assert (ppd.cut(pdf["a"], bins=[0, 3, 6])._value == pd.cut(df["a"], bins=[0, 3, 6])).all()
+
+    # Should raise an error with a scalar bins
+    with pytest.raises(pripri.DPError):
+        ppd.cut(pdf["a"], bins=2) # type: ignore
+
 def test_dataframe_groupby() -> None:
     pdf, df = load_dataframe()
 
