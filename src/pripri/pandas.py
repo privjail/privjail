@@ -237,33 +237,6 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         return self._value.dtypes
 
     @overload
-    def reset_index(self,
-                    level    : Any = ...,
-                    *,
-                    inplace  : Literal[True],
-                    **kwargs : Any,
-                    ) -> None: ...
-    @overload
-    def reset_index(self,
-                    level    : Any  = ...,
-                    *,
-                    inplace  : bool = ...,
-                    **kwargs : Any,
-                    ) -> PrivDataFrame: ...
-
-    def reset_index(self,
-                    level    : Any  = None,
-                    *,
-                    inplace  : bool = False,
-                    **kwargs : Any,
-                    ) -> PrivDataFrame | None:
-        if inplace:
-            self._value.reset_index(level, inplace=inplace, **kwargs)
-            return None
-        else:
-            return PrivDataFrame(data=self._value.reset_index(level, inplace=inplace, **kwargs), parent=self, inherit_len=True)
-
-    @overload
     def replace(self,
                 to_replace : Any = ...,
                 value      : Any = ...,
@@ -518,46 +491,6 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     @property
     def dtypes(self) -> Any:
         return self._value.dtypes
-
-    @overload
-    def reset_index(self,
-                    level    : Any  = ...,
-                    *,
-                    drop     : bool = ...,
-                    inplace  : Literal[True],
-                    **kwargs : Any,
-                    ) -> None: ...
-    @overload
-    def reset_index(self,
-                    level    : Any = ...,
-                    *,
-                    drop     : Literal[True],
-                    inplace  : Literal[False],
-                    **kwargs : Any,
-                    ) -> PrivSeries: ...
-    @overload
-    def reset_index(self,
-                    level    : Any  = ...,
-                    *,
-                    drop     : bool = ...,
-                    inplace  : bool = ...,
-                    **kwargs : Any,
-                    ) -> PrivDataFrame: ...
-
-    def reset_index(self,
-                    level    : Any  = None,
-                    *,
-                    drop     : bool = False,
-                    inplace  : bool = False,
-                    **kwargs : Any,
-                    ) -> PrivDataFrame | PrivSeries | None:
-        if inplace:
-            self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs)
-            return None
-        elif drop:
-            return PrivSeries(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self, inherit_len=True)
-        else:
-            return PrivDataFrame(data=self._value.reset_index(level, drop=drop, inplace=inplace, **kwargs), parent=self, inherit_len=True)
 
     @overload
     def replace(self,

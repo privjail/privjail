@@ -219,8 +219,8 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf._value == df).all().all()
 
     # A private dataframe should be successfully assigned to a bool-filtered view
-    pdf[pdf["a"] < 3] = pdf[pdf["a"] > 3].reset_index(drop=True)
-    df[df["a"] < 3] = df[df["a"] > 3].reset_index(drop=True)
+    pdf[pdf["a"] < 3] = pdf[pdf["a"] < 4]
+    df[df["a"] < 3] = df[df["a"] < 4]
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
@@ -287,32 +287,6 @@ def test_priv_dataframe_setitem() -> None:
     # TODO: it might be legal to accept a slice
     with pytest.raises(pripri.DPError):
         pdf[2:5] = 0 # type: ignore
-
-def test_priv_dataframe_reset_index() -> None:
-    pdf, df = load_dataframe()
-
-    # Default behaviour
-    assert (pdf.reset_index()._value == df.reset_index()).all().all()
-
-    # Special behaviour when `inplace=True`
-    assert pdf.reset_index(inplace=True) == None
-    assert (pdf._value == df.reset_index()).all().all()
-
-def test_priv_series_reset_index() -> None:
-    pdf, df = load_dataframe()
-
-    # Default behaviour
-    assert isinstance(pdf["a"].reset_index(), ppd.PrivDataFrame)
-    assert (pdf["a"].reset_index()._value == df["a"].reset_index()).all().all()
-
-    # Special behaviour when `drop=True`
-    assert isinstance(pdf["a"].reset_index(drop=True), ppd.PrivSeries)
-    assert (pdf["a"].reset_index(drop=True)._value == df["a"].reset_index(drop=True)).all().all()
-
-    # Special behaviour when `drop=True` and `inplace=True`
-    assert pdf["a"].reset_index(drop=True, inplace=True) == None
-    assert df["a"].reset_index(drop=True, inplace=True) == None
-    assert (pdf._value == df).all().all()
 
 def test_priv_dataframe_replace() -> None:
     pdf, df = load_dataframe()
