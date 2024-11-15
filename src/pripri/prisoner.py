@@ -1,18 +1,19 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any
 from .provenance import ProvenanceEntity, new_provenance_root, get_privacy_budget_all, ChildrenType
+from .distance import Distance
 
 T = TypeVar("T")
 
 class Prisoner(Generic[T]):
     _value            : T
-    sensitivity       : float
+    distance          : Distance
     provenance_entity : ProvenanceEntity
     root_name         : str
 
     def __init__(self,
                  value         : T,
-                 sensitivity   : float,
+                 distance      : Distance,
                  *,
                  parent        : Prisoner[Any] | None = None,
                  root_name     : str | None           = None,
@@ -20,7 +21,7 @@ class Prisoner(Generic[T]):
                  children_type : ChildrenType         = "inclusive",
                  ):
         self._value = value
-        self.sensitivity = sensitivity
+        self.distance = distance
 
         if parent is None:
             if root_name is None:
@@ -36,10 +37,10 @@ class Prisoner(Generic[T]):
             self.provenance_entity.renew_tag()
 
     def __str__(self) -> str:
-        return f"Prisoner({type(self._value)}, sensitivity={self.sensitivity})"
+        return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
 
     def __repr__(self) -> str:
-        return f"Prisoner({type(self._value)}, sensitivity={self.sensitivity})"
+        return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
 
     def has_same_tag(self, other: Prisoner[Any]) -> bool:
         return self.provenance_entity.has_same_tag(other.provenance_entity)

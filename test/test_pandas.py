@@ -12,7 +12,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": [1, 2, 3, 4, 5],
         "b": [2, 4, 4, 4, 3],
     }
-    pdf = ppd.PrivDataFrame(data, root_name=str(uuid.uuid4()))
+    pdf = ppd.PrivDataFrame(data, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
@@ -26,13 +26,13 @@ def test_priv_dataframe_size() -> None:
     assert len(pdf.shape) == len(df.shape) == 2
     assert isinstance(pdf.shape[0], pripri.Prisoner)
     assert pdf.shape[0]._value == df.shape[0]
-    assert pdf.shape[0].sensitivity == 1
+    assert pdf.shape[0].distance.max() == 1
     assert pdf.shape[1] == len(pdf.columns) == len(df.columns)
 
     # The `size` member should be a sensitive value
     assert isinstance(pdf.size, pripri.Prisoner)
     assert pdf.size._value == df.size
-    assert pdf.size.sensitivity == len(pdf.columns) == len(df.columns)
+    assert pdf.size.distance.max() == len(pdf.columns) == len(df.columns)
 
     # Builtin `len()` function should raise an error because it must be an integer value
     with pytest.raises(pripri.DPError):
@@ -93,7 +93,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pripri.DPError): pdf["a"] >  [0, 1, 2, 3, 4]
     with pytest.raises(pripri.DPError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
+    x = pripri.Prisoner(value=0, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be compared against a private dataframe
     with pytest.raises(pripri.DPError): pdf == x
@@ -164,7 +164,7 @@ def test_priv_dataframe_getitem() -> None:
     with pytest.raises(pripri.DPError):
         pdf["a"][pdf_["a"] > 3]
 
-    x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
+    x = pripri.Prisoner(value=0, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be used as a column name
     with pytest.raises(pripri.DPError):
@@ -249,7 +249,7 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    x = pripri.Prisoner(value=0, sensitivity=1, root_name=str(uuid.uuid4()))
+    x = pripri.Prisoner(value=0, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be assigned to a single-column view
     with pytest.raises(pripri.DPError):
@@ -364,7 +364,7 @@ def test_priv_series_value_counts() -> None:
     counts = pdf["b"].value_counts(sort=False, values=values)
     assert isinstance(counts, ppd.SensitiveSeries)
     assert (counts.index == values).all()
-    assert counts.sensitivity == 1
+    assert counts.distance.max() == 1
     assert (counts._value == pd.Series({2: 1, 3: 1, 4: 3})).all()
 
     # Should return correct counts when only a part of possible values are provided
@@ -372,7 +372,7 @@ def test_priv_series_value_counts() -> None:
     counts = pdf["b"].value_counts(sort=False, values=values)
     assert isinstance(counts, ppd.SensitiveSeries)
     assert (counts.index == values).all()
-    assert counts.sensitivity == 1
+    assert counts.distance.max() == 1
     assert (counts._value == pd.Series({3: 1, 4: 3})).all()
 
     # Should return correct counts when non-existent values are provided
@@ -380,13 +380,13 @@ def test_priv_series_value_counts() -> None:
     counts = pdf["b"].value_counts(sort=False, values=values)
     assert isinstance(counts, ppd.SensitiveSeries)
     assert (counts.index == values).all()
-    assert counts.sensitivity == 1
+    assert counts.distance.max() == 1
     assert (counts._value == pd.Series({1: 0, 3: 1, 4: 3, 5: 0})).all()
 
     # Should be able to get a sensitive value from a sensitive series
     c4 = counts[4]
     assert isinstance(c4, pripri.Prisoner)
-    assert c4.sensitivity == 1
+    assert c4.distance.max() == 1
     assert c4._value == 3
 
     # Should be able to get a sensitive view from a sensitive series
@@ -394,7 +394,7 @@ def test_priv_series_value_counts() -> None:
     c4 = counts[1:3][4]
     assert isinstance(c3, pripri.Prisoner)
     assert isinstance(c4, pripri.Prisoner)
-    assert c3.sensitivity == c4.sensitivity == 1
+    assert c3.distance.max() == c4.distance.max() == 1
     assert c3._value == 1
     assert c4._value == 3
 

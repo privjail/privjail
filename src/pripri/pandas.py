@@ -10,6 +10,7 @@ from pandas.core.common import is_bool_indexer
 
 from .util import DPError
 from .prisoner import Prisoner
+from .distance import Distance, new_distance_var
 
 T = TypeVar("T")
 
@@ -39,6 +40,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     def __init__(self,
                  data        : Any,
+                 distance    : Distance,
                  index       : Any                  = None,
                  columns     : Any                  = None,
                  dtype       : Any                  = None,
@@ -54,7 +56,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise ValueError("inherit_len is required when parent is specified.")
 
         data = _pd.DataFrame(data, index, columns, dtype, copy)
-        super().__init__(value=data, sensitivity=-1, parent=parent, root_name=root_name, renew_tag=not inherit_len)
+        super().__init__(value=data, distance=distance, parent=parent, root_name=root_name, renew_tag=not inherit_len)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
@@ -77,16 +79,16 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
         if isinstance(key, str):
             # TODO: consider duplicated column names
-            return PrivSeries(data=self._value.__getitem__(key), parent=self, inherit_len=True)
+            return PrivSeries(data=self._value.__getitem__(key), distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(key, list) and all(isinstance(x, str) for x in key):
-            return PrivDataFrame(data=self._value.__getitem__(key), parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value.__getitem__(key), distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(key, Prisoner) and is_bool_indexer(key._value):
             if not self.has_same_tag(key):
                 raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
 
-            return PrivDataFrame(data=self._value.__getitem__(key._value), parent=self, inherit_len=False)
+            return PrivDataFrame(data=self._value.__getitem__(key._value), distance=self.distance, parent=self, inherit_len=False)
 
         else:
             raise ValueError
@@ -124,7 +126,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value == other._value, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value == other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -133,14 +135,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value == other, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value == other, distance=self.distance, parent=self, inherit_len=True)
 
     def __ne__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
         if isinstance(other, PrivDataFrame):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value != other._value, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value != other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -149,13 +151,13 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value != other, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value != other, distance=self.distance, parent=self, inherit_len=True)
 
     def __lt__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
-            return PrivDataFrame(data=self._value < other._value, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value < other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -164,14 +166,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value < other, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value < other, distance=self.distance, parent=self, inherit_len=True)
 
     def __le__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value <= other._value, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value <= other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -180,14 +182,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value <= other, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value <= other, distance=self.distance, parent=self, inherit_len=True)
 
     def __gt__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value > other._value, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value > other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -196,14 +198,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value > other, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value > other, distance=self.distance, parent=self, inherit_len=True)
 
     def __ge__(self, other: Any) -> PrivDataFrame:
         if isinstance(other, PrivDataFrame):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value >= other._value, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value >= other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -212,17 +214,17 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value >= other, parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value >= other, distance=self.distance, parent=self, inherit_len=True)
 
     @property
     def shape(self) -> tuple[Prisoner[int], int]:
-        nrows = Prisoner(value=self._value.shape[0], sensitivity=1, parent=self)
+        nrows = Prisoner(value=self._value.shape[0], distance=self.distance, parent=self)
         ncols = self._value.shape[1]
         return (nrows, ncols)
 
     @property
     def size(self) -> Prisoner[int]:
-        return Prisoner(value=self._value.size, sensitivity=len(self._value.columns), parent=self)
+        return Prisoner(value=self._value.size, distance=self.distance * len(self._value.columns), parent=self)
 
     @property
     def columns(self) -> _pd.Index[str]:
@@ -265,7 +267,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             self._value.replace(to_replace, value, inplace=inplace, **kwargs)
             return None
         else:
-            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), distance=self.distance, parent=self, inherit_len=True)
 
     @overload
     def dropna(self,
@@ -296,7 +298,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             self._value.dropna(inplace=inplace, **kwargs)
             return None
         else:
-            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), parent=self, inherit_len=True)
+            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), distance=self.distance, parent=self, inherit_len=True)
 
     def groupby(self,
                 by         : str | list[str], # TODO: support more
@@ -325,11 +327,17 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         dtypes = self._value.dtypes
         groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys}
 
+        dvars = {key: new_distance_var() for key, df in groups.items()}
+        constraints = {0 <= dvar for key, dvar in dvars.items()} | \
+                      {sum(dvars.values()) <= self.distance.expr} | \
+                      self.distance.constraints
+        distances = {key: Distance(dvar, constraints) for key, dvar in dvars.items()}
+
         # create a dummy prisoner to track exclusive provenance
-        prisoner_dummy = Prisoner(0, -1, parent=self, children_type="exclusive")
+        prisoner_dummy = Prisoner(0, Distance(1), parent=self, children_type="exclusive")
 
         # wrap each group by PrivDataFrame
-        priv_groups = {key: PrivDataFrame(df, parent=prisoner_dummy, inherit_len=False) for key, df in groups.items()}
+        priv_groups = {key: PrivDataFrame(df, distance=distances[key], parent=prisoner_dummy, inherit_len=False) for key, df in groups.items()}
 
         return PrivDataFrameGroupBy(priv_groups)
 
@@ -356,6 +364,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     def __init__(self,
                  data        : Any,
+                 distance    : Distance,
                  index       : Any                  = None,
                  *,
                  parent      : Prisoner[Any] | None = None,
@@ -369,7 +378,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise ValueError("inherit_len is required when parent is specified.")
 
         data = _pd.Series(data, index, **kwargs)
-        super().__init__(value=data, sensitivity=-1, parent=parent, root_name=root_name, renew_tag=not inherit_len)
+        super().__init__(value=data, distance=distance, parent=parent, root_name=root_name, renew_tag=not inherit_len)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
@@ -388,7 +397,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         if not self.has_same_tag(key):
             raise DPError("ser[bool_vec] cannot be accepted when len(ser) and len(bool_vec) can be different.")
 
-        return PrivSeries(data=self._value.__getitem__(unwrap_prisoner(key)), parent=self, inherit_len=False)
+        return PrivSeries(data=self._value.__getitem__(unwrap_prisoner(key)), distance=self.distance, parent=self, inherit_len=False)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, slice):
@@ -419,7 +428,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries(data=self._value == other._value, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value == other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -428,14 +437,14 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries(data=self._value == other, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value == other, distance=self.distance, parent=self, inherit_len=True)
 
     def __ne__(self, other: Any) -> PrivSeries: # type: ignore[override]
         if isinstance(other, PrivSeries):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries(data=self._value != other._value, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value != other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -444,14 +453,14 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries(data=self._value != other, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value != other, distance=self.distance, parent=self, inherit_len=True)
 
     def __lt__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries(data=self._value < other._value, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value < other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -460,14 +469,14 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries(data=self._value < other, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value < other, distance=self.distance, parent=self, inherit_len=True)
 
     def __le__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries(data=self._value <= other._value, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value <= other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -476,14 +485,14 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries(data=self._value <= other, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value <= other, distance=self.distance, parent=self, inherit_len=True)
 
     def __gt__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries(data=self._value > other._value, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value > other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -492,14 +501,14 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries(data=self._value > other, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value > other, distance=self.distance, parent=self, inherit_len=True)
 
     def __ge__(self, other: Any) -> PrivSeries:
         if isinstance(other, PrivSeries):
             if not self.has_same_tag(other):
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries(data=self._value >= other._value, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value >= other._value, distance=self.distance, parent=self, inherit_len=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -508,16 +517,16 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries(data=self._value >= other, parent=self, inherit_len=True)
+            return PrivSeries(data=self._value >= other, distance=self.distance, parent=self, inherit_len=True)
 
     @property
     def shape(self) -> tuple[Prisoner[int]]:
-        nrows = Prisoner(value=self._value.shape[0], sensitivity=1, parent=self)
+        nrows = Prisoner(value=self._value.shape[0], distance=self.distance, parent=self)
         return (nrows,)
 
     @property
     def size(self) -> Prisoner[int]:
-        return Prisoner(value=self._value.size, sensitivity=1, parent=self)
+        return Prisoner(value=self._value.size, distance=self.distance, parent=self)
 
     @property
     def dtypes(self) -> Any:
@@ -552,7 +561,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             self._value.replace(to_replace, value, inplace=inplace, **kwargs)
             return None
         else:
-            return PrivSeries(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), parent=self, inherit_len=True)
+            return PrivSeries(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), distance=self.distance, parent=self, inherit_len=True)
 
     @overload
     def dropna(self,
@@ -583,7 +592,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
             self._value.dropna(inplace=inplace, **kwargs)
             return None
         else:
-            return PrivSeries(data=self._value.dropna(inplace=inplace, **kwargs), parent=self, inherit_len=True)
+            return PrivSeries(data=self._value.dropna(inplace=inplace, **kwargs), distance=self.distance, parent=self, inherit_len=True)
 
     def value_counts(self,
                      normalize : bool                               = False,
@@ -620,7 +629,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         # Select only the specified values and fill non-existent counts with 0
         counts = counts.reindex(values).fillna(0).astype(int)
 
-        return SensitiveSeries(data=counts, sensitivity=1, parent=self)
+        return SensitiveSeries(data=counts, distance=self.distance, parent=self)
 
 class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     """Sensitive DataFrame.
@@ -637,12 +646,12 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
                  dtype       : Any                  = None,
                  copy        : bool                 = False,
                  *,
-                 sensitivity : float,
+                 distance    : Distance,
                  parent      : Prisoner[Any] | None = None,
                  root_name   : str | None           = None,
                  ):
         data = _pd.DataFrame(data, index, columns, dtype, copy)
-        super().__init__(value=data, sensitivity=sensitivity, parent=parent, root_name=root_name)
+        super().__init__(value=data, distance=distance, parent=parent, root_name=root_name)
 
     def __len__(self) -> int:
         return len(self._value)
@@ -686,9 +695,9 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
 
         data = self._value.__getitem__(key)
         if isinstance(data, _pd.DataFrame):
-            return SensitiveDataFrame(data=data, sensitivity=self.sensitivity, parent=self)
+            return SensitiveDataFrame(data=data, distance=self.distance, parent=self)
         elif isinstance(data, _pd.Series):
-            return SensitiveSeries(data=data, sensitivity=self.sensitivity, parent=self)
+            return SensitiveSeries(data=data, distance=self.distance, parent=self)
         else:
             raise RuntimeError
 
@@ -725,13 +734,13 @@ class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
                  data        : Any,
                  index       : Any                  = None,
                  *,
-                 sensitivity : float,
+                 distance    : Distance,
                  parent      : Prisoner[Any] | None = None,
                  root_name   : str | None           = None,
                  **kwargs    : Any,
                  ):
         data = _pd.Series(data, index, **kwargs)
-        super().__init__(value=data, sensitivity=sensitivity, parent=parent, root_name=root_name)
+        super().__init__(value=data, distance=distance, parent=parent, root_name=root_name)
 
     def __len__(self) -> int:
         return len(self._value)
@@ -767,9 +776,9 @@ class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         data = self._value.__getitem__(key)
         if isinstance(data, _pd.Series):
-            return SensitiveSeries(data=data, sensitivity=self.sensitivity, parent=self)
+            return SensitiveSeries(data=data, distance=self.distance, parent=self)
         else:
-            return Prisoner(value=data, sensitivity=self.sensitivity, parent=self)
+            return Prisoner(value=data, distance=self.distance, parent=self)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         raise DPError("Assignment to sensitive series is not allowed.")
@@ -793,7 +802,7 @@ class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         raise DPError("Comparison against sensitive series is not allowed.")
 
 def read_csv(filepath: str, **kwargs: Any) -> PrivDataFrame:
-    return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), root_name=filepath, inherit_len=False)
+    return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), distance=Distance(1), root_name=filepath, inherit_len=False)
 
 def crosstab(index        : PrivSeries | list[PrivSeries],
              columns      : PrivSeries | list[PrivSeries],
@@ -860,7 +869,7 @@ def crosstab(index        : PrivSeries | list[PrivSeries],
     counts = counts.reindex(rowvalues, axis="index").reindex(colvalues, axis="columns").fillna(0).astype(int)
 
     # TODO: is it ok to set one of the series as the parent?
-    return SensitiveDataFrame(data=counts, sensitivity=1, parent=index[0])
+    return SensitiveDataFrame(data=counts, distance=index[0].distance, parent=index[0])
 
 def cut(x        : PrivSeries,
         bins     : list[int] | list[float],
@@ -873,5 +882,4 @@ def cut(x        : PrivSeries,
     if not isinstance(bins, list):
         raise DPError("`bins` must be a list.")
 
-    return PrivSeries(_pd.cut(x._value, bins, *args, **kwargs), parent=x, inherit_len=True)
-
+    return PrivSeries(_pd.cut(x._value, bins, *args, **kwargs), distance=x.distance, parent=x, inherit_len=True)
