@@ -9,10 +9,10 @@ def test_distance() -> None:
     d = distance.Distance(1)
     assert d.max() == 1
 
-    d = distance.Distance(d.expr * 2)
+    d = d * 2
     assert d.max() == 2
 
-    d = distance.Distance(d.expr + 1)
+    d = d + 1
     assert d.max() == 3
 
     x = distance.new_distance_var()
@@ -29,16 +29,16 @@ def test_distance() -> None:
     d = distance.Distance(x, constraints)
     assert d.max() == 1
 
-    d = distance.Distance(d.expr + y, d.constraints)
+    d = d + y
     assert d.max() == 1
 
-    d = distance.Distance(d.expr + z, d.constraints)
+    d = d + z
     assert d.max() == 1
 
-    d = distance.Distance(d.expr * 2, d.constraints)
+    d = d * 2
     assert d.max() == 2
 
-    d = distance.Distance(d.expr + 1, d.constraints)
+    d = d + 1
     assert d.max() == 3
 
     x_ = distance.new_distance_var()
@@ -55,20 +55,20 @@ def test_distance() -> None:
     d = distance.Distance(x_, constraints)
     assert d.max() == 1
 
-    d = distance.Distance(d.expr + y_ + z_, d.constraints)
+    d = d + y_ + z_
     assert d.max() == 1
 
-    d = distance.Distance(d.expr * 4, d.constraints)
+    d = d * 4
     assert d.max() == 4
 
-    d = distance.Distance(d.expr + x, d.constraints)
+    d = d + x
     assert d.max() == 5
 
-    d = distance.Distance(d.expr + y + z, d.constraints)
+    d = d + y + z
     assert d.max() == 5
 
-    d = distance.Distance(d.expr * 2, d.constraints)
+    d = d * 2
     assert d.max() == 10
 
-    d = distance.Distance(d.expr + x_, d.constraints)
+    d = d + x_
     assert d.max() == 11
