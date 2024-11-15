@@ -11,6 +11,7 @@ dependencies = [
     "pytest>=8.3.3",
     "mypy>=1.13.0",
     "pandas-stubs>=2.2.3.241009",
+    "sympy>=1.13.3",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"
