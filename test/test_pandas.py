@@ -484,22 +484,22 @@ def test_privacy_budget() -> None:
     counts = pdf1["b"].value_counts(sort=False, values=[3, 4, 5])
     pripri.laplace_mechanism(counts, epsilon=epsilon)
 
-    assert pripri.current_privacy_budget()[pdf.root_name] == epsilon
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon
 
     pripri.laplace_mechanism(counts[4], epsilon=epsilon)
 
-    assert pripri.current_privacy_budget()[pdf.root_name] == epsilon * 2
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
 
     pdf2 = pdf[pdf["a"] >= 3]
 
     pripri.laplace_mechanism(pdf2.shape[0], epsilon=epsilon)
 
-    assert pripri.current_privacy_budget()[pdf.root_name] == epsilon * 3
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     # Privacy budget for different data sources should be managed independently
     pdf_, df_ = load_dataframe()
 
     pripri.laplace_mechanism(pdf_.shape[0], epsilon=epsilon)
 
-    assert pripri.current_privacy_budget()[pdf.root_name] == epsilon * 3
-    assert pripri.current_privacy_budget()[pdf_.root_name] == epsilon
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    assert pripri.current_privacy_budget()[pdf_.root_name()] == epsilon
