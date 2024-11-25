@@ -1,11 +1,11 @@
+from __future__ import annotations
+from typing import Any
 import uuid
 import pytest
 import pandas as pd
 import numpy as np
 import pripri
 from pripri import pandas as ppd
-
-# TODO: add tests for SensitiveDataFrame/Series
 
 def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     data = {
@@ -17,6 +17,20 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
     return pdf, df
+
+def assert_equal_sensitive_series(sensitive_ser: ppd.SensitiveSeries, expected_ser: pd.Series[Any]) -> None:
+    assert isinstance(sensitive_ser, ppd.SensitiveSeries)
+    assert (sensitive_ser.index == expected_ser.index).all()
+    for idx in sensitive_ser.index:
+        assert sensitive_ser.loc[idx]._value == expected_ser.loc[idx]
+
+def assert_equal_sensitive_dataframes(sensitive_df: ppd.SensitiveDataFrame, expected_df: pd.DataFrame) -> None:
+    assert isinstance(sensitive_df, ppd.SensitiveDataFrame)
+    assert (sensitive_df.index == expected_df.index).all()
+    assert (sensitive_df.columns == expected_df.columns).all()
+    for idx in sensitive_df.index:
+        for col in sensitive_df.columns:
+            assert sensitive_df.loc[idx, col]._value == expected_df.loc[idx, col]
 
 def test_priv_dataframe_size() -> None:
     pdf, df = load_dataframe()
@@ -362,26 +376,20 @@ def test_priv_series_value_counts() -> None:
     # Should return correct counts when all possible values are provided
     values = [2, 3, 4]
     counts = pdf["b"].value_counts(sort=False, values=values)
-    assert isinstance(counts, ppd.SensitiveSeries)
-    assert (counts.index == values).all()
-    assert counts.distance.max() == 1
-    assert (counts._value == pd.Series({2: 1, 3: 1, 4: 3})).all()
+    assert_equal_sensitive_series(counts, pd.Series({2: 1, 3: 1, 4: 3}))
+    assert counts.iloc[0].distance.max() == 1
 
     # Should return correct counts when only a part of possible values are provided
     values = [3, 4]
     counts = pdf["b"].value_counts(sort=False, values=values)
-    assert isinstance(counts, ppd.SensitiveSeries)
-    assert (counts.index == values).all()
-    assert counts.distance.max() == 1
-    assert (counts._value == pd.Series({3: 1, 4: 3})).all()
+    assert_equal_sensitive_series(counts, pd.Series({3: 1, 4: 3}))
+    assert counts.iloc[0].distance.max() == 1
 
     # Should return correct counts when non-existent values are provided
     values = [1, 3, 4, 5]
     counts = pdf["b"].value_counts(sort=False, values=values)
-    assert isinstance(counts, ppd.SensitiveSeries)
-    assert (counts.index == values).all()
-    assert counts.distance.max() == 1
-    assert (counts._value == pd.Series({1: 0, 3: 1, 4: 3, 5: 0})).all()
+    assert_equal_sensitive_series(counts, pd.Series({1: 0, 3: 1, 4: 3, 5: 0}))
+    assert counts.iloc[0].distance.max() == 1
 
     # Should be able to get a sensitive value from a sensitive series
     c4 = counts[4]
@@ -426,7 +434,7 @@ def test_crosstab() -> None:
                         [0, 0, 0, 1, 0],
                         [0, 0, 1, 0, 0]],
                        index=rowvalues, columns=colvalues)
-    assert (counts._value == ans).all().all()
+    assert_equal_sensitive_dataframes(counts, ans)
 
     pripri.laplace_mechanism(counts, epsilon=1.0)
 

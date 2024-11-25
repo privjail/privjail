@@ -2,17 +2,25 @@ from typing import Any
 import numpy as _np
 from .util import DPError
 from .prisoner import Prisoner
+from .pandas import SensitiveSeries, SensitiveDataFrame
 
-def laplace_mechanism(prisoner: Prisoner[Any], epsilon: float) -> Any:
-    sensitivity = prisoner.distance.max()
+def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries | SensitiveDataFrame, epsilon: float) -> Any:
+    if isinstance(prisoner, SensitiveSeries) or isinstance(prisoner, SensitiveDataFrame):
+        return prisoner.map(lambda x: laplace_mechanism(x, epsilon))
 
-    if sensitivity <= 0:
-        raise DPError(f"Invalid sensitivity ({sensitivity})")
+    elif isinstance(prisoner, Prisoner):
+        sensitivity = prisoner.distance.max()
 
-    if epsilon <= 0:
-        raise DPError(f"Invalid epsilon ({epsilon})")
+        if sensitivity <= 0:
+            raise DPError(f"Invalid sensitivity ({sensitivity})")
 
-    prisoner.consume_privacy_budget(epsilon)
+        if epsilon <= 0:
+            raise DPError(f"Invalid epsilon ({epsilon})")
 
-    # TODO: type check for values, otherwise sensitive values can be leaked via errors (e.g., string)
-    return _np.random.laplace(loc=prisoner._value, scale=sensitivity / epsilon)
+        prisoner.consume_privacy_budget(epsilon)
+
+        # TODO: type check for values, otherwise sensitive values can be leaked via errors (e.g., string)
+        return _np.random.laplace(loc=prisoner._value, scale=sensitivity / epsilon)
+
+    else:
+        raise ValueError

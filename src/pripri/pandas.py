@@ -10,7 +10,7 @@ from pandas.core.common import is_bool_indexer
 
 from .util import DPError
 from .prisoner import Prisoner
-from .distance import Distance, new_distance_var
+from .distance import Distance
 
 T = TypeVar("T")
 
@@ -330,19 +330,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         dtypes = self._value.dtypes
         groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys}
 
-        # Create new child distance variables to express exclusiveness
-        # d1 + d2 + ... + dn <= d_current
-        dvars = {key: new_distance_var() for key, df in groups.items()}
-        constraints = {0 <= dvar for key, dvar in dvars.items()} | \
-                      {sum(dvars.values()) <= self.distance.expr} | \
-                      self.distance.constraints
-        distances = {key: Distance(dvar, constraints) for key, dvar in dvars.items()}
+        # create new child distance variables to express exclusiveness
+        distances = self.distance.create_exclusive_distances(len(groups))
 
         # create a dummy prisoner to track exclusive provenance
         prisoner_dummy = Prisoner(0, self.distance, parents=[self], tag_type="renew", children_type="exclusive")
 
         # wrap each group by PrivDataFrame
-        priv_groups = {key: PrivDataFrame(df, distance=distances[key], parents=[prisoner_dummy], preserve_row=False) for key, df in groups.items()}
+        priv_groups = {key: PrivDataFrame(df, distance=d, parents=[prisoner_dummy], preserve_row=False) for (key, df), d in zip(groups.items(), distances)}
 
         return PrivDataFrameGroupBy(priv_groups)
 
@@ -370,7 +365,7 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
     def __init__(self,
                  data         : Any,
                  distance     : Distance,
-                 index        : Any                  = None,
+                 index        : Any                 = None,
                  *,
                  parents      : list[Prisoner[Any]] = [],
                  root_name    : str | None          = None,
@@ -637,177 +632,34 @@ class PrivSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
         # Select only the specified values and fill non-existent counts with 0
         counts = counts.reindex(values).fillna(0).astype(int)
 
-        return SensitiveSeries(data=counts, distance=self.distance, parents=[self])
+        distances = self.distance.create_exclusive_distances(counts.size)
 
-class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
+        prisoner_dummy = Prisoner(0, self.distance, parents=[self], tag_type="renew", children_type="exclusive")
+
+        priv_counts = SensitiveSeries(index=counts.index, dtype="object")
+        for i, idx in enumerate(counts.index):
+            priv_counts.loc[idx] = Prisoner(counts.loc[idx], distance=distances[i], parents=[prisoner_dummy])
+
+        return priv_counts
+
+class SensitiveDataFrame(_pd.DataFrame):
     """Sensitive DataFrame.
 
     Each value in this dataframe object is considered a sensitive value.
     The numbers of rows and columns are not sensitive.
     This is typically created by counting queries like `pandas.crosstab()` and `pandas.pivot_table()`.
     """
+    pass
 
-    def __init__(self,
-                 data        : Any,
-                 distance    : Distance,
-                 index       : Any                 = None,
-                 columns     : Any                 = None,
-                 dtype       : Any                 = None,
-                 copy        : bool                = False,
-                 *,
-                 parents     : list[Prisoner[Any]] = [],
-                 root_name   : str | None          = None,
-                 ):
-        data = _pd.DataFrame(data, index, columns, dtype, copy)
-        super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
-
-    def __len__(self) -> int:
-        return len(self._value)
-
-    @property
-    def shape(self) -> tuple[int, int]:
-        return self._value.shape
-
-    @property
-    def size(self) -> int:
-        return self._value.size
-
-    @property
-    def index(self) -> _pd.Index[Any]:
-        return self._value.index
-
-    @index.setter
-    def index(self, value: _pd.Index[Any]) -> None:
-        self._value.index = value
-
-    @property
-    def columns(self) -> _pd.Index[str]:
-        return self._value.columns
-
-    @columns.setter
-    def columns(self, value: _pd.Index[str]) -> None:
-        self._value.columns = value
-
-    @property
-    def dtypes(self) -> _pd.Series[Any]:
-        return self._value.dtypes
-
-    @overload
-    def __getitem__(self, key: _pd.DataFrame | _pd.Series[Any] | list[Any]) -> SensitiveDataFrame: ...
-    @overload
-    def __getitem__(self, key: Any) -> SensitiveSeries: ...
-
-    def __getitem__(self, key: Any) -> SensitiveDataFrame | SensitiveSeries:
-        if isinstance(key, Prisoner):
-            raise DPError("Sensitive values cannot be accepted as keys for sensitive dataframe.")
-
-        data = self._value.__getitem__(key)
-        if isinstance(data, _pd.DataFrame):
-            return SensitiveDataFrame(data=data, distance=self.distance, parents=[self])
-        elif isinstance(data, _pd.Series):
-            return SensitiveSeries(data=data, distance=self.distance, parents=[self])
-        else:
-            raise RuntimeError
-
-    def __setitem__(self, key: Any, value: Any) -> None:
-        raise DPError("Assignment to sensitive datais not allowed.")
-
-    def __eq__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive dataframe is not allowed.")
-
-    def __ne__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive dataframe is not allowed.")
-
-    def __lt__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive dataframe is not allowed.")
-
-    def __le__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive dataframe is not allowed.")
-
-    def __gt__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive dataframe is not allowed.")
-
-    def __ge__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive dataframe is not allowed.")
-
-class SensitiveSeries(Prisoner[_pd.Series]): # type: ignore[type-arg]
+class SensitiveSeries(_pd.Series): # type: ignore[type-arg]
     """Sensitive Series.
 
     Each value in this series object is considered a sensitive value.
     The numbers of values are not sensitive.
     This is typically created by counting queries like `PrivSeries.value_counts()`.
     """
+    pass
 
-    def __init__(self,
-                 data        : Any,
-                 distance    : Distance,
-                 index       : Any                 = None,
-                 *,
-                 parents     : list[Prisoner[Any]] = [],
-                 root_name   : str | None          = None,
-                 **kwargs    : Any,
-                 ):
-        data = _pd.Series(data, index, **kwargs)
-        super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
-
-    def __len__(self) -> int:
-        return len(self._value)
-
-    @property
-    def shape(self) -> tuple[int]:
-        return self._value.shape
-
-    @property
-    def size(self) -> int:
-        return self._value.size
-
-    @property
-    def index(self) -> _pd.Index[Any]:
-        return self._value.index
-
-    @index.setter
-    def index(self, value: _pd.Index[Any]) -> None:
-        self._value.index = value
-
-    @property
-    def dtypes(self) -> Any:
-        return self._value.dtypes
-
-    @overload
-    def __getitem__(self, key: _pd.Series[Any] | list[Any] | slice) -> SensitiveSeries: ...
-    @overload
-    def __getitem__(self, key: Any) -> Prisoner[Any]: ...
-
-    def __getitem__(self, key: Any) -> SensitiveSeries | Prisoner[Any]:
-        if isinstance(key, Prisoner):
-            raise DPError("Sensitive values cannot be accepted as keys for sensitive series.")
-
-        data = self._value.__getitem__(key)
-        if isinstance(data, _pd.Series):
-            return SensitiveSeries(data=data, distance=self.distance, parents=[self])
-        else:
-            return Prisoner(value=data, distance=self.distance, parents=[self])
-
-    def __setitem__(self, key: Any, value: Any) -> None:
-        raise DPError("Assignment to sensitive series is not allowed.")
-
-    def __eq__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive series is not allowed.")
-
-    def __ne__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive series is not allowed.")
-
-    def __lt__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive series is not allowed.")
-
-    def __le__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive series is not allowed.")
-
-    def __gt__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive series is not allowed.")
-
-    def __ge__(self, other: Any) -> Any:
-        raise DPError("Comparison against sensitive series is not allowed.")
 
 def read_csv(filepath: str, **kwargs: Any) -> PrivDataFrame:
     return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), distance=Distance(1), root_name=filepath)
@@ -876,7 +728,18 @@ def crosstab(index        : PrivSeries | list[PrivSeries],
     # Select only the specified values and fill non-existent counts with 0
     counts = counts.reindex(rowvalues, axis="index").reindex(colvalues, axis="columns").fillna(0).astype(int)
 
-    return SensitiveDataFrame(data=counts, distance=index[0].distance, parents=list(index + columns))
+    distances = index[0].distance.create_exclusive_distances(counts.size)
+
+    prisoner_dummy = Prisoner(0, index[0].distance, parents=list(index + columns), tag_type="renew", children_type="exclusive")
+
+    priv_counts = SensitiveDataFrame(index=counts.index, columns=counts.columns)
+    i = 0
+    for idx in counts.index:
+        for col in counts.columns:
+            priv_counts.loc[idx, col] = Prisoner(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
+            i += 1
+
+    return priv_counts
 
 def cut(x        : PrivSeries,
         bins     : list[int] | list[float],

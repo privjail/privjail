@@ -23,5 +23,14 @@ class Distance:
     def max(self) -> int | float:
         return _sp.solvers.simplex.lpmax(self.expr, self.constraints)[0] # type: ignore[no-any-return]
 
+    def create_exclusive_distances(self, n_children: int) -> list[Distance]:
+        # Create new child distance variables to express exclusiveness
+        # d1 + d2 + ... + dn <= d_current
+        dvars = [new_distance_var() for i in range(n_children)]
+        constraints = {0 <= dvar for dvar in dvars} | \
+                      {sum(dvars) <= self.expr} | \
+                      self.constraints
+        return [Distance(dvar, constraints) for dvar in dvars]
+
 def new_distance_var() -> Any:
     return _sp.Dummy()
