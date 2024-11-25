@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypeVar, Generic, Any
+from typing import TypeVar, Generic, Any, overload
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
 from .distance import Distance
@@ -63,69 +63,7 @@ class Prisoner(Generic[T]):
         else:
             return self.parents[0].root_name()
 
-class SensitiveRealNum(Prisoner[realnum]):
-    def __init__(self,
-                 value         : realnum,
-                 distance      : Distance            = Distance(0),
-                 *,
-                 parents       : list[Prisoner[Any]] = [],
-                 root_name     : str | None          = None,
-                 tag_type      : NewTagType          = "none",
-                 children_type : ChildrenType        = "inclusive",
-                 ):
-        if not is_realnum(value):
-            raise ValueError("`value` must be a real number for SensitveRealNumber.")
-        super().__init__(value, distance, parents=parents, root_name=root_name, tag_type=tag_type, children_type=children_type)
-
-    def __add__(self, other: realnum | SensitiveRealNum) -> SensitiveRealNum:
-        if is_realnum(other):
-            return SensitiveRealNum(self._value + other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveRealNum):
-            return SensitiveRealNum(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number or SensitiveRealNum.")
-
-    def __radd__(self, other: realnum | SensitiveRealNum) -> SensitiveRealNum: # type: ignore[misc]
-        if is_realnum(other):
-            return SensitiveRealNum(self._value + other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveRealNum):
-            return SensitiveRealNum(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number or SensitiveRealNum.")
-
-    def __sub__(self, other: realnum | SensitiveRealNum) -> SensitiveRealNum:
-        if is_realnum(other):
-            return SensitiveRealNum(self._value - other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveRealNum):
-            return SensitiveRealNum(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number or SensitiveRealNum.")
-
-    def __rsub__(self, other: realnum | SensitiveRealNum) -> SensitiveRealNum: # type: ignore[misc]
-        if is_realnum(other):
-            return SensitiveRealNum(self._value - other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveRealNum):
-            return SensitiveRealNum(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number or SensitiveRealNum.")
-
-    def __mul__(self, other: realnum) -> SensitiveRealNum:
-        if is_realnum(other):
-            return SensitiveRealNum(self._value * other, distance=self.distance * other, parents=[self])
-        elif isinstance(other, SensitiveRealNum):
-            raise DPError("Sensitive values cannot be multiplied by each other.")
-        else:
-            raise ValueError("`other` must be a real number.")
-
-    def __rmul__(self, other: realnum) -> SensitiveRealNum: # type: ignore[misc]
-        if is_realnum(other):
-            return SensitiveRealNum(self._value * other, distance=self.distance * other, parents=[self])
-        elif isinstance(other, SensitiveRealNum):
-            raise DPError("Sensitive values cannot be multiplied by each other.")
-        else:
-            raise ValueError("`other` must be a real number.")
-
-class SensitiveInt(SensitiveRealNum):
+class SensitiveInt(Prisoner[integer]):
     def __init__(self,
                  value         : integer,
                  distance      : Distance            = Distance(0),
@@ -139,7 +77,95 @@ class SensitiveInt(SensitiveRealNum):
             raise ValueError("`value` must be int for SensitveInt.")
         super().__init__(value, distance, parents=parents, root_name=root_name, tag_type=tag_type, children_type=children_type)
 
-class SensitiveFloat(SensitiveRealNum):
+    @overload
+    def __add__(self, other: integer | SensitiveInt) -> SensitiveInt: ...
+    @overload
+    def __add__(self, other: floating | SensitiveFloat) -> SensitiveFloat: ...
+
+    def __add__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+        if is_integer(other):
+            return SensitiveInt(self._value + other, distance=self.distance, parents=[self])
+        elif is_floating(other):
+            return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
+        elif isinstance(other, SensitiveInt):
+            return SensitiveInt(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
+        elif isinstance(other, SensitiveFloat):
+            return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    @overload
+    def __radd__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
+    @overload
+    def __radd__(self, other: floating) -> SensitiveFloat: ... # type: ignore[misc]
+
+    def __radd__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
+        if is_integer(other):
+            return SensitiveInt(other + self._value, distance=self.distance, parents=[self])
+        elif is_floating(other):
+            return SensitiveFloat(other + self._value, distance=self.distance, parents=[self])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    @overload
+    def __sub__(self, other: integer | SensitiveInt) -> SensitiveInt: ...
+    @overload
+    def __sub__(self, other: floating | SensitiveFloat) -> SensitiveFloat: ...
+
+    def __sub__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+        if is_integer(other):
+            return SensitiveInt(self._value - other, distance=self.distance, parents=[self])
+        elif is_floating(other):
+            return SensitiveFloat(self._value - other, distance=self.distance, parents=[self])
+        elif isinstance(other, SensitiveInt):
+            return SensitiveInt(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
+        elif isinstance(other, SensitiveFloat):
+            return SensitiveFloat(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    @overload
+    def __rsub__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
+    @overload
+    def __rsub__(self, other: floating) -> SensitiveFloat: ... # type: ignore[misc]
+
+    def __rsub__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
+        if is_integer(other):
+            return SensitiveInt(other - self._value, distance=self.distance, parents=[self])
+        elif is_floating(other):
+            return SensitiveFloat(other - self._value, distance=self.distance, parents=[self])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    @overload
+    def __mul__(self, other: integer) -> SensitiveInt: ...
+    @overload
+    def __mul__(self, other: floating) -> SensitiveFloat: ...
+
+    def __mul__(self, other: realnum) -> SensitiveInt | SensitiveFloat:
+        if is_integer(other):
+            return SensitiveInt(self._value * other, distance=self.distance * other, parents=[self])
+        elif is_floating(other):
+            return SensitiveFloat(self._value * other, distance=self.distance * other, parents=[self])
+        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
+            raise DPError("Sensitive values cannot be multiplied by each other.")
+        else:
+            raise ValueError("`other` must be a real number.")
+
+    @overload
+    def __rmul__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
+    @overload
+    def __rmul__(self, other: floating) -> SensitiveFloat: ... # type: ignore[misc]
+
+    def __rmul__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
+        if is_integer(other):
+            return SensitiveInt(other * self._value, distance=self.distance * other, parents=[self])
+        elif is_floating(other):
+            return SensitiveFloat(other * self._value, distance=self.distance * other, parents=[self])
+        else:
+            raise ValueError("`other` must be a real number.")
+
+class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
                  value         : floating,
                  distance      : Distance            = Distance(0),
@@ -152,6 +178,48 @@ class SensitiveFloat(SensitiveRealNum):
         if not is_floating(value):
             raise ValueError("`value` must be float for SensitveFloat.")
         super().__init__(value, distance, parents=parents, root_name=root_name, tag_type=tag_type, children_type=children_type)
+
+    def __add__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+        if is_realnum(other):
+            return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
+        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
+            return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    def __radd__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
+        if is_realnum(other):
+            return SensitiveFloat(other + self._value, distance=self.distance, parents=[self])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    def __sub__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+        if is_realnum(other):
+            return SensitiveFloat(self._value - other, distance=self.distance, parents=[self])
+        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
+            return SensitiveFloat(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    def __rsub__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
+        if is_realnum(other):
+            return SensitiveFloat(other - self._value, distance=self.distance, parents=[self])
+        else:
+            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+
+    def __mul__(self, other: realnum) -> SensitiveFloat:
+        if is_realnum(other):
+            return SensitiveFloat(self._value * other, distance=self.distance * other, parents=[self])
+        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
+            raise DPError("Sensitive values cannot be multiplied by each other.")
+        else:
+            raise ValueError("`other` must be a real number.")
+
+    def __rmul__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
+        if is_realnum(other):
+            return SensitiveFloat(other * self._value, distance=self.distance * other, parents=[self])
+        else:
+            raise ValueError("`other` must be a real number.")
 
 def current_privacy_budget() -> dict[str, float]:
     return get_privacy_budget_all()

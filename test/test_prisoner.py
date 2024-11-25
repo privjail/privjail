@@ -2,12 +2,15 @@ import pytest
 import uuid
 import pripri
 
-def new_sensitive_real_number(value: int | float) -> pripri.SensitiveRealNum:
-    return pripri.SensitiveRealNum(value, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
+def new_sensitive_int(value: int) -> pripri.SensitiveInt:
+    return pripri.SensitiveInt(value, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
 
 def test_sensitive_real_number() -> None:
-    x = new_sensitive_real_number(12)
+    x = new_sensitive_int(12)
+    assert isinstance(x, pripri.SensitiveInt)
+
     y = x * (1 / 12)
+    assert isinstance(y, pripri.SensitiveFloat)
 
     x = x + 1
     assert x._value == 13

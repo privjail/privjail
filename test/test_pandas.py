@@ -556,7 +556,7 @@ def test_privacy_budget_parallel_composition() -> None:
     # groupby()
     s = pripri.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
-        s += pdf_.shape[0] # type: ignore
+        s += pdf_.shape[0]
     assert s.distance.max() == 1
     assert s._value == len(pdf._value)
     pripri.laplace_mechanism(s, epsilon=epsilon)
