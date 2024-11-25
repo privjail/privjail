@@ -4,8 +4,8 @@ from .util import DPError
 from .prisoner import Prisoner
 from .pandas import SensitiveSeries, SensitiveDataFrame
 
-def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries | SensitiveDataFrame, epsilon: float) -> Any:
-    if isinstance(prisoner, SensitiveSeries) or isinstance(prisoner, SensitiveDataFrame):
+def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries[Any] | SensitiveDataFrame, epsilon: float) -> Any:
+    if isinstance(prisoner, (SensitiveSeries, SensitiveDataFrame)):
         return prisoner.map(lambda x: laplace_mechanism(x, epsilon))
 
     elif isinstance(prisoner, Prisoner):

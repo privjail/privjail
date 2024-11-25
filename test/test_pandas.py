@@ -18,7 +18,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     assert (pdf._value == df).all().all()
     return pdf, df
 
-def assert_equal_sensitive_series(sensitive_ser: ppd.SensitiveSeries, expected_ser: pd.Series[Any]) -> None:
+def assert_equal_sensitive_series(sensitive_ser: ppd.SensitiveSeries[Any], expected_ser: pd.Series[Any]) -> None:
     assert isinstance(sensitive_ser, ppd.SensitiveSeries)
     assert (sensitive_ser.index == expected_ser.index).all()
     for idx in sensitive_ser.index:
