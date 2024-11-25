@@ -490,24 +490,81 @@ def test_privacy_budget() -> None:
     epsilon = 0.1
     pdf1 = pdf[pdf["b"] >= 3]
     counts = pdf1["b"].value_counts(sort=False, values=[3, 4, 5])
-    pripri.laplace_mechanism(counts, epsilon=epsilon)
 
+    pripri.laplace_mechanism(counts, epsilon=epsilon)
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon
 
     pripri.laplace_mechanism(counts[4], epsilon=epsilon)
-
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
 
     pdf2 = pdf[pdf["a"] >= 3]
 
     pripri.laplace_mechanism(pdf2.shape[0], epsilon=epsilon)
-
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     # Privacy budget for different data sources should be managed independently
     pdf_, df_ = load_dataframe()
 
     pripri.laplace_mechanism(pdf_.shape[0], epsilon=epsilon)
-
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
     assert pripri.current_privacy_budget()[pdf_.root_name()] == epsilon
+
+def test_privacy_budget_parallel_composition() -> None:
+    pdf, df = load_dataframe()
+
+    epsilon = 0.1
+
+    # value_counts()
+    counts = pdf["b"].value_counts(sort=False, values=[2, 3, 4])
+
+    pripri.laplace_mechanism(counts, epsilon=epsilon)
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon
+
+    pripri.laplace_mechanism(counts[2], epsilon=epsilon)
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+
+    pripri.laplace_mechanism(counts[3], epsilon=epsilon)
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+
+    pripri.laplace_mechanism(counts[3] + counts[4], epsilon=epsilon)
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+
+    pripri.laplace_mechanism(counts[2] - counts[4], epsilon=epsilon)
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+
+    # crosstab()
+    crosstab = ppd.crosstab(pdf["a"], pdf["b"], rowvalues=[1, 2, 3, 4, 5], colvalues=[1, 2, 3, 4, 5])
+
+    for idx in crosstab.index:
+        for col in crosstab.columns:
+            pripri.laplace_mechanism(crosstab.loc[idx, col], epsilon=epsilon)
+
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 4
+
+    s = 0
+    for idx in crosstab.index:
+        for col in crosstab.columns:
+            s += crosstab.loc[idx, col]
+    assert s.distance.max() == 1 # type: ignore
+    pripri.laplace_mechanism(s, epsilon=epsilon) # type: ignore
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 5
+
+    assert crosstab.loc[1, 5].distance.max() == 1 # type: ignore
+    pripri.laplace_mechanism(crosstab.loc[1, 5], epsilon=epsilon) # type: ignore
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 6
+
+    # groupby()
+    s = 0
+    for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
+        s += pdf_.shape[0] # type: ignore
+    assert s.distance.max() == 1 # type: ignore
+    assert s._value == len(pdf._value) # type: ignore
+    pripri.laplace_mechanism(s, epsilon=epsilon) # type: ignore
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 7
+
+    s = 0
+    for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
+        s += key * pdf_.shape[0]
+    assert s.distance.max() == 5 # type: ignore
+    pripri.laplace_mechanism(s, epsilon=epsilon) # type: ignore
+    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 8
