@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any
+from .util import realnum
 import sympy as _sp # type: ignore[import-untyped]
 
 class Distance:
@@ -7,20 +8,20 @@ class Distance:
         self.expr        = expr
         self.constraints = set(constraints) if constraints is not None else set()
 
-    def __add__(self, other: int | float | Distance) -> Distance:
+    def __add__(self, other: realnum | Distance) -> Distance:
         if isinstance(other, Distance):
             return Distance(self.expr + other.expr, self.constraints.union(other.constraints))
         else:
             return Distance(self.expr + other, self.constraints)
 
-    def __mul__(self, other: int | float | Distance) -> Distance:
+    def __mul__(self, other: realnum | Distance) -> Distance:
         if isinstance(other, Distance):
             # TODO: should we allow distance * distance?
             return Distance(self.expr * other.expr, self.constraints.union(other.constraints))
         else:
             return Distance(self.expr * other, self.constraints)
 
-    def max(self) -> int | float:
+    def max(self) -> realnum:
         return _sp.solvers.simplex.lpmax(self.expr, self.constraints)[0] # type: ignore[no-any-return]
 
     def create_exclusive_distances(self, n_children: int) -> list[Distance]:

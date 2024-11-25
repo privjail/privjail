@@ -9,7 +9,7 @@ from pandas.api.types import is_list_like
 from pandas.core.common import is_bool_indexer
 
 from .util import DPError
-from .prisoner import Prisoner
+from .prisoner import Prisoner, SensitiveInt
 from .distance import Distance
 
 T = TypeVar("T")
@@ -220,14 +220,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             return PrivDataFrame(data=self._value >= other, distance=self.distance, parents=[self], preserve_row=True)
 
     @property
-    def shape(self) -> tuple[Prisoner[int], int]:
-        nrows = Prisoner(value=self._value.shape[0], distance=self.distance, parents=[self])
+    def shape(self) -> tuple[SensitiveInt, int]:
+        nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         ncols = self._value.shape[1]
         return (nrows, ncols)
 
     @property
-    def size(self) -> Prisoner[int]:
-        return Prisoner(value=self._value.size, distance=self.distance * len(self._value.columns), parents=[self])
+    def size(self) -> SensitiveInt:
+        return SensitiveInt(value=self._value.size, distance=self.distance * len(self._value.columns), parents=[self])
 
     @property
     def columns(self) -> _pd.Index[str]:
@@ -525,13 +525,13 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             return PrivSeries[bool](data=self._value >= other, distance=self.distance, parents=[self], preserve_row=True)
 
     @property
-    def shape(self) -> tuple[Prisoner[int]]:
-        nrows = Prisoner(value=self._value.shape[0], distance=self.distance, parents=[self])
+    def shape(self) -> tuple[SensitiveInt]:
+        nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         return (nrows,)
 
     @property
-    def size(self) -> Prisoner[int]:
-        return Prisoner(value=self._value.size, distance=self.distance, parents=[self])
+    def size(self) -> SensitiveInt:
+        return SensitiveInt(value=self._value.size, distance=self.distance, parents=[self])
 
     @property
     def dtypes(self) -> Any:
@@ -640,7 +640,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         priv_counts = SensitiveSeries[int](index=counts.index, dtype="object")
         for i, idx in enumerate(counts.index):
-            priv_counts.loc[idx] = Prisoner(counts.loc[idx], distance=distances[i], parents=[prisoner_dummy])
+            priv_counts.loc[idx] = SensitiveInt(counts.loc[idx], distance=distances[i], parents=[prisoner_dummy])
 
         return priv_counts
 
@@ -739,7 +739,7 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
     i = 0
     for idx in counts.index:
         for col in counts.columns:
-            priv_counts.loc[idx, col] = Prisoner(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
+            priv_counts.loc[idx, col] = SensitiveInt(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
             i += 1
 
     return priv_counts
