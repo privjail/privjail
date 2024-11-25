@@ -38,3 +38,7 @@ class Distance:
 
 def new_distance_var() -> Any:
     return _sp.Dummy()
+
+def _max(a: Distance, b: Distance) -> Distance:
+    # TODO: sympy.solvers.solveset.NonlinearError may happen at lpmax() if Max() is included in the expression
+    return Distance(_sp.Max(a.expr, b.expr), a.constraints.union(b.constraints))

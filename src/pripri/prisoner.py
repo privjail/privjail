@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TypeVar, Generic, Any, overload
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
-from .distance import Distance
+from .distance import Distance, _max as dmax
 
 T = TypeVar("T")
 
@@ -220,6 +220,36 @@ class SensitiveFloat(Prisoner[floating]):
             return SensitiveFloat(other * self._value, distance=self.distance * other, parents=[self])
         else:
             raise ValueError("`other` must be a real number.")
+
+@overload
+def _max(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
+@overload
+def _max(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
+@overload
+def _max(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
+@overload
+def _max(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+
+def _max(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+    if isinstance(a, SensitiveInt) and isinstance(b, SensitiveInt):
+        return SensitiveInt(max(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
+    else:
+        return SensitiveFloat(max(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
+
+@overload
+def _min(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
+@overload
+def _min(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
+@overload
+def _min(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
+@overload
+def _min(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+
+def _min(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+    if isinstance(a, SensitiveInt) and isinstance(b, SensitiveInt):
+        return SensitiveInt(min(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
+    else:
+        return SensitiveFloat(min(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
 
 def current_privacy_budget() -> dict[str, float]:
     return get_privacy_budget_all()
