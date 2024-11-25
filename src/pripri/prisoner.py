@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypeVar, Generic, Any, overload
+from typing import TypeVar, Generic, Any, overload, Iterable, cast
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
 from .distance import Distance, _max as dmax
@@ -222,34 +222,100 @@ class SensitiveFloat(Prisoner[floating]):
             raise ValueError("`other` must be a real number.")
 
 @overload
-def _max(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
+def max2(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
 @overload
-def _max(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
+def max2(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
 @overload
-def _max(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
+def max2(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
 @overload
-def _max(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+def max2(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
 
-def _max(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+def max2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
     if isinstance(a, SensitiveInt) and isinstance(b, SensitiveInt):
         return SensitiveInt(max(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
     else:
         return SensitiveFloat(max(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
 
 @overload
-def _min(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
+def _max(*args: SensitiveInt) -> SensitiveInt: ...
 @overload
-def _min(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
+def _max(*args: SensitiveFloat) -> SensitiveFloat: ...
 @overload
-def _min(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
+def _max(*args: Iterable[SensitiveInt]) -> SensitiveInt: ...
 @overload
-def _min(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+def _max(*args: Iterable[SensitiveFloat]) -> SensitiveFloat: ...
+@overload
+def _max(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat: ...
 
-def _min(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+def _max(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+    if len(args) == 0:
+        raise TypeError("max() expected at least one argment.")
+
+    if len(args) == 1:
+        if not isinstance(args[0], Iterable):
+            raise TypeError("The first arg passed to max() is not iterable.")
+        iterable = args[0]
+    else:
+        iterable = cast(tuple[SensitiveInt | SensitiveFloat, ...], args)
+
+    it = iter(iterable)
+    try:
+        result = next(it)
+    except StopIteration:
+        raise ValueError("List passed to max() is empty.")
+
+    for x in it:
+        result = max2(result, x)
+
+    return result
+
+@overload
+def min2(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
+@overload
+def min2(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
+@overload
+def min2(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
+@overload
+def min2(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+
+def min2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
     if isinstance(a, SensitiveInt) and isinstance(b, SensitiveInt):
         return SensitiveInt(min(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
     else:
         return SensitiveFloat(min(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
+
+@overload
+def _min(*args: SensitiveInt) -> SensitiveInt: ...
+@overload
+def _min(*args: SensitiveFloat) -> SensitiveFloat: ...
+@overload
+def _min(*args: Iterable[SensitiveInt]) -> SensitiveInt: ...
+@overload
+def _min(*args: Iterable[SensitiveFloat]) -> SensitiveFloat: ...
+@overload
+def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat: ...
+
+def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
+    if len(args) == 0:
+        raise TypeError("min() expected at least one argment.")
+
+    if len(args) == 1:
+        if not isinstance(args[0], Iterable):
+            raise TypeError("The first arg passed to min() is not iterable.")
+        iterable = args[0]
+    else:
+        iterable = cast(tuple[SensitiveInt | SensitiveFloat, ...], args)
+
+    it = iter(iterable)
+    try:
+        result = next(it)
+    except StopIteration:
+        raise ValueError("List passed to min() is empty.")
+
+    for x in it:
+        result = min2(result, x)
+
+    return result
 
 def current_privacy_budget() -> dict[str, float]:
     return get_privacy_budget_all()
