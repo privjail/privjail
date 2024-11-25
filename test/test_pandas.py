@@ -541,12 +541,12 @@ def test_privacy_budget_parallel_composition() -> None:
 
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 4
 
-    s = 0
+    s = pripri.SensitiveInt(0)
     for idx in crosstab.index:
         for col in crosstab.columns:
             s += crosstab.loc[idx, col]
-    assert s.distance.max() == 1 # type: ignore
-    pripri.laplace_mechanism(s, epsilon=epsilon) # type: ignore
+    assert s.distance.max() == 1
+    pripri.laplace_mechanism(s, epsilon=epsilon)
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 5
 
     assert crosstab.loc[1, 5].distance.max() == 1 # type: ignore
@@ -554,17 +554,17 @@ def test_privacy_budget_parallel_composition() -> None:
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 6
 
     # groupby()
-    s = 0
+    s = pripri.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
         s += pdf_.shape[0] # type: ignore
-    assert s.distance.max() == 1 # type: ignore
-    assert s._value == len(pdf._value) # type: ignore
-    pripri.laplace_mechanism(s, epsilon=epsilon) # type: ignore
+    assert s.distance.max() == 1
+    assert s._value == len(pdf._value)
+    pripri.laplace_mechanism(s, epsilon=epsilon)
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 7
 
-    s = 0
+    s = pripri.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
         s += key * pdf_.shape[0]
-    assert s.distance.max() == 5 # type: ignore
-    pripri.laplace_mechanism(s, epsilon=epsilon) # type: ignore
+    assert s.distance.max() == 5
+    pripri.laplace_mechanism(s, epsilon=epsilon)
     assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 8

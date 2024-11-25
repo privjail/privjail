@@ -24,6 +24,9 @@ class Distance:
     def max(self) -> realnum:
         return _sp.solvers.simplex.lpmax(self.expr, self.constraints)[0] # type: ignore[no-any-return]
 
+    def is_zero(self) -> bool:
+        return self.expr == 0 # type: ignore[no-any-return]
+
     def create_exclusive_distances(self, n_children: int) -> list[Distance]:
         # Create new child distance variables to express exclusiveness
         # d1 + d2 + ... + dn <= d_current

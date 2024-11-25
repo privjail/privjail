@@ -3,14 +3,13 @@ from typing import TypeVar, Generic, Any
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
 from .distance import Distance
-import numpy as _np
 
 T = TypeVar("T")
 
 class Prisoner(Generic[T]):
     _value            : T
     distance          : Distance
-    provenance_entity : ProvenanceEntity
+    provenance_entity : ProvenanceEntity | None
     parents           : list[Prisoner[Any]]
 
     def __init__(self,
@@ -24,15 +23,19 @@ class Prisoner(Generic[T]):
                  ):
         self._value   = value
         self.distance = distance
-        self.parents  = parents
+        self.parents  = [parent for parent in parents if not parent.distance.is_zero()]
 
-        if len(parents) == 0:
+        if distance.is_zero():
+            self.provenance_entity = None
+
+        elif len(self.parents) == 0:
             if root_name is None:
                 raise ValueError("Both parents and root_name are not specified.")
 
             self.provenance_entity = new_provenance_root(root_name)
+
         else:
-            pe_parents = [parent.provenance_entity for parent in parents]
+            pe_parents = [parent.provenance_entity for parent in self.parents if parent.provenance_entity is not None]
             self.provenance_entity = new_provenance_node(pe_parents, tag_type, children_type)
 
     def __str__(self) -> str:
@@ -42,12 +45,19 @@ class Prisoner(Generic[T]):
         return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
 
     def has_same_tag(self, other: Prisoner[Any]) -> bool:
-        return self.provenance_entity.has_same_tag(other.provenance_entity)
+        if self.provenance_entity is None and other.provenance_entity is None:
+            return True
+        elif self.provenance_entity is None or other.provenance_entity is None:
+            return False
+        else:
+            return self.provenance_entity.has_same_tag(other.provenance_entity)
 
     def consume_privacy_budget(self, privacy_budget: float) -> None:
+        assert self.provenance_entity is not None
         self.provenance_entity.accumulate_privacy_budget(privacy_budget)
 
     def root_name(self) -> str:
+        assert self.provenance_entity is not None
         if self.provenance_entity.tag is not None:
             return self.provenance_entity.tag.name
         else:
@@ -56,7 +66,7 @@ class Prisoner(Generic[T]):
 class SensitiveRealNum(Prisoner[realnum]):
     def __init__(self,
                  value         : realnum,
-                 distance      : Distance,
+                 distance      : Distance            = Distance(0),
                  *,
                  parents       : list[Prisoner[Any]] = [],
                  root_name     : str | None          = None,
@@ -118,7 +128,7 @@ class SensitiveRealNum(Prisoner[realnum]):
 class SensitiveInt(SensitiveRealNum):
     def __init__(self,
                  value         : integer,
-                 distance      : Distance,
+                 distance      : Distance            = Distance(0),
                  *,
                  parents       : list[Prisoner[Any]] = [],
                  root_name     : str | None          = None,
@@ -132,7 +142,7 @@ class SensitiveInt(SensitiveRealNum):
 class SensitiveFloat(SensitiveRealNum):
     def __init__(self,
                  value         : floating,
-                 distance      : Distance,
+                 distance      : Distance            = Distance(0),
                  *,
                  parents       : list[Prisoner[Any]] = [],
                  root_name     : str | None          = None,
