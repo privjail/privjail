@@ -10,19 +10,21 @@ class Distance:
 
     def __add__(self, other: realnum | Distance) -> Distance:
         if isinstance(other, Distance):
-            return Distance(self.expr + other.expr, self.constraints.union(other.constraints))
+            return Distance(self.expr + other.expr, self.constraints | other.constraints)
         else:
             return Distance(self.expr + other, self.constraints)
 
     def __mul__(self, other: realnum | Distance) -> Distance:
         if isinstance(other, Distance):
             # TODO: should we allow distance * distance?
-            return Distance(self.expr * other.expr, self.constraints.union(other.constraints))
+            return Distance(self.expr * other.expr, self.constraints | other.constraints)
         else:
             return Distance(self.expr * other, self.constraints)
 
     def max(self) -> realnum:
-        return _sp.solvers.simplex.lpmax(self.expr, self.constraints)[0] # type: ignore[no-any-return]
+        y = _sp.solvers.simplex.lpmax(self.expr, self.constraints)[0]
+        assert y.is_number
+        return int(y) if y.is_integer else float(y)
 
     def is_zero(self) -> bool:
         return self.expr == 0 # type: ignore[no-any-return]
@@ -40,5 +42,13 @@ def new_distance_var() -> Any:
     return _sp.Dummy()
 
 def _max(a: Distance, b: Distance) -> Distance:
-    # TODO: sympy.solvers.solveset.NonlinearError may happen at lpmax() if Max() is included in the expression
-    return Distance(_sp.Max(a.expr, b.expr), a.constraints.union(b.constraints))
+    expr = _sp.Max(a.expr, b.expr)
+    if expr.has(_sp.Max):
+        # sympy.solvers.solveset.NonlinearError happens at lpmax() if Max() is included in the expression,
+        # so we remove Max() here. However, the below is a loose approximation for the max operator.
+        # TODO: improve handling for Max()
+        c = new_distance_var()
+        new_constraints = {c >= a.expr, c >= b.expr, c <= a.expr + b.expr}
+        return Distance(c, a.constraints | b.constraints | new_constraints)
+    else:
+        return Distance(expr, a.constraints | b.constraints)
