@@ -9,7 +9,7 @@ from pandas.api.types import is_list_like
 from pandas.core.common import is_bool_indexer
 
 from .util import DPError
-from .prisoner import Prisoner, SensitiveInt
+from .prisoner import Prisoner, SensitiveInt, _max as smax, _min as smin
 from .distance import Distance
 
 T = TypeVar("T")
@@ -662,7 +662,14 @@ class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
     The numbers of values are not sensitive.
     This is typically created by counting queries like `PrivSeries.value_counts()`.
     """
-    pass
+
+    def max(self):
+        # TODO: args?
+        return smax(self)
+
+    def min(self):
+        # TODO: args?
+        return smin(self)
 
 def read_csv(filepath: str, **kwargs: Any) -> PrivDataFrame:
     return PrivDataFrame(data=_pd.read_csv(filepath, **kwargs), distance=Distance(1), root_name=filepath)
