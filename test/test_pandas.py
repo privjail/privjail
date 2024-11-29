@@ -4,15 +4,15 @@ import uuid
 import pytest
 import pandas as pd
 import numpy as np
-import pripri
-from pripri import pandas as ppd
+import privjail as pj
+from privjail import pandas as ppd
 
 def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     data = {
         "a": [1, 2, 3, 4, 5],
         "b": [2, 4, 4, 4, 3],
     }
-    pdf = ppd.PrivDataFrame(data, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
+    pdf = ppd.PrivDataFrame(data, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
@@ -38,18 +38,18 @@ def test_priv_dataframe_size() -> None:
     # The `shape` member should be a pair of a sensitive value (row) and a non-sensitive value (column)
     assert isinstance(pdf.shape, tuple)
     assert len(pdf.shape) == len(df.shape) == 2
-    assert isinstance(pdf.shape[0], pripri.Prisoner)
+    assert isinstance(pdf.shape[0], pj.Prisoner)
     assert pdf.shape[0]._value == df.shape[0]
     assert pdf.shape[0].distance.max() == 1
     assert pdf.shape[1] == len(pdf.columns) == len(df.columns)
 
     # The `size` member should be a sensitive value
-    assert isinstance(pdf.size, pripri.Prisoner)
+    assert isinstance(pdf.size, pj.Prisoner)
     assert pdf.size._value == df.size
     assert pdf.size.distance.max() == len(pdf.columns) == len(df.columns)
 
     # Builtin `len()` function should raise an error because it must be an integer value
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         len(pdf)
 
 def test_priv_dataframe_comp() -> None:
@@ -84,63 +84,63 @@ def test_priv_dataframe_comp() -> None:
     assert ((pdf["a"] >= 3)._value == (df["a"] >= 3)).all()
 
     # An irrelevant, non-private dataframe should not be compared against a private dataframe
-    with pytest.raises(pripri.DPError): pdf == df
-    with pytest.raises(pripri.DPError): pdf != df
-    with pytest.raises(pripri.DPError): pdf <  df
-    with pytest.raises(pripri.DPError): pdf <= df
-    with pytest.raises(pripri.DPError): pdf >  df
-    with pytest.raises(pripri.DPError): pdf >= df
+    with pytest.raises(pj.DPError): pdf == df
+    with pytest.raises(pj.DPError): pdf != df
+    with pytest.raises(pj.DPError): pdf <  df
+    with pytest.raises(pj.DPError): pdf <= df
+    with pytest.raises(pj.DPError): pdf >  df
+    with pytest.raises(pj.DPError): pdf >= df
 
     # An irrelevant, non-private 2d array should not be compared against a private dataframe
-    with pytest.raises(pripri.DPError): pdf == [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pripri.DPError): pdf != [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pripri.DPError): pdf <  [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pripri.DPError): pdf <= [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pripri.DPError): pdf >  [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pripri.DPError): pdf >= [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(pj.DPError): pdf == [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(pj.DPError): pdf != [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(pj.DPError): pdf <  [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(pj.DPError): pdf <= [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(pj.DPError): pdf >  [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(pj.DPError): pdf >= [[list(range(len(pdf.columns)))] for x in range(5)]
 
     # An irrelevant, non-private array should not be compared against a private series
-    with pytest.raises(pripri.DPError): pdf["a"] == [0, 1, 2, 3, 4]
-    with pytest.raises(pripri.DPError): pdf["a"] != [0, 1, 2, 3, 4]
-    with pytest.raises(pripri.DPError): pdf["a"] <  [0, 1, 2, 3, 4]
-    with pytest.raises(pripri.DPError): pdf["a"] <= [0, 1, 2, 3, 4]
-    with pytest.raises(pripri.DPError): pdf["a"] >  [0, 1, 2, 3, 4]
-    with pytest.raises(pripri.DPError): pdf["a"] >= [0, 1, 2, 3, 4]
+    with pytest.raises(pj.DPError): pdf["a"] == [0, 1, 2, 3, 4]
+    with pytest.raises(pj.DPError): pdf["a"] != [0, 1, 2, 3, 4]
+    with pytest.raises(pj.DPError): pdf["a"] <  [0, 1, 2, 3, 4]
+    with pytest.raises(pj.DPError): pdf["a"] <= [0, 1, 2, 3, 4]
+    with pytest.raises(pj.DPError): pdf["a"] >  [0, 1, 2, 3, 4]
+    with pytest.raises(pj.DPError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    x = pripri.Prisoner(value=0, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be compared against a private dataframe
-    with pytest.raises(pripri.DPError): pdf == x
-    with pytest.raises(pripri.DPError): pdf != x
-    with pytest.raises(pripri.DPError): pdf <  x
-    with pytest.raises(pripri.DPError): pdf <= x
-    with pytest.raises(pripri.DPError): pdf >  x
-    with pytest.raises(pripri.DPError): pdf >= x
+    with pytest.raises(pj.DPError): pdf == x
+    with pytest.raises(pj.DPError): pdf != x
+    with pytest.raises(pj.DPError): pdf <  x
+    with pytest.raises(pj.DPError): pdf <= x
+    with pytest.raises(pj.DPError): pdf >  x
+    with pytest.raises(pj.DPError): pdf >= x
 
     # A sensitive value should not be compared against a private series
-    with pytest.raises(pripri.DPError): pdf["a"] == x
-    with pytest.raises(pripri.DPError): pdf["a"] != x
-    with pytest.raises(pripri.DPError): pdf["a"] <  x
-    with pytest.raises(pripri.DPError): pdf["a"] <= x
-    with pytest.raises(pripri.DPError): pdf["a"] >  x
-    with pytest.raises(pripri.DPError): pdf["a"] >= x
+    with pytest.raises(pj.DPError): pdf["a"] == x
+    with pytest.raises(pj.DPError): pdf["a"] != x
+    with pytest.raises(pj.DPError): pdf["a"] <  x
+    with pytest.raises(pj.DPError): pdf["a"] <= x
+    with pytest.raises(pj.DPError): pdf["a"] >  x
+    with pytest.raises(pj.DPError): pdf["a"] >= x
 
     # Sensitive dataframes of potentially different size should not be compared
     pdf_ = pdf[pdf["a"] >= 0]
-    with pytest.raises(pripri.DPError): pdf == pdf_
-    with pytest.raises(pripri.DPError): pdf != pdf_
-    with pytest.raises(pripri.DPError): pdf <  pdf_
-    with pytest.raises(pripri.DPError): pdf <= pdf_
-    with pytest.raises(pripri.DPError): pdf >  pdf_
-    with pytest.raises(pripri.DPError): pdf >= pdf_
+    with pytest.raises(pj.DPError): pdf == pdf_
+    with pytest.raises(pj.DPError): pdf != pdf_
+    with pytest.raises(pj.DPError): pdf <  pdf_
+    with pytest.raises(pj.DPError): pdf <= pdf_
+    with pytest.raises(pj.DPError): pdf >  pdf_
+    with pytest.raises(pj.DPError): pdf >= pdf_
 
     # Sensitive series of potentially different size should not be compared
-    with pytest.raises(pripri.DPError): pdf["a"] == pdf_["a"]
-    with pytest.raises(pripri.DPError): pdf["a"] != pdf_["a"]
-    with pytest.raises(pripri.DPError): pdf["a"] <  pdf_["a"]
-    with pytest.raises(pripri.DPError): pdf["a"] <= pdf_["a"]
-    with pytest.raises(pripri.DPError): pdf["a"] >  pdf_["a"]
-    with pytest.raises(pripri.DPError): pdf["a"] >= pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] == pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] != pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] <  pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] <= pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] >  pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] >= pdf_["a"]
 
 def test_priv_dataframe_getitem() -> None:
     pdf, df = load_dataframe()
@@ -154,11 +154,11 @@ def test_priv_dataframe_getitem() -> None:
     assert (pdf[["a", "b"]]._value == df[["a", "b"]]).all().all()
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (dataframe)
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[[True, True, False, False, True]] # type: ignore
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (series)
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["a"][[True, True, False, False, True]] # type: ignore
 
     # A bool-filtered view should be successfully retrieved from a private dataframe
@@ -171,27 +171,27 @@ def test_priv_dataframe_getitem() -> None:
 
     # A sensitve bool vector of potentially different size should not be accepted for filtering (dataframe)
     pdf_ = pdf[pdf["a"] >= 0]
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[pdf_["a"] > 3]
 
     # A sensitve bool vector of potentially different size should not be accepted for filtering (series)
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["a"][pdf_["a"] > 3]
 
-    x = pripri.Prisoner(value=0, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be used as a column name
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[x] # type: ignore
 
     # A slice should not be used for selecting rows of a dataframe
     # TODO: it might be legal to accept a slice
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[2:5] # type: ignore
 
     # A slice should not be used for selecting rows of a series
     # TODO: it might be legal to accept a slice
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["a"][2:5] # type: ignore
 
 def test_priv_dataframe_setitem() -> None:
@@ -263,44 +263,44 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    x = pripri.Prisoner(value=0, distance=pripri.Distance(1), root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be assigned to a single-column view
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["x"] = x
 
     # A sensitive value should not be assigned to a multi-column view
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[["x", "y"]] = x
 
     # A sensitive value should not be assigned to a bool-filtered view
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[pdf["a"] > 3] = x
 
     # An irrelevant, non-private array should not be assigned to a column view
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["x"] = [1, 2, 3, 4, 5]
 
     # An irrelevant, non-private 2d array should not be assigned to a bool-filtered view
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[pdf["a"] > 3] = [[list(range(len(pdf.columns)))] for x in range(5)]
 
     # A sensitive value should not be used as a column name
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[x] = 10 # type: ignore
 
     # A sensitve bool vector of potentially different size should not be accepted for filtering (dataframe)
     pdf_ = pdf[pdf["a"] >= 0]
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[pdf_["a"] > 3] = 10
 
     # A sensitve bool vector of potentially different size should not be accepted for filtering (series)
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["a"][pdf_["a"] > 3] = 10
 
     # A slice should not be used for selecting rows
     # TODO: it might be legal to accept a slice
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf[2:5] = 0 # type: ignore
 
 def test_priv_dataframe_replace() -> None:
@@ -333,7 +333,7 @@ def test_priv_dataframe_dropna() -> None:
     assert (pdf.dropna()._value == df.dropna()).all().all()
 
     # Should return an error with ignore_index=True
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf.dropna(ignore_index=True)
 
     # Special behaviour when `inplace=True`
@@ -350,7 +350,7 @@ def test_priv_series_dropna() -> None:
     assert (pdf["b"].dropna()._value == df["b"].dropna()).all()
 
     # Should return an error with ignore_index=True
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["b"].dropna(ignore_index=True)
 
     # TODO: this fails because of the original pandas bug?
@@ -362,15 +362,15 @@ def test_priv_series_value_counts() -> None:
     pdf, df = load_dataframe()
 
     # Should return an error without arguments
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["b"].value_counts()
 
     # Should return an error with `sort=True`
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["b"].value_counts(values=[1, 2, 3, 4, 5])
 
     # Should return an error without specifying values
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf["b"].value_counts(sort=False)
 
     # Should return correct counts when all possible values are provided
@@ -393,15 +393,15 @@ def test_priv_series_value_counts() -> None:
 
     # Should be able to get a sensitive value from a sensitive series
     c4 = counts[4]
-    assert isinstance(c4, pripri.Prisoner)
+    assert isinstance(c4, pj.Prisoner)
     assert c4.distance.max() == 1
     assert c4._value == 3
 
     # Should be able to get a sensitive view from a sensitive series
     c3 = counts[1:3][3]
     c4 = counts[1:3][4]
-    assert isinstance(c3, pripri.Prisoner)
-    assert isinstance(c4, pripri.Prisoner)
+    assert isinstance(c3, pj.Prisoner)
+    assert isinstance(c4, pj.Prisoner)
     assert c3.distance.max() == c4.distance.max() == 1
     assert c3._value == 1
     assert c4._value == 3
@@ -413,17 +413,17 @@ def test_crosstab() -> None:
     colvalues = [1, 2, 3, 4, 5]
 
     # Should raise an error without rowvalues/colvalues
-    with pytest.raises(pripri.DPError): ppd.crosstab(pdf["a"], pdf["b"])
-    with pytest.raises(pripri.DPError): ppd.crosstab(pdf["a"], pdf["b"], rowvalues=rowvalues)
-    with pytest.raises(pripri.DPError): ppd.crosstab(pdf["a"], pdf["b"], colvalues=colvalues)
+    with pytest.raises(pj.DPError): ppd.crosstab(pdf["a"], pdf["b"])
+    with pytest.raises(pj.DPError): ppd.crosstab(pdf["a"], pdf["b"], rowvalues=rowvalues)
+    with pytest.raises(pj.DPError): ppd.crosstab(pdf["a"], pdf["b"], colvalues=colvalues)
 
     # Should raise an error with margins=True
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         ppd.crosstab(pdf["a"], pdf["b"], rowvalues=rowvalues, colvalues=colvalues, margins=True)
 
     # Should raise an error with series of potentially different size
     pdf_ = pdf[pdf["a"] >= 0]
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         ppd.crosstab(pdf["a"], pdf_["b"], rowvalues=rowvalues, colvalues=colvalues)
 
     # Should return correct counts when all possible values are provided
@@ -436,7 +436,7 @@ def test_crosstab() -> None:
                        index=rowvalues, columns=colvalues)
     assert_equal_sensitive_dataframes(counts, ans)
 
-    pripri.laplace_mechanism(counts, epsilon=1.0)
+    pj.laplace_mechanism(counts, epsilon=1.0)
 
 def test_cut() -> None:
     pdf, df = load_dataframe()
@@ -446,14 +446,14 @@ def test_cut() -> None:
     assert (ppd.cut(pdf["a"], bins=[0, 3, 6])._value == pd.cut(df["a"], bins=[0, 3, 6])).all()
 
     # Should raise an error with a scalar bins
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         ppd.cut(pdf["a"], bins=2) # type: ignore
 
 def test_dataframe_groupby() -> None:
     pdf, df = load_dataframe()
 
     # Should raise an error without `keys`
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         pdf.groupby("b")
 
     # Should be able to group by a single column
@@ -491,23 +491,23 @@ def test_privacy_budget() -> None:
     pdf1 = pdf[pdf["b"] >= 3]
     counts = pdf1["b"].value_counts(sort=False, values=[3, 4, 5])
 
-    pripri.laplace_mechanism(counts, epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon
+    pj.laplace_mechanism(counts, epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon
 
-    pripri.laplace_mechanism(counts[4], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+    pj.laplace_mechanism(counts[4], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 2
 
     pdf2 = pdf[pdf["a"] >= 3]
 
-    pripri.laplace_mechanism(pdf2.shape[0], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    pj.laplace_mechanism(pdf2.shape[0], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     # Privacy budget for different data sources should be managed independently
     pdf_, df_ = load_dataframe()
 
-    pripri.laplace_mechanism(pdf_.shape[0], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
-    assert pripri.current_privacy_budget()[pdf_.root_name()] == epsilon
+    pj.laplace_mechanism(pdf_.shape[0], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    assert pj.current_privacy_budget()[pdf_.root_name()] == epsilon
 
 def test_privacy_budget_parallel_composition() -> None:
     pdf, df = load_dataframe()
@@ -517,54 +517,54 @@ def test_privacy_budget_parallel_composition() -> None:
     # value_counts()
     counts = pdf["b"].value_counts(sort=False, values=[2, 3, 4])
 
-    pripri.laplace_mechanism(counts, epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon
+    pj.laplace_mechanism(counts, epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon
 
-    pripri.laplace_mechanism(counts[2], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+    pj.laplace_mechanism(counts[2], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 2
 
-    pripri.laplace_mechanism(counts[3], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+    pj.laplace_mechanism(counts[3], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 2
 
-    pripri.laplace_mechanism(counts[3] + counts[4], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    pj.laplace_mechanism(counts[3] + counts[4], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
 
-    pripri.laplace_mechanism(counts[2] - counts[4], epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    pj.laplace_mechanism(counts[2] - counts[4], epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     # crosstab()
     crosstab = ppd.crosstab(pdf["a"], pdf["b"], rowvalues=[1, 2, 3, 4, 5], colvalues=[1, 2, 3, 4, 5])
 
     for idx in crosstab.index:
         for col in crosstab.columns:
-            pripri.laplace_mechanism(crosstab.loc[idx, col], epsilon=epsilon)
+            pj.laplace_mechanism(crosstab.loc[idx, col], epsilon=epsilon)
 
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 4
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 4
 
-    s = pripri.SensitiveInt(0)
+    s = pj.SensitiveInt(0)
     for idx in crosstab.index:
         for col in crosstab.columns:
             s += crosstab.loc[idx, col]
     assert s.distance.max() == 1
-    pripri.laplace_mechanism(s, epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 5
+    pj.laplace_mechanism(s, epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 5
 
     assert crosstab.loc[1, 5].distance.max() == 1 # type: ignore
-    pripri.laplace_mechanism(crosstab.loc[1, 5], epsilon=epsilon) # type: ignore
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 6
+    pj.laplace_mechanism(crosstab.loc[1, 5], epsilon=epsilon) # type: ignore
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 6
 
     # groupby()
-    s = pripri.SensitiveInt(0)
+    s = pj.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
         s += pdf_.shape[0]
     assert s.distance.max() == 1
     assert s._value == len(pdf._value)
-    pripri.laplace_mechanism(s, epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 7
+    pj.laplace_mechanism(s, epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 7
 
-    s = pripri.SensitiveInt(0)
+    s = pj.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
         s += key * pdf_.shape[0]
     assert s.distance.max() == 5
-    pripri.laplace_mechanism(s, epsilon=epsilon)
-    assert pripri.current_privacy_budget()[pdf.root_name()] == epsilon * 8
+    pj.laplace_mechanism(s, epsilon=epsilon)
+    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 8

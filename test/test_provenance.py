@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
-provenance = importlib.import_module("pripri.provenance")
+provenance = importlib.import_module("privjail.provenance")
 
 @pytest.fixture(autouse=True)
 def setup() -> Any:

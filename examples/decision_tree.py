@@ -1,5 +1,5 @@
-import pripri
-from pripri import pandas as ppd
+import privjail as pj
+from privjail import pandas as ppd
 import numpy as np
 import pandas as pd
 
@@ -12,11 +12,11 @@ def calc_gain(df, attributes, split_attr, target_attr):
     return s
 
 def noisy_count(df, epsilon):
-    return max(0, pripri.laplace_mechanism(df.shape[0], epsilon=epsilon))
+    return max(0, pj.laplace_mechanism(df.shape[0], epsilon=epsilon))
 
 def best_split(df, attributes, target_attr, epsilon):
     gains = {attr: calc_gain(df, attributes, attr, target_attr) for attr in attributes.keys() if attr != target_attr}
-    return pripri.exponential_mechanism(gains, epsilon)
+    return pj.exponential_mechanism(gains, epsilon)
 
 def build_decision_tree(df, attributes, target_attr, max_depth, epsilon):
     t = max([len(attrprop["categories"]) for _, attrprop in attributes.items()])
@@ -153,7 +153,7 @@ def tree_stats(dtree, depth=1):
 
 dtree = train()
 
-print(pripri.current_privacy_budget())
+print(pj.current_privacy_budget())
 
 # import pprint
 # pprint.pprint(dtree)

@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
-distance = importlib.import_module("pripri.distance")
+distance = importlib.import_module("privjail.distance")
 
 def test_distance() -> None:
     d = distance.Distance(1)

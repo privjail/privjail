@@ -311,7 +311,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 group_keys : bool                               = True,
                 observed   : bool                               = True,
                 dropna     : bool                               = True,
-                keys       : list[Any] | _pd.Series[Any] | None = None, # extra argument for pripri
+                keys       : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
                 ) -> PrivDataFrameGroupBy:
         if keys is None:
             # TODO: track the value domain to automatically determine the output dimension
@@ -605,7 +605,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                      ascending : bool                               = False,
                      bins      : int | None                         = None,
                      dropna    : bool                               = True,
-                     values    : list[Any] | _pd.Series[Any] | None = None, # extra argument for pripri
+                     values    : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
                      ) -> SensitiveSeries[int]:
         if normalize:
             # TODO: what is the sensitivity?
@@ -679,8 +679,8 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
              values       : PrivSeries[Any] | None                          = None,
              rownames     : list[str] | None                                = None,
              colnames     : list[str] | None                                = None,
-             rowvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for pripri
-             colvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for pripri
+             rowvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for privjail
+             colvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for privjail
              *,
              aggfunc      : Any                                             = None,
              margins      : bool                                            = False,

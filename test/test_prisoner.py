@@ -1,16 +1,16 @@
 import pytest
 import uuid
-import pripri
+import privjail as pj
 
-def new_sensitive_int(value: int) -> pripri.SensitiveInt:
-    return pripri.SensitiveInt(value, distance=pripri.Distance(1), root_name=str(uuid.uuid4())) + 0
+def new_sensitive_int(value: int) -> pj.SensitiveInt:
+    return pj.SensitiveInt(value, distance=pj.Distance(1), root_name=str(uuid.uuid4())) + 0
 
 def test_sensitive_real_number() -> None:
     x = new_sensitive_int(12)
-    assert isinstance(x, pripri.SensitiveInt)
+    assert isinstance(x, pj.SensitiveInt)
 
     y = x * (1 / 12)
-    assert isinstance(y, pripri.SensitiveFloat)
+    assert isinstance(y, pj.SensitiveFloat)
 
     x = x + 1
     assert x._value == 13
@@ -36,7 +36,7 @@ def test_sensitive_real_number() -> None:
     assert x._value == 1
     assert x.distance.max() == 6
 
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         x * x # type: ignore
 
     z = x + y
@@ -47,7 +47,7 @@ def test_sensitive_real_number() -> None:
     assert z._value == pytest.approx(-1.0)
     assert z.distance.max() == pytest.approx(6.0 + 1 / 6)
 
-    with pytest.raises(pripri.DPError):
+    with pytest.raises(pj.DPError):
         x * y # type: ignore
 
 def test_min_max() -> None:
@@ -55,53 +55,53 @@ def test_min_max() -> None:
     y = x - 1
     z = x + 2
 
-    assert pripri.max(x, y)._value == 11
-    assert pripri.max(x, y).distance.max() == 1
+    assert pj.max(x, y)._value == 11
+    assert pj.max(x, y).distance.max() == 1
 
-    assert pripri.min(x, y)._value == 10
-    assert pripri.min(x, y).distance.max() == 1
+    assert pj.min(x, y)._value == 10
+    assert pj.min(x, y).distance.max() == 1
 
-    assert pripri.max(x, y, z)._value == 13
-    assert pripri.max(x, y, z).distance.max() == 1
+    assert pj.max(x, y, z)._value == 13
+    assert pj.max(x, y, z).distance.max() == 1
 
-    assert pripri.min(x, y, z)._value == 10
-    assert pripri.min(x, y, z).distance.max() == 1
+    assert pj.min(x, y, z)._value == 10
+    assert pj.min(x, y, z).distance.max() == 1
 
     z *= 2
 
-    assert pripri.max(x, y, z)._value == 26
-    assert pripri.max(x, y, z).distance.max() == 2
+    assert pj.max(x, y, z)._value == 26
+    assert pj.max(x, y, z).distance.max() == 2
 
-    assert pripri.min(x, y, z)._value == 10
-    assert pripri.min(x, y, z).distance.max() == 2
+    assert pj.min(x, y, z)._value == 10
+    assert pj.min(x, y, z).distance.max() == 2
 
-    assert pripri.max([x, y, z])._value == 26
-    assert pripri.max([x, y, z]).distance.max() == 2
+    assert pj.max([x, y, z])._value == 26
+    assert pj.max([x, y, z]).distance.max() == 2
 
-    assert pripri.min([x, y, z])._value == 10
-    assert pripri.min([x, y, z]).distance.max() == 2
+    assert pj.min([x, y, z])._value == 10
+    assert pj.min([x, y, z]).distance.max() == 2
 
-    assert type(pripri.max(x * 3.0, y, z)) == pripri.SensitiveFloat
-    assert pripri.max(x * 3.0, y, z)._value == pytest.approx(33.0)
-    assert pripri.max(x * 3.0, y, z).distance.max() == pytest.approx(3.0)
+    assert type(pj.max(x * 3.0, y, z)) == pj.SensitiveFloat
+    assert pj.max(x * 3.0, y, z)._value == pytest.approx(33.0)
+    assert pj.max(x * 3.0, y, z).distance.max() == pytest.approx(3.0)
 
-    assert type(pripri.min(x * 3.0, y, z)) == pripri.SensitiveFloat
-    assert pripri.min(x * 3.0, y, z)._value == pytest.approx(10.0)
-    assert pripri.min(x * 3.0, y, z).distance.max() == pytest.approx(3.0)
+    assert type(pj.min(x * 3.0, y, z)) == pj.SensitiveFloat
+    assert pj.min(x * 3.0, y, z)._value == pytest.approx(10.0)
+    assert pj.min(x * 3.0, y, z).distance.max() == pytest.approx(3.0)
 
-    assert type(pripri.max([x, y, z - 25.0])) == pripri.SensitiveFloat
-    assert pripri.max([x, y, z - 25.0])._value == pytest.approx(11.0)
-    assert pripri.max([x, y, z - 25.0]).distance.max() == pytest.approx(2.0)
+    assert type(pj.max([x, y, z - 25.0])) == pj.SensitiveFloat
+    assert pj.max([x, y, z - 25.0])._value == pytest.approx(11.0)
+    assert pj.max([x, y, z - 25.0]).distance.max() == pytest.approx(2.0)
 
-    assert type(pripri.min([x, y, z - 25.0])) == pripri.SensitiveFloat
-    assert pripri.min([x, y, z - 25.0])._value == pytest.approx(1.0)
-    assert pripri.min([x, y, z - 25.0]).distance.max() == pytest.approx(2.0)
+    assert type(pj.min([x, y, z - 25.0])) == pj.SensitiveFloat
+    assert pj.min([x, y, z - 25.0])._value == pytest.approx(1.0)
+    assert pj.min([x, y, z - 25.0]).distance.max() == pytest.approx(2.0)
 
-    with pytest.raises(TypeError): pripri.max()
-    with pytest.raises(TypeError): pripri.min()
+    with pytest.raises(TypeError): pj.max()
+    with pytest.raises(TypeError): pj.min()
 
-    with pytest.raises(TypeError): pripri.max(x)
-    with pytest.raises(TypeError): pripri.min(x)
+    with pytest.raises(TypeError): pj.max(x)
+    with pytest.raises(TypeError): pj.min(x)
 
-    with pytest.raises(ValueError): pripri.max([])
-    with pytest.raises(ValueError): pripri.min([])
+    with pytest.raises(ValueError): pj.max([])
+    with pytest.raises(ValueError): pj.min([])
