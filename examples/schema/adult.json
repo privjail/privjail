@@ -1,0 +1,204 @@
+{
+    "age": {
+        "type": "Int64",
+        "na_value": "?",
+        "range": [
+            17,
+            91
+        ]
+    },
+    "workclass": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Federal-gov",
+            "Local-gov",
+            "Private",
+            "Self-emp-inc",
+            "Self-emp-not-inc",
+            "State-gov",
+            "Without-pay"
+        ]
+    },
+    "fnlwgt": {
+        "type": "Int64",
+        "na_value": "?",
+        "range": [
+            13492,
+            1490401
+        ]
+    },
+    "education": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "10th",
+            "11th",
+            "12th",
+            "1st-4th",
+            "5th-6th",
+            "7th-8th",
+            "9th",
+            "Assoc-acdm",
+            "Assoc-voc",
+            "Bachelors",
+            "Doctorate",
+            "HS-grad",
+            "Masters",
+            "Preschool",
+            "Prof-school",
+            "Some-college"
+        ]
+    },
+    "educational-num": {
+        "type": "Int64",
+        "na_value": "?",
+        "range": [
+            1,
+            17
+        ]
+    },
+    "marital-status": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Divorced",
+            "Married-AF-spouse",
+            "Married-civ-spouse",
+            "Married-spouse-absent",
+            "Never-married",
+            "Separated",
+            "Widowed"
+        ]
+    },
+    "occupation": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Adm-clerical",
+            "Armed-Forces",
+            "Craft-repair",
+            "Exec-managerial",
+            "Farming-fishing",
+            "Handlers-cleaners",
+            "Machine-op-inspct",
+            "Other-service",
+            "Priv-house-serv",
+            "Prof-specialty",
+            "Protective-serv",
+            "Sales",
+            "Tech-support",
+            "Transport-moving"
+        ]
+    },
+    "relationship": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Husband",
+            "Not-in-family",
+            "Other-relative",
+            "Own-child",
+            "Unmarried",
+            "Wife"
+        ]
+    },
+    "race": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Amer-Indian-Eskimo",
+            "Asian-Pac-Islander",
+            "Black",
+            "Other",
+            "White"
+        ]
+    },
+    "gender": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Female",
+            "Male"
+        ]
+    },
+    "capital-gain": {
+        "type": "Int64",
+        "na_value": "?",
+        "range": [
+            0,
+            100000
+        ]
+    },
+    "capital-loss": {
+        "type": "Int64",
+        "na_value": "?",
+        "range": [
+            0,
+            4357
+        ]
+    },
+    "hours-per-week": {
+        "type": "Int64",
+        "na_value": "?",
+        "range": [
+            1,
+            100
+        ]
+    },
+    "native-country": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "Cambodia",
+            "Canada",
+            "China",
+            "Columbia",
+            "Cuba",
+            "Dominican-Republic",
+            "Ecuador",
+            "El-Salvador",
+            "England",
+            "France",
+            "Germany",
+            "Greece",
+            "Guatemala",
+            "Haiti",
+            "Holand-Netherlands",
+            "Honduras",
+            "Hong",
+            "Hungary",
+            "India",
+            "Iran",
+            "Ireland",
+            "Italy",
+            "Jamaica",
+            "Japan",
+            "Laos",
+            "Mexico",
+            "Nicaragua",
+            "Outlying-US(Guam-USVI-etc)",
+            "Peru",
+            "Philippines",
+            "Poland",
+            "Portugal",
+            "Puerto-Rico",
+            "Scotland",
+            "South",
+            "Taiwan",
+            "Thailand",
+            "Trinadad&Tobago",
+            "United-States",
+            "Vietnam",
+            "Yugoslavia"
+        ]
+    },
+    "income": {
+        "type": "category",
+        "na_value": "?",
+        "categories": [
+            "<=50K",
+            ">50K"
+        ]
+    }
+}
