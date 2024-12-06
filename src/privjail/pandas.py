@@ -9,7 +9,7 @@ from pandas.api.types import is_list_like
 # FIXME: pandas.core.common API is not public
 from pandas.core.common import is_bool_indexer
 
-from .util import DPError, is_integer, is_floating
+from .util import DPError, is_integer, is_floating, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from .distance import Distance
 
@@ -700,9 +700,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise NotImplementedError
 
         if self.schema["type"] == "int64" and _np.isnan(value):
-            new_col_schema = self.schema.copy()
-            new_col_schema["type"] = "Int64"
-            new_schema = new_col_schema
+            new_schema = self.schema.copy()
+            new_schema["type"] = "Int64"
 
         elif self.schema["type"] in ["int64", "Int64", "float64", "Float64"]:
             [a, b] = self.schema["range"]
@@ -710,9 +709,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                 new_a = min(a, value) if a is not None else None
                 new_b = max(b, value) if b is not None else None
 
-                new_col_schema = self.schema.copy()
-                new_col_schema["range"] = [new_a, new_b]
-                new_schema = new_col_schema
+                new_schema = self.schema.copy()
+                new_schema["range"] = [new_a, new_b]
 
             else:
                 new_schema = self.schema
@@ -753,9 +751,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
         if self.schema["type"] == "Int64":
-            new_col_schema = self.schema.copy()
-            new_col_schema["type"] = "int64"
-            new_schema = new_col_schema
+            new_schema = self.schema.copy()
+            new_schema["type"] = "int64"
         else:
             new_schema = self.schema
 
@@ -765,6 +762,78 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             return None
         else:
             return PrivSeries[T](data=self._value.dropna(inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+
+    @overload
+    def clip(self,
+             lower    : realnum | None = None,
+             upper    : realnum | None = None,
+             *,
+             inplace  : Literal[True],
+             **kwargs : ...,
+             ) -> None: ...
+
+    @overload
+    def clip(self,
+             lower    : realnum | None = None,
+             upper    : realnum | None = None,
+             *,
+             inplace  : bool = ...,
+             **kwargs : ...,
+             ) -> PrivSeries[T]: ...
+
+    def clip(self,
+             lower    : realnum | None = None,
+             upper    : realnum | None = None,
+             *,
+             inplace  : bool = False,
+             **kwargs : Any,
+             ) -> PrivSeries[T] | None:
+        new_schema = self.schema.copy()
+        [a, b] = self.schema["range"]
+        new_a = a if lower is None else lower if a is None else min(a, lower)
+        new_b = b if upper is None else upper if b is None else max(b, upper)
+        new_schema["range"] = [new_a, new_b]
+
+        if inplace:
+            self._value.clip(lower, upper, inplace=inplace, **kwargs)
+            self._schema = new_schema
+            return None
+        else:
+            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+
+    def sum(self) -> SensitiveInt | SensitiveFloat:
+        if None in self.schema["range"]:
+            raise DPError("The range is unbounded. Use clip().")
+
+        [a, b] = self.schema["range"]
+        new_distance = self.distance * max(abs(a), abs(b))
+
+        s = self._value.sum()
+
+        if self.schema["type"] in ["int64", "Int64"]:
+            return SensitiveInt(s, new_distance, parents=[self])
+        elif self.schema["type"] in ["float64", "Float64"]:
+            return SensitiveFloat(s, new_distance, parents=[self])
+        else:
+            raise ValueError
+
+    def mean(self, epsilon: float) -> float:
+        if epsilon <= 0:
+            raise DPError(f"Invalid epsilon ({epsilon})")
+
+        if None in self.schema["range"]:
+            raise DPError("The range is unbounded. Use clip().")
+
+        [a, b] = self.schema["range"]
+        sum_sensitivity = (self.distance * max(abs(a), abs(b))).max()
+        count_sensitivity = self.distance.max()
+
+        self.consume_privacy_budget(epsilon)
+
+        s = _np.random.laplace(loc=self._value.sum(), scale=sum_sensitivity / (epsilon / 2))
+        c = _np.random.laplace(loc=self._value.shape[0], scale=count_sensitivity / (epsilon / 2))
+
+        return s / c
 
     def value_counts(self,
                      normalize : bool                               = False,
