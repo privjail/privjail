@@ -5,7 +5,7 @@ import pandas as pd
 
 np.random.seed(0)
 
-def calc_gain(df, attributes, split_attr, target_attr):
+def calc_gain(df, split_attr, target_attr):
     s = 0
     for category, df_child in df.groupby(split_attr):
         s += df_child[target_attr].value_counts(sort=False).max()
@@ -15,32 +15,23 @@ def noisy_count(df, epsilon):
     return max(0, pj.laplace_mechanism(df.shape[0], epsilon=epsilon))
 
 def best_split(df, attributes, target_attr, epsilon):
-    gains = {attr: calc_gain(df, attributes, attr, target_attr) for attr in attributes}
+    gains = {attr: calc_gain(df, attr, target_attr) for attr in attributes}
     return pj.exponential_mechanism(gains, epsilon)
 
 def build_decision_tree(df, attributes, target_attr, max_depth, epsilon):
-    t = max([len(attrprop["categories"]) for attr, attrprop in df.schema.items() if attr in attributes])
+    t = max([len(df.schema[attr]["categories"]) for attr in attributes])
+    n_classes = len(df.schema[target_attr]["categories"])
     n_rows = noisy_count(df, epsilon)
 
-    if max_depth == 0 or len(attributes) == 0 or n_rows / t / 2 < 2 ** (1/2) / epsilon:
-        best_count = -1
-        best_cls = None
-
-        for cls, df_c in df.groupby(target_attr):
-            count = noisy_count(df_c, epsilon)
-            if best_count < count:
-                best_count = count
-                best_cls = cls
-
-        return best_cls
+    if len(attributes) == 0 or max_depth == 0 or n_rows / (t * n_classes) < (2 ** 0.5) / epsilon:
+        class_counts = {c: noisy_count(df_c, epsilon) for c, df_c in df.groupby(target_attr)}
+        return max(class_counts, key=class_counts.get)
 
     best_attr = best_split(df, attributes, target_attr, epsilon)
 
-    attributes_child = [attr for attr in attributes if attr != best_attr]
-
     child_nodes = []
     for category, df_child in df.groupby(best_attr):
-        child_node = build_decision_tree(df_child, attributes_child, target_attr, max_depth - 1, epsilon)
+        child_node = build_decision_tree(df_child, attributes - {best_attr}, target_attr, max_depth - 1, epsilon)
         child_nodes.append(dict(category=category, child=child_node))
 
     return dict(attr=best_attr, children=child_nodes)
@@ -67,9 +58,9 @@ def train(max_depth=5, n_bins=20, epsilon=1.0):
             df_train[attr] = make_bins(df_train[attr], vmin, vmax, n_bins)
 
     target_attr = "income"
-    attributes = [attr for attr in df_train.columns if attr != target_attr]
+    attributes = {attr for attr in df_train.columns if attr != target_attr}
 
-    eps = epsilon / 2 / (max_depth + 1)
+    eps = epsilon / (2 * (max_depth + 1))
     dtree = build_decision_tree(df_train, attributes, target_attr, max_depth, eps)
 
     print("Decision tree constructed.")

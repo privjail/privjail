@@ -858,7 +858,7 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
         if col in schema:
             col_schema = schema[col]
         else:
-            col_schema = dict(type=df.dtypes[col])
+            col_schema = dict(type="string" if df.dtypes[col] == "object" else df.dtypes[col])
 
         df_schema[col] = normalize_column_schema(col_schema)
 
