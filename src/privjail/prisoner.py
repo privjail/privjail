@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypeVar, Generic, Any, overload, Iterable, cast
+from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
 from .distance import Distance, _max as dmax
@@ -10,16 +10,16 @@ class Prisoner(Generic[T]):
     _value            : T
     distance          : Distance
     provenance_entity : ProvenanceEntity | None
-    parents           : list[Prisoner[Any]]
+    parents           : Sequence[Prisoner[Any]]
 
     def __init__(self,
                  value         : T,
                  distance      : Distance,
                  *,
-                 parents       : list[Prisoner[Any]] = [],
-                 root_name     : str | None          = None,
-                 tag_type      : NewTagType          = "none",
-                 children_type : ChildrenType        = "inclusive",
+                 parents       : Sequence[Prisoner[Any]] = [],
+                 root_name     : str | None              = None,
+                 tag_type      : NewTagType              = "none",
+                 children_type : ChildrenType            = "inclusive",
                  ):
         self._value   = value
         self.distance = distance
@@ -66,12 +66,12 @@ class Prisoner(Generic[T]):
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
                  value         : integer,
-                 distance      : Distance            = Distance(0),
+                 distance      : Distance                = Distance(0),
                  *,
-                 parents       : list[Prisoner[Any]] = [],
-                 root_name     : str | None          = None,
-                 tag_type      : NewTagType          = "none",
-                 children_type : ChildrenType        = "inclusive",
+                 parents       : Sequence[Prisoner[Any]] = [],
+                 root_name     : str | None              = None,
+                 tag_type      : NewTagType              = "none",
+                 children_type : ChildrenType            = "inclusive",
                  ):
         if not is_integer(value):
             raise ValueError("`value` must be int for SensitveInt.")
@@ -168,12 +168,12 @@ class SensitiveInt(Prisoner[integer]):
 class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
                  value         : floating,
-                 distance      : Distance            = Distance(0),
+                 distance      : Distance                = Distance(0),
                  *,
-                 parents       : list[Prisoner[Any]] = [],
-                 root_name     : str | None          = None,
-                 tag_type      : NewTagType          = "none",
-                 children_type : ChildrenType        = "inclusive",
+                 parents       : Sequence[Prisoner[Any]] = [],
+                 root_name     : str | None              = None,
+                 tag_type      : NewTagType              = "none",
+                 children_type : ChildrenType            = "inclusive",
                  ):
         if not is_floating(value):
             raise ValueError("`value` must be float for SensitveFloat.")

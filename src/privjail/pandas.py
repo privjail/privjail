@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Iterator, Generic
+from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence
 import warnings
 import json
 
@@ -9,8 +9,8 @@ from pandas.api.types import is_list_like
 # FIXME: pandas.core.common API is not public
 from pandas.core.common import is_bool_indexer
 
-from .util import DPError, is_integer
-from .prisoner import Prisoner, SensitiveInt, _max as smax, _min as smin
+from .util import DPError, is_integer, is_floating
+from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from .distance import Distance
 
 T = TypeVar("T")
@@ -39,15 +39,16 @@ def normalize_column_schema(col_schema: dict[str, Any]) -> dict[str, Any]:
     col_type = col_schema["type"]
     new_col_schema = dict(type=col_type, na_value=col_schema.get("na_value", ""))
 
-    if col_type in ["int64", "Int64"]:
+    if col_type in ["int64", "Int64", "float64", "Float64"]:
         if "range" not in col_schema:
             new_col_schema["range"] = [None, None]
 
         else:
+            expected_type = int if col_type in ["int64", "Int64"] else float
             if not isinstance(col_schema["range"], list) or len(col_schema["range"]) != 2 or \
-                    (col_schema["range"][0] is not None and not isinstance(col_schema["range"][0], int)) or \
-                    (col_schema["range"][1] is not None and not isinstance(col_schema["range"][1], int)):
-                raise ValueError("The 'range' field must be in the form [a, b], where a and b is int or null.")
+                    (col_schema["range"][0] is not None and not isinstance(col_schema["range"][0], expected_type)) or \
+                    (col_schema["range"][1] is not None and not isinstance(col_schema["range"][1], expected_type)):
+                raise ValueError(f"The 'range' field must be in the form [a, b], where a and b is {expected_type} or null.")
 
             new_col_schema["range"] = col_schema["range"]
 
@@ -76,22 +77,16 @@ def apply_column_schema(ser: _pd.Series[Any], col_schema: dict[str, Any], col_na
 
     if col_schema["type"] == "int64":
         try:
-            return ser.astype(col_schema["type"])
+            return ser.astype("int64")
         except _pd.errors.IntCastingNaNError:
             raise ValueError(f"Column '{col_name}' may include NaN or inf values. Consider specifying 'Int64' for the column type.")
-
-    elif col_schema["type"] == "Int64":
-        return ser.astype(col_schema["type"])
 
     elif col_schema["type"] == "category":
         category_dtype = _pd.api.types.CategoricalDtype(categories=col_schema["categories"])
         return ser.astype(category_dtype)
 
-    elif col_schema["type"] == "string":
-        return ser.astype(col_schema["type"])
-
     else:
-        raise RuntimeError
+        return ser.astype(col_schema["type"]) # type: ignore[no-any-return]
 
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
     """Private DataFrame.
@@ -104,14 +99,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                  data         : Any,
                  schema       : dict[str, Any],
                  distance     : Distance,
-                 index        : Any                 = None,
-                 columns      : Any                 = None,
-                 dtype        : Any                 = None,
-                 copy         : bool                = False,
+                 index        : Any                     = None,
+                 columns      : Any                     = None,
+                 dtype        : Any                     = None,
+                 copy         : bool                    = False,
                  *,
-                 parents      : list[Prisoner[Any]] = [],
-                 root_name    : str | None          = None,
-                 preserve_row : bool | None         = None,
+                 parents      : Sequence[Prisoner[Any]] = [],
+                 root_name    : str | None              = None,
+                 preserve_row : bool | None             = None,
                  ):
         if len(parents) == 0:
             preserve_row = False
@@ -358,13 +353,18 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 inplace    : bool = False,
                 **kwargs   : Any,
                 ) -> PrivDataFrame | None:
-        if not is_integer(to_replace) or not is_integer(value):
+        if (not is_integer(to_replace) and not is_floating(to_replace)) or (not is_integer(value) and not is_floating(value)):
             # TODO: consider string and category dtype
             raise NotImplementedError
 
         new_schema = dict()
         for col, col_schema in self.schema.items():
-            if col_schema["type"] in ["int64", "Int64"]:
+            if col_schema["type"] == "int64" and _np.isnan(value):
+                new_col_schema = col_schema.copy()
+                new_col_schema["type"] = "Int64"
+                new_schema[col] = new_col_schema
+
+            elif col_schema["type"] in ["int64", "Int64", "float64", "Float64"]:
                 [a, b] = col_schema["range"]
                 if (a is None or a <= to_replace) and (b is None or to_replace <= b):
                     new_a = min(a, value) if a is not None else None
@@ -381,11 +381,11 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 new_schema[col] = col_schema
 
         if inplace:
-            self._value.replace(to_replace, value, inplace=inplace, **kwargs)
+            self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
             self._schema = new_schema
             return None
         else:
-            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
 
     @overload
     def dropna(self,
@@ -440,13 +440,12 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 ) -> PrivDataFrameGroupBy:
         if self.schema[by]["type"] == "category":
             keys = self.schema[by]["categories"]
-        elif keys is None:
+
+        if keys is None:
             raise DPError("Please provide the `keys` argument to prevent privacy leakage for non-categorical columns.")
 
-        # TODO: handling for arguments
-
-        groupby_obj = self._value.groupby(by, level=level, as_index=as_index, sort=sort,
-                                          group_keys=group_keys, observed=observed, dropna=dropna)
+        # TODO: consider extra arguments
+        groupby_obj = self._value.groupby(by, observed=observed)
 
         # exclude groups not included in the specified `keys`
         groups = {key: df for key, df in groupby_obj if key in keys}
@@ -495,11 +494,11 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                  data         : Any,
                  schema       : dict[str, Any],
                  distance     : Distance,
-                 index        : Any                 = None,
+                 index        : Any                     = None,
                  *,
-                 parents      : list[Prisoner[Any]] = [],
-                 root_name    : str | None          = None,
-                 preserve_row : bool | None         = None,
+                 parents      : Sequence[Prisoner[Any]] = [],
+                 root_name    : str | None              = None,
+                 preserve_row : bool | None             = None,
                  **kwargs    : Any,
                  ):
         if len(parents) == 0:
@@ -696,11 +695,16 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                 inplace    : bool = False,
                 **kwargs   : Any,
                 ) -> PrivSeries[T] | None:
-        if not is_integer(to_replace):
+        if not is_integer(to_replace) and not is_floating(to_replace):
             # TODO: consider string and category dtype
             raise NotImplementedError
 
-        if self.schema["type"] in ["int64", "Int64"]:
+        if self.schema["type"] == "int64" and _np.isnan(value):
+            new_col_schema = self.schema.copy()
+            new_col_schema["type"] = "Int64"
+            new_schema = new_col_schema
+
+        elif self.schema["type"] in ["int64", "Int64", "float64", "Float64"]:
             [a, b] = self.schema["range"]
             if (a is None or a <= to_replace) and (b is None or to_replace <= b):
                 new_a = min(a, value) if a is not None else None
@@ -717,11 +721,11 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             new_schema = self.schema
 
         if inplace:
-            self._value.replace(to_replace, value, inplace=inplace, **kwargs)
+            self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
             self._schema = new_schema
             return None
         else:
-            return PrivSeries[T](data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[T](data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
 
     @overload
     def dropna(self,
@@ -783,7 +787,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         if self.schema["type"] == "category":
             values = self.schema["categories"]
-        elif values is None:
+
+        if values is None:
             raise DPError("Please provide the `values` argument to prevent privacy leakage.")
 
         if isinstance(values, Prisoner):
@@ -827,15 +832,15 @@ class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
     This is typically created by counting queries like `PrivSeries.value_counts()`.
     """
 
-    def max(self):
+    def max(self, *args: Any, **kwargs: Any) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
         return smax(self)
 
-    def min(self):
+    def min(self, *args: Any, **kwargs: Any) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
         return smin(self)
 
-def read_csv(filepath: str, schemapath: str = None) -> PrivDataFrame:
+def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
     # TODO: more vaildation for the input data
     df = _pd.read_csv(filepath)
 
@@ -851,9 +856,11 @@ def read_csv(filepath: str, schemapath: str = None) -> PrivDataFrame:
             raise ValueError("Column name must be a string.")
 
         if col in schema:
-            df_schema[col] = normalize_column_schema(schema[col])
+            col_schema = schema[col]
         else:
-            df_schema[col] = dict()
+            col_schema = dict(type=df.dtypes[col])
+
+        df_schema[col] = normalize_column_schema(col_schema)
 
         df[col] = apply_column_schema(df[col], df_schema[col], col)
 
@@ -927,7 +934,7 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
 
     distances = index[0].distance.create_exclusive_distances(counts.size)
 
-    prisoner_dummy = Prisoner(0, index[0].distance, parents=list(index + columns), tag_type="renew", children_type="exclusive")
+    prisoner_dummy = Prisoner(0, index[0].distance, parents=index + columns, tag_type="renew", children_type="exclusive")
 
     priv_counts = SensitiveDataFrame(index=counts.index, columns=counts.columns)
     i = 0
