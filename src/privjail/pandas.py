@@ -790,8 +790,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              ) -> PrivSeries[T] | None:
         new_schema = self.schema.copy()
         [a, b] = self.schema["range"]
-        new_a = a if lower is None else lower if a is None else min(a, lower)
-        new_b = b if upper is None else upper if b is None else max(b, upper)
+        new_a = a if lower is None else lower if a is None else max(a, lower)
+        new_b = b if upper is None else upper if b is None else min(b, upper)
         new_schema["range"] = [new_a, new_b]
 
         if inplace:
