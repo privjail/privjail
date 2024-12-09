@@ -47,8 +47,6 @@ def _max(a: Distance, b: Distance) -> Distance:
         # sympy.solvers.solveset.NonlinearError happens at lpmax() if Max() is included in the expression,
         # so we remove Max() here. However, the below is a loose approximation for the max operator.
         # TODO: improve handling for Max()
-        c = new_distance_var()
-        new_constraints = {c >= a.expr, c >= b.expr, c <= a.expr + b.expr}
-        return Distance(c, a.constraints | b.constraints | new_constraints)
+        return Distance(a.expr + b.expr, a.constraints | b.constraints)
     else:
         return Distance(expr, a.constraints | b.constraints)
