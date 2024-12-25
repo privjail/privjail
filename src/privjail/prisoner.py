@@ -3,6 +3,7 @@ from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
 from .distance import Distance, _max as dmax
+import numpy as _np
 
 T = TypeVar("T")
 
@@ -144,9 +145,9 @@ class SensitiveInt(Prisoner[integer]):
 
     def __mul__(self, other: realnum) -> SensitiveInt | SensitiveFloat:
         if is_integer(other):
-            return SensitiveInt(self._value * other, distance=self.distance * abs(other), parents=[self])
+            return SensitiveInt(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
         elif is_floating(other):
-            return SensitiveFloat(self._value * other, distance=self.distance * abs(other), parents=[self])
+            return SensitiveFloat(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
         elif isinstance(other, (SensitiveInt, SensitiveFloat)):
             raise DPError("Sensitive values cannot be multiplied by each other.")
         else:
@@ -159,9 +160,9 @@ class SensitiveInt(Prisoner[integer]):
 
     def __rmul__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
         if is_integer(other):
-            return SensitiveInt(other * self._value, distance=self.distance * abs(other), parents=[self])
+            return SensitiveInt(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
         elif is_floating(other):
-            return SensitiveFloat(other * self._value, distance=self.distance * abs(other), parents=[self])
+            return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
         else:
             raise ValueError("`other` must be a real number.")
 
@@ -209,7 +210,7 @@ class SensitiveFloat(Prisoner[floating]):
 
     def __mul__(self, other: realnum) -> SensitiveFloat:
         if is_realnum(other):
-            return SensitiveFloat(self._value * other, distance=self.distance * abs(other), parents=[self])
+            return SensitiveFloat(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
         elif isinstance(other, (SensitiveInt, SensitiveFloat)):
             raise DPError("Sensitive values cannot be multiplied by each other.")
         else:
@@ -217,7 +218,7 @@ class SensitiveFloat(Prisoner[floating]):
 
     def __rmul__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
         if is_realnum(other):
-            return SensitiveFloat(other * self._value, distance=self.distance * abs(other), parents=[self])
+            return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
         else:
             raise ValueError("`other` must be a real number.")
 

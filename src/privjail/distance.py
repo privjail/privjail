@@ -11,7 +11,7 @@ class Constraint(NamedTuple):
     lhs: frozenset[Var] # distance variables {d1, d2, ..., dn}
     rhs: Expr           # distance expression de
 
-def free_dvars(constraint: Constraint):
+def free_dvars(constraint: Constraint) -> frozenset[Var]:
     return constraint.lhs | (constraint.rhs.free_symbols if not is_realnum(constraint.rhs) else set())
 
 class Distance:
@@ -25,12 +25,9 @@ class Distance:
         else:
             return Distance(self.expr + other, self.constraints)
 
-    def __mul__(self, other: realnum | Distance) -> Distance:
-        if isinstance(other, Distance):
-            # TODO: should we allow distance * distance?
-            return Distance(self.expr * other.expr, self.constraints | other.constraints)
-        else:
-            return Distance(self.expr * other, self.constraints)
+    def __mul__(self, other: realnum) -> Distance:
+        # TODO: disallow distance * distance
+        return Distance(self.expr * other, self.constraints)
 
     def max(self) -> realnum:
         if is_realnum(self.expr):
@@ -68,7 +65,7 @@ class Distance:
         constraints = self.constraints | {Constraint(frozenset(dvars), self.expr)}
         return [Distance(dvar, constraints) for dvar in dvars]
 
-    def _cleanup(self):
+    def _cleanup(self) -> None:
         # simplify the expression by substituting d1 + d2 + ... + dn in self.expr
         # with constraints d1 + d2 + ... + dn <= d to get self.expr = d
         prev_expr = None
@@ -77,7 +74,7 @@ class Distance:
             self.expr = self.expr.subs([(sum(c.lhs), c.rhs) for c in self.constraints])
 
         # remove unused constraints
-        constraints = {}
+        constraints = set()
         dvars = self.expr.free_symbols
         prev_dvars = None
         while prev_dvars != dvars:

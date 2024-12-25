@@ -769,7 +769,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              upper    : realnum | None = None,
              *,
              inplace  : Literal[True],
-             **kwargs : ...,
+             **kwargs : Any,
              ) -> None: ...
 
     @overload
@@ -778,7 +778,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              upper    : realnum | None = None,
              *,
              inplace  : bool = ...,
-             **kwargs : ...,
+             **kwargs : Any,
              ) -> PrivSeries[T]: ...
 
     def clip(self,
@@ -795,11 +795,11 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         new_schema["range"] = [new_a, new_b]
 
         if inplace:
-            self._value.clip(lower, upper, inplace=inplace, **kwargs)
+            self._value.clip(lower, upper, inplace=inplace, **kwargs) # type: ignore[arg-type]
             self._schema = new_schema
             return None
         else:
-            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
 
     def sum(self) -> SensitiveInt | SensitiveFloat:
         if None in self.schema["range"]:
@@ -830,8 +830,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         self.consume_privacy_budget(epsilon)
 
-        s = _np.random.laplace(loc=self._value.sum(), scale=sum_sensitivity / (epsilon / 2))
-        c = _np.random.laplace(loc=self._value.shape[0], scale=count_sensitivity / (epsilon / 2))
+        s = _np.random.laplace(loc=float(self._value.sum()), scale=float(sum_sensitivity) / (epsilon / 2))
+        c = _np.random.laplace(loc=float(self._value.shape[0]), scale=float(count_sensitivity) / (epsilon / 2))
 
         return s / c
 
