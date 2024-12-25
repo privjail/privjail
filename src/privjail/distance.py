@@ -44,14 +44,25 @@ class Distance:
             for c2 in self.constraints - {c}:
                 unused_dvars -= free_dvars(c2)
 
-            d_agg = _sp.Dummy()
-            sp_constraints.append(sum(c.lhs - unused_dvars) + d_agg <= c.rhs)
-            sp_constraints.append(0 <= d_agg)
-            for d in c.lhs - unused_dvars:
-                sp_constraints.append(0 <= d)
+            sp_constraints.append(sum(c.lhs - unused_dvars) <= c.rhs)
+
+        # Remove constraints like d1 <= d2
+        sp_expr = self.expr
+        while True:
+            changed = False
+            for c in sp_constraints:
+                if isinstance(c.lhs, _sp.Symbol):
+                    sp_expr = sp_expr.subs(c.lhs, c.rhs)
+                    sp_constraints = [c2.subs(c.lhs, c.rhs) for c2 in sp_constraints if c2 != c]
+                    changed = True
+                    break
+            if not changed:
+                break
+
+        sp_constraints += list({0 <= d for c in sp_constraints for d in c.free_symbols})
 
         # Solve by linear programming
-        y = _sp.solvers.simplex.lpmax(self.expr, sp_constraints)[0]
+        y = _sp.solvers.simplex.lpmax(sp_expr, sp_constraints)[0]
         assert y.is_number
         return int(y) if y.is_integer else float(y)
 
