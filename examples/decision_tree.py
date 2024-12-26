@@ -114,7 +114,7 @@ def tree_stats(dtree, depth=1):
 
 dtree = train()
 
-print(pj.current_privacy_budget())
+print(pj.consumed_privacy_budget())
 
 # import pprint
 # pprint.pprint(dtree)

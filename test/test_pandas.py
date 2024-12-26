@@ -496,22 +496,22 @@ def test_privacy_budget() -> None:
     counts = pdf1["b"].value_counts(sort=False, values=[3, 4, 5])
 
     pj.laplace_mechanism(counts, epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon
 
     pj.laplace_mechanism(counts[4], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 2
 
     pdf2 = pdf[pdf["a"] >= 3]
 
     pj.laplace_mechanism(pdf2.shape[0], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     # Privacy budget for different data sources should be managed independently
     pdf_, df_ = load_dataframe()
 
     pj.laplace_mechanism(pdf_.shape[0], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
-    assert pj.current_privacy_budget()[pdf_.root_name()] == epsilon
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 3
+    assert pj.consumed_privacy_budget()[pdf_.root_name()] == epsilon
 
 def test_privacy_budget_parallel_composition() -> None:
     pdf, df = load_dataframe()
@@ -522,19 +522,19 @@ def test_privacy_budget_parallel_composition() -> None:
     counts = pdf["b"].value_counts(sort=False, values=[2, 3, 4])
 
     pj.laplace_mechanism(counts, epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon
 
     pj.laplace_mechanism(counts[2], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 2
 
     pj.laplace_mechanism(counts[3], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 2
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 2
 
     pj.laplace_mechanism(counts[3] + counts[4], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     pj.laplace_mechanism(counts[2] - counts[4], epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 3
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 3
 
     # crosstab()
     crosstab = ppd.crosstab(pdf["a"], pdf["b"], rowvalues=[1, 2, 3, 4, 5], colvalues=[1, 2, 3, 4, 5])
@@ -543,7 +543,7 @@ def test_privacy_budget_parallel_composition() -> None:
         for col in crosstab.columns:
             pj.laplace_mechanism(crosstab.loc[idx, col], epsilon=epsilon)
 
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 4
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 4
 
     s = pj.SensitiveInt(0)
     for idx in crosstab.index:
@@ -551,11 +551,11 @@ def test_privacy_budget_parallel_composition() -> None:
             s += crosstab.loc[idx, col]
     assert s.distance.max() == 1
     pj.laplace_mechanism(s, epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 5
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 5
 
     assert crosstab.loc[1, 5].distance.max() == 1 # type: ignore
     pj.laplace_mechanism(crosstab.loc[1, 5], epsilon=epsilon) # type: ignore
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 6
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 6
 
     # groupby()
     s = pj.SensitiveInt(0)
@@ -564,11 +564,11 @@ def test_privacy_budget_parallel_composition() -> None:
     assert s.distance.max() == 1
     assert s._value == len(pdf._value)
     pj.laplace_mechanism(s, epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 7
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 7
 
     s = pj.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
         s += key * pdf_.shape[0]
     assert s.distance.max() == 5
     pj.laplace_mechanism(s, epsilon=epsilon)
-    assert pj.current_privacy_budget()[pdf.root_name()] == epsilon * 8
+    assert pj.consumed_privacy_budget()[pdf.root_name()] == epsilon * 8

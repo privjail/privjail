@@ -1,17 +1,16 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
-from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, ChildrenType
+from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, consume_privacy_budget, consumed_privacy_budget_all, ChildrenType
 from .distance import Distance, _max as dmax
 import numpy as _np
 
 T = TypeVar("T")
 
 class Prisoner(Generic[T]):
-    _value            : T
-    distance          : Distance
-    provenance_entity : ProvenanceEntity | None
-    parents           : Sequence[Prisoner[Any]]
+    _value     : T
+    distance   : Distance
+    provenance : list[ProvenanceEntity]
 
     def __init__(self,
                  value         : T,
@@ -23,20 +22,30 @@ class Prisoner(Generic[T]):
                  ):
         self._value   = value
         self.distance = distance
-        self.parents  = [parent for parent in parents if not parent.distance.is_zero()]
 
         if distance.is_zero():
-            self.provenance_entity = None
+            self.provenance = []
 
-        elif len(self.parents) == 0:
+        elif len(parents) == 0:
             if root_name is None:
                 raise ValueError("Both parents and root_name are not specified.")
 
-            self.provenance_entity = new_provenance_root(root_name)
+            self.provenance = [new_provenance_root(root_name)]
+
+        elif children_type == "inclusive":
+            parent_provenance = list({pe for p in parents for pe in p.provenance})
+
+            if len(parents) == 1 and parents[0].provenance[0].children_type == "exclusive":
+                self.provenance = [new_provenance_node(parent_provenance, "inclusive")]
+            else:
+                self.provenance = parent_provenance
+
+        elif children_type == "exclusive":
+            parent_provenance = list({pe for p in parents for pe in p.provenance})
+            self.provenance = [new_provenance_node(parent_provenance, "exclusive")]
 
         else:
-            pe_parents = [parent.provenance_entity for parent in self.parents if parent.provenance_entity is not None]
-            self.provenance_entity = new_provenance_node(pe_parents, children_type)
+            raise RuntimeError
 
     def __str__(self) -> str:
         return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
@@ -45,12 +54,11 @@ class Prisoner(Generic[T]):
         return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
 
     def consume_privacy_budget(self, privacy_budget: float) -> None:
-        assert self.provenance_entity is not None
-        self.provenance_entity.accumulate_privacy_budget(privacy_budget)
+        consume_privacy_budget(self.provenance, privacy_budget)
 
     def root_name(self) -> str:
-        assert self.provenance_entity is not None
-        return self.provenance_entity.root_name
+        assert len(self.provenance) > 0
+        return self.provenance[0].root_name
 
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
@@ -304,5 +312,5 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 
     return result
 
-def current_privacy_budget() -> dict[str, float]:
-    return get_privacy_budget_all()
+def consumed_privacy_budget() -> dict[str, float]:
+    return consumed_privacy_budget_all()
