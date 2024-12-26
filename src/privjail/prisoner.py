@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
-from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, NewTagType, ChildrenType
+from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, get_privacy_budget_all, ChildrenType
 from .distance import Distance, _max as dmax
 import numpy as _np
 
@@ -19,7 +19,6 @@ class Prisoner(Generic[T]):
                  *,
                  parents       : Sequence[Prisoner[Any]] = [],
                  root_name     : str | None              = None,
-                 tag_type      : NewTagType              = "none",
                  children_type : ChildrenType            = "inclusive",
                  ):
         self._value   = value
@@ -37,7 +36,7 @@ class Prisoner(Generic[T]):
 
         else:
             pe_parents = [parent.provenance_entity for parent in self.parents if parent.provenance_entity is not None]
-            self.provenance_entity = new_provenance_node(pe_parents, tag_type, children_type)
+            self.provenance_entity = new_provenance_node(pe_parents, children_type)
 
     def __str__(self) -> str:
         return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
@@ -45,24 +44,13 @@ class Prisoner(Generic[T]):
     def __repr__(self) -> str:
         return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
 
-    def has_same_tag(self, other: Prisoner[Any]) -> bool:
-        if self.provenance_entity is None and other.provenance_entity is None:
-            return True
-        elif self.provenance_entity is None or other.provenance_entity is None:
-            return False
-        else:
-            return self.provenance_entity.has_same_tag(other.provenance_entity)
-
     def consume_privacy_budget(self, privacy_budget: float) -> None:
         assert self.provenance_entity is not None
         self.provenance_entity.accumulate_privacy_budget(privacy_budget)
 
     def root_name(self) -> str:
         assert self.provenance_entity is not None
-        if self.provenance_entity.tag is not None:
-            return self.provenance_entity.tag.name
-        else:
-            return self.parents[0].root_name()
+        return self.provenance_entity.root_name
 
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
@@ -71,12 +59,11 @@ class SensitiveInt(Prisoner[integer]):
                  *,
                  parents       : Sequence[Prisoner[Any]] = [],
                  root_name     : str | None              = None,
-                 tag_type      : NewTagType              = "none",
                  children_type : ChildrenType            = "inclusive",
                  ):
         if not is_integer(value):
             raise ValueError("`value` must be int for SensitveInt.")
-        super().__init__(value, distance, parents=parents, root_name=root_name, tag_type=tag_type, children_type=children_type)
+        super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
 
     @overload
     def __add__(self, other: integer | SensitiveInt) -> SensitiveInt: ...
@@ -173,12 +160,11 @@ class SensitiveFloat(Prisoner[floating]):
                  *,
                  parents       : Sequence[Prisoner[Any]] = [],
                  root_name     : str | None              = None,
-                 tag_type      : NewTagType              = "none",
                  children_type : ChildrenType            = "inclusive",
                  ):
         if not is_floating(value):
             raise ValueError("`value` must be float for SensitveFloat.")
-        super().__init__(value, distance, parents=parents, root_name=root_name, tag_type=tag_type, children_type=children_type)
+        super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
 
     def __add__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveFloat:
         if is_realnum(other):

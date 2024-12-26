@@ -15,6 +15,15 @@ from .distance import Distance
 
 T = TypeVar("T")
 
+PTag = int
+
+ptag_count = 0
+
+def new_ptag() -> PTag:
+    global ptag_count
+    ptag_count += 1
+    return ptag_count
+
 @overload
 def unwrap_prisoner(x: Prisoner[T]) -> T: ...
 @overload
@@ -94,6 +103,8 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of rows is treated as a sensitive value.
     """
+    _schema : dict[str, Any]
+    _ptag   : PTag
 
     def __init__(self,
                  data         : Any,
@@ -115,11 +126,18 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
         self._schema = schema
 
+        if preserve_row:
+            parent_tags = [p._ptag for p in parents if isinstance(p, (PrivDataFrame, PrivSeries))]
+            assert len(parent_tags) > 0 and all([parent_tags[0] == pt for pt in parent_tags])
+            self._ptag = parent_tags[0]
+        else:
+            self._ptag = new_ptag()
+
         data = _pd.DataFrame(data, index, columns, dtype, copy)
         if preserve_row:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name, tag_type="inherit")
+            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
         else:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name, tag_type="renew")
+            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
@@ -149,7 +167,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             return PrivDataFrame(data=self._value.__getitem__(key), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
 
         elif isinstance(key, Prisoner) and is_bool_indexer(key._value):
-            if not self.has_same_tag(key):
+            if self._ptag != key._ptag:
                 raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
             return PrivDataFrame(data=self._value.__getitem__(key._value), schema=self.schema, distance=self.distance, parents=[self, key], preserve_row=False)
@@ -180,7 +198,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 not isinstance(value, Prisoner) and is_list_like(value) and not isinstance(value, (_pd.DataFrame, _pd.Series)):
             raise DPError("List-like values (other than DataFrame and Series) cannot be assigned because len(df) can be leaked.")
 
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and not self.has_same_tag(key):
+        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and self._ptag != key._ptag:
             raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
 
         # TODO: consider schema transform for keys other than str
@@ -199,7 +217,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         new_schema = {c: dict(type="bool") for c in self.schema}
 
         if isinstance(other, PrivDataFrame):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
             return PrivDataFrame(data=self._value == other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
@@ -217,7 +235,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         new_schema = {c: dict(type="bool") for c in self.schema}
 
         if isinstance(other, PrivDataFrame):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
             return PrivDataFrame(data=self._value != other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
@@ -235,7 +253,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         new_schema = {c: dict(type="bool") for c in self.schema}
 
         if isinstance(other, PrivDataFrame):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
             return PrivDataFrame(data=self._value < other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
 
@@ -252,7 +270,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         new_schema = {c: dict(type="bool") for c in self.schema}
 
         if isinstance(other, PrivDataFrame):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
             return PrivDataFrame(data=self._value <= other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
@@ -270,7 +288,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         new_schema = {c: dict(type="bool") for c in self.schema}
 
         if isinstance(other, PrivDataFrame):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
             return PrivDataFrame(data=self._value > other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
@@ -288,7 +306,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         new_schema = {c: dict(type="bool") for c in self.schema}
 
         if isinstance(other, PrivDataFrame):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
             return PrivDataFrame(data=self._value >= other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
@@ -459,7 +477,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         distances = self.distance.create_exclusive_distances(len(groups))
 
         # create a dummy prisoner to track exclusive provenance
-        prisoner_dummy = Prisoner(0, self.distance, parents=[self], tag_type="renew", children_type="exclusive")
+        prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
 
         # wrap each group by PrivDataFrame
         # TODO: update childrens' category schema that is chosen for the groupby key
@@ -489,6 +507,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of values is treated as a sensitive value.
     """
+    _schema : dict[str, Any]
+    _ptag   : PTag
 
     def __init__(self,
                  data         : Any,
@@ -508,11 +528,18 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         self._schema = schema
 
+        if preserve_row:
+            parent_tags = [p._ptag for p in parents if isinstance(p, (PrivDataFrame, PrivSeries))]
+            assert len(parent_tags) > 0 and all([parent_tags[0] == pt for pt in parent_tags])
+            self._ptag = parent_tags[0]
+        else:
+            self._ptag = new_ptag()
+
         data = _pd.Series(data, index, **kwargs)
         if preserve_row:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name, tag_type="inherit")
+            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
         else:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name, tag_type="renew")
+            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
@@ -528,7 +555,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if not is_bool_indexer(key._value):
             raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
 
-        if not self.has_same_tag(key):
+        if self._ptag != key._ptag:
             raise DPError("ser[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
         return PrivSeries[T](data=self._value.__getitem__(unwrap_prisoner(key)), schema=self.schema, distance=self.distance, parents=[self], preserve_row=False)
@@ -552,14 +579,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if is_2d_array(value):
             raise DPError("2D array cannot be assigned because len(df) can be leaked.")
 
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and not self.has_same_tag(key):
+        if isinstance(key, PrivSeries) and is_bool_indexer(key._value) and self._ptag != key._ptag:
             raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
 
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
     def __eq__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
         if isinstance(other, PrivSeries):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
             return PrivSeries[bool](data=self._value == other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
@@ -575,7 +602,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     def __ne__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
         if isinstance(other, PrivSeries):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
             return PrivSeries[bool](data=self._value != other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
@@ -591,7 +618,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     def __lt__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
             return PrivSeries[bool](data=self._value < other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
@@ -607,7 +634,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     def __le__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
             return PrivSeries[bool](data=self._value <= other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
@@ -623,7 +650,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     def __gt__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
             return PrivSeries[bool](data=self._value > other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
@@ -639,7 +666,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     def __ge__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
-            if not self.has_same_tag(other):
+            if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
             return PrivSeries[bool](data=self._value >= other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
@@ -874,7 +901,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         distances = self.distance.create_exclusive_distances(counts.size)
 
-        prisoner_dummy = Prisoner(0, self.distance, parents=[self], tag_type="renew", children_type="exclusive")
+        prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
 
         priv_counts = SensitiveSeries[int](index=counts.index, dtype="object")
         for i, idx in enumerate(counts.index):
@@ -989,7 +1016,7 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
     else:
         columns = [columns]
 
-    if not all(index[0].has_same_tag(x) for x in index + columns):
+    if not all(index[0]._ptag == x._ptag for x in index + columns):
         # TODO: reconsider whether this should be disallowed, as length difference does not cause an error
         raise DPError("Series in `index` and `columns` must have the same length.")
 
@@ -1003,7 +1030,7 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
 
     distances = index[0].distance.create_exclusive_distances(counts.size)
 
-    prisoner_dummy = Prisoner(0, index[0].distance, parents=index + columns, tag_type="renew", children_type="exclusive")
+    prisoner_dummy = Prisoner(0, index[0].distance, parents=index + columns, children_type="exclusive")
 
     priv_counts = SensitiveDataFrame(index=counts.index, columns=counts.columns)
     i = 0

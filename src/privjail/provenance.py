@@ -1,26 +1,22 @@
 from __future__ import annotations
-from typing import NamedTuple, Literal
+from typing import Literal
 
-class ProvenanceTag(NamedTuple):
-    name : str
-    cnt  : int
-
-NewTagType   = Literal["inherit", "renew", "none"]
 ChildrenType = Literal["inclusive", "exclusive"]
 
 privacy_budget_count: int = 0
 
 class ProvenanceEntity:
     parents         : list[ProvenanceEntity]
-    tag             : ProvenanceTag | None
     children_type   : ChildrenType
     privacy_budgets : dict[int, float]
+    root_name       : str
 
-    def __init__(self, parents: list[ProvenanceEntity], tag: ProvenanceTag | None, children_type: ChildrenType):
+    def __init__(self, parents: list[ProvenanceEntity], children_type: ChildrenType, root_name: str | None = None):
+        assert len(parents) > 0 or root_name is not None
         self.parents         = parents
-        self.tag             = tag
         self.children_type   = children_type
         self.privacy_budgets = {}
+        self.root_name       = root_name if root_name is not None else parents[0].root_name
 
     def total_privacy_budget(self) -> float:
         return sum(self.privacy_budgets.values())
@@ -57,54 +53,22 @@ class ProvenanceEntity:
 
         self.update_privacy_budget(privacy_budget, 0, budget_id)
 
-    def has_same_tag(self, other: ProvenanceEntity) -> bool:
-        return self.tag == other.tag
-
-provenance_roots      : dict[str, ProvenanceEntity] = {}
-provenance_tag_counts : dict[str, int]              = {}
+provenance_roots : dict[str, ProvenanceEntity] = {}
 
 def new_provenance_root(name: str) -> ProvenanceEntity:
     global provenance_roots
-    global provenance_tag_counts
 
     if name in provenance_roots:
         raise ValueError(f"Name '{name}' already exists")
 
-    initial_tag_count = 0
-    provenance_tag_counts[name] = initial_tag_count
-
-    pe = ProvenanceEntity([], ProvenanceTag(name, initial_tag_count), "inclusive")
+    pe = ProvenanceEntity([], "inclusive", root_name=name)
     provenance_roots[name] = pe
 
     return pe
 
-def new_provenance_node(parents: list[ProvenanceEntity], tag_type: NewTagType, children_type: ChildrenType) -> ProvenanceEntity:
+def new_provenance_node(parents: list[ProvenanceEntity], children_type: ChildrenType) -> ProvenanceEntity:
     assert len(parents) > 0
-    assert all([pe.tag == parents[0].tag for pe in parents])
-
-    if tag_type == "inherit":
-        tag = parents[0].tag
-    elif tag_type == "renew":
-        tag = renew_tag(parents[0].tag)
-    elif tag_type == "none":
-        tag = None
-    else:
-        raise RuntimeError
-
-    return ProvenanceEntity(parents, tag, children_type)
-
-def renew_tag(tag: ProvenanceTag | None) -> ProvenanceTag:
-    global provenance_tag_counts
-
-    if tag is None:
-        raise RuntimeError
-
-    name, count = tag
-
-    assert name in provenance_tag_counts
-    provenance_tag_counts[name] += 1
-
-    return ProvenanceTag(name, provenance_tag_counts[name])
+    return ProvenanceEntity(parents, children_type)
 
 def get_privacy_budget(name: str) -> float:
     global provenance_roots
@@ -116,13 +80,9 @@ def get_privacy_budget(name: str) -> float:
 
 def get_privacy_budget_all() -> dict[str, float]:
     global provenance_roots
-
     return {name: pe.total_privacy_budget() for name, pe in provenance_roots.items()}
 
 # should not be exposed
 def clear_global_states() -> None:
     global provenance_roots
-    global provenance_tag_counts
-
     provenance_roots = {}
-    provenance_tag_counts = {}
