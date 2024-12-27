@@ -846,9 +846,9 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         else:
             raise ValueError
 
-    def mean(self, epsilon: float) -> float:
-        if epsilon <= 0:
-            raise DPError(f"Invalid epsilon ({epsilon})")
+    def mean(self, eps: float) -> float:
+        if eps <= 0:
+            raise DPError(f"Invalid epsilon ({eps})")
 
         if None in self.domain["range"]:
             raise DPError("The range is unbounded. Use clip().")
@@ -857,10 +857,10 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         sum_sensitivity = (self.distance * max(abs(a), abs(b))).max()
         count_sensitivity = self.distance.max()
 
-        self.consume_privacy_budget(epsilon)
+        self.consume_privacy_budget(eps)
 
-        s = _np.random.laplace(loc=float(self._value.sum()), scale=float(sum_sensitivity) / (epsilon / 2))
-        c = _np.random.laplace(loc=float(self._value.shape[0]), scale=float(count_sensitivity) / (epsilon / 2))
+        s = _np.random.laplace(loc=float(self._value.sum()), scale=float(sum_sensitivity) / (eps / 2))
+        c = _np.random.laplace(loc=float(self._value.shape[0]), scale=float(count_sensitivity) / (eps / 2))
 
         return s / c
 

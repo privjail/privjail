@@ -11,27 +11,27 @@ def calc_gain(df, split_attr, target_attr):
         s += df_child[target_attr].value_counts(sort=False).max()
     return s
 
-def noisy_count(df, epsilon):
-    return max(0, pj.laplace_mechanism(df.shape[0], epsilon=epsilon))
+def noisy_count(df, eps):
+    return max(0, pj.laplace_mechanism(df.shape[0], eps=eps))
 
-def best_split(df, attributes, target_attr, epsilon):
+def best_split(df, attributes, target_attr, eps):
     gains = {attr: calc_gain(df, attr, target_attr) for attr in attributes}
-    return pj.exponential_mechanism(gains, epsilon)
+    return pj.exponential_mechanism(gains, eps)
 
-def build_decision_tree(df, attributes, target_attr, max_depth, epsilon):
+def build_decision_tree(df, attributes, target_attr, max_depth, eps):
     t = max([len(df.domains[attr]["categories"]) for attr in attributes])
     n_classes = len(df.domains[target_attr]["categories"])
-    n_rows = noisy_count(df, epsilon)
+    n_rows = noisy_count(df, eps)
 
-    if len(attributes) == 0 or max_depth == 0 or n_rows / (t * n_classes) < (2 ** 0.5) / epsilon:
-        class_counts = {c: noisy_count(df_c, epsilon) for c, df_c in df.groupby(target_attr)}
+    if len(attributes) == 0 or max_depth == 0 or n_rows / (t * n_classes) < (2 ** 0.5) / eps:
+        class_counts = {c: noisy_count(df_c, eps) for c, df_c in df.groupby(target_attr)}
         return max(class_counts, key=class_counts.get)
 
-    best_attr = best_split(df, attributes, target_attr, epsilon)
+    best_attr = best_split(df, attributes, target_attr, eps)
 
     child_nodes = []
     for category, df_child in df.groupby(best_attr):
-        child_node = build_decision_tree(df_child, [a for a in attributes if a != best_attr], target_attr, max_depth - 1, epsilon)
+        child_node = build_decision_tree(df_child, [a for a in attributes if a != best_attr], target_attr, max_depth - 1, eps)
         child_nodes.append(dict(category=category, child=child_node))
 
     return dict(attr=best_attr, children=child_nodes)
@@ -46,7 +46,7 @@ def make_bins(ser, vmin, vmax, n_bins):
     else:
         return pd.cut(ser, bins=bins, labels=labels, right=False, include_lowest=True)
 
-def train(max_depth=5, n_bins=20, epsilon=1.0):
+def train(max_depth=5, n_bins=20, eps=1.0):
     df_train = ppd.read_csv("data/adult_train.csv", "schema/adult.json")
     df_train = df_train.dropna()
 
@@ -60,8 +60,8 @@ def train(max_depth=5, n_bins=20, epsilon=1.0):
     target_attr = "income"
     attributes = [attr for attr in df_train.columns if attr != target_attr]
 
-    eps = epsilon / (2 * (max_depth + 1))
-    dtree = build_decision_tree(df_train, attributes, target_attr, max_depth, eps)
+    eps_each = eps / (2 * (max_depth + 1))
+    dtree = build_decision_tree(df_train, attributes, target_attr, max_depth, eps_each)
 
     print("Decision tree constructed.")
 

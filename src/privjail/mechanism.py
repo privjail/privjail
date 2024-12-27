@@ -6,9 +6,9 @@ from .pandas import SensitiveSeries, SensitiveDataFrame
 
 T = TypeVar("T")
 
-def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries[Any] | SensitiveDataFrame, epsilon: float) -> Any:
+def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries[Any] | SensitiveDataFrame, eps: float) -> Any:
     if isinstance(prisoner, (SensitiveSeries, SensitiveDataFrame)):
-        return prisoner.map(lambda x: laplace_mechanism(x, epsilon))
+        return prisoner.map(lambda x: laplace_mechanism(x, eps))
 
     elif isinstance(prisoner, Prisoner):
         sensitivity = prisoner.distance.max()
@@ -16,24 +16,24 @@ def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries[Any] | Sensitive
         if sensitivity <= 0:
             raise DPError(f"Invalid sensitivity ({sensitivity})")
 
-        if epsilon <= 0:
-            raise DPError(f"Invalid epsilon ({epsilon})")
+        if eps <= 0:
+            raise DPError(f"Invalid epsilon ({eps})")
 
-        prisoner.consume_privacy_budget(epsilon)
+        prisoner.consume_privacy_budget(eps)
 
         # TODO: type check for values, otherwise sensitive values can be leaked via errors (e.g., string)
-        return _np.random.laplace(loc=prisoner._value, scale=sensitivity / epsilon)
+        return _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
 
     else:
         raise ValueError
 
 # TODO: add test
 @overload
-def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat], epsilon: float) -> int: ...
+def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat], eps: float) -> int: ...
 @overload
-def exponential_mechanism(scores: dict[T, SensitiveInt | SensitiveFloat], epsilon: float) -> T: ...
+def exponential_mechanism(scores: dict[T, SensitiveInt | SensitiveFloat], eps: float) -> T: ...
 
-def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat] | dict[Any, SensitiveInt | SensitiveFloat], epsilon: float) -> Any:
+def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat] | dict[Any, SensitiveInt | SensitiveFloat], eps: float) -> Any:
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
 
@@ -55,14 +55,14 @@ def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat] | dict[Any
     if sensitivity <= 0:
         raise DPError(f"Invalid sensitivity ({sensitivity})")
 
-    if epsilon <= 0:
-        raise DPError(f"Invalid epsilon ({epsilon})")
+    if eps <= 0:
+        raise DPError(f"Invalid epsilon ({eps})")
 
     # create a dummy prisoner to propagate budget consumption to all prisoners
     prisoner_dummy = Prisoner(0, values[0].distance, parents=values)
-    prisoner_dummy.consume_privacy_budget(epsilon)
+    prisoner_dummy.consume_privacy_budget(eps)
 
-    exponents = [epsilon * v._value / sensitivity / 2 for v in values]
+    exponents = [eps * v._value / sensitivity / 2 for v in values]
     # to prevent too small or large values (-> 0 or inf)
     M: float = _np.max(exponents) # type: ignore[arg-type]
     p = [_np.exp(x - M) for x in exponents]

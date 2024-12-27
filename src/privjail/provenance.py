@@ -20,9 +20,9 @@ class ProvenanceEntity:
         self.consumed_privacy_budget = 0
         self.depth                   = max([p.depth for p in parents]) + 1 if len(parents) > 0 else 0
 
-    def consume_privacy_budget(self, epsilon: float) -> None:
-        assert epsilon >= 0
-        self.consumed_privacy_budget += epsilon
+    def consume_privacy_budget(self, eps: float) -> None:
+        assert eps >= 0
+        self.consumed_privacy_budget += eps
 
 provenance_roots : dict[str, ProvenanceEntity] = {}
 
@@ -55,33 +55,33 @@ def are_exclusive_siblings(pes: list[ProvenanceEntity]) -> bool:
                 pes[0].parents[0] == pe.parents[0] and \
                 pe.parents[0].children_type == "exclusive" for pe in pes])
 
-def consume_privacy_budget(pes: list[ProvenanceEntity], epsilon: float) -> None:
+def consume_privacy_budget(pes: list[ProvenanceEntity], eps: float) -> None:
     assert len(pes) > 0
 
     if are_exclusive_siblings(pes):
         for pe in pes:
-            pe.consume_privacy_budget(epsilon)
+            pe.consume_privacy_budget(eps)
 
         pe0 = pes[0].parents[0]
         new_cpd = max(pe0.consumed_privacy_budget, *[pe.consumed_privacy_budget for pe in pes])
-        new_epsilon = new_cpd - pe0.consumed_privacy_budget
+        new_eps = new_cpd - pe0.consumed_privacy_budget
 
-        if new_epsilon > 0:
-            pe0.consume_privacy_budget(new_epsilon)
-            consume_privacy_budget(pe0.parents, new_epsilon)
+        if new_eps > 0:
+            pe0.consume_privacy_budget(new_eps)
+            consume_privacy_budget(pe0.parents, new_eps)
 
     elif len(pes) == 1 and len(pes[0].parents) == 0:
         assert get_provenance_root(pes[0].root_name) == pes[0]
-        pes[0].consume_privacy_budget(epsilon)
+        pes[0].consume_privacy_budget(eps)
 
     elif len(pes) == 1 and len(pes[0].parents) > 0:
-        pes[0].consume_privacy_budget(epsilon)
-        consume_privacy_budget(pes[0].parents, epsilon)
+        pes[0].consume_privacy_budget(eps)
+        consume_privacy_budget(pes[0].parents, eps)
 
     else:
         # skip intermediate entities until all paths converge into a single entity
         # (lowest "single" common ancestor (LSCA) in a dag)
-        consume_privacy_budget([get_lsca(pes)], epsilon)
+        consume_privacy_budget([get_lsca(pes)], eps)
 
 def consumed_privacy_budget(name: str) -> float:
     return get_provenance_root(name).consumed_privacy_budget
