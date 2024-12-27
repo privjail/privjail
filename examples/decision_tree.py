@@ -19,8 +19,8 @@ def best_split(df, attributes, target_attr, eps):
     return pj.exponential_mechanism(gains, eps)
 
 def build_decision_tree(df, attributes, target_attr, max_depth, eps):
-    t = max([len(df.domains[attr]["categories"]) for attr in attributes])
-    n_classes = len(df.domains[target_attr]["categories"])
+    t = max([len(df.domains[attr].categories) for attr in attributes])
+    n_classes = len(df.domains[target_attr].categories)
     n_rows = noisy_count(df, eps)
 
     if len(attributes) == 0 or max_depth == 0 or n_rows / (t * n_classes) < (2 ** 0.5) / eps:
@@ -53,8 +53,8 @@ def train(max_depth=5, n_bins=20, eps=1.0):
     original_domains = df_train.domains.copy()
 
     for attr, domain in df_train.domains.items():
-        if domain["type"] == "int64":
-            [vmin, vmax] = domain["range"]
+        if domain.type == "int64":
+            vmin, vmax = domain.range
             df_train[attr] = make_bins(df_train[attr], vmin, vmax, n_bins)
 
     target_attr = "income"
@@ -84,8 +84,8 @@ def test(dtree):
     n_bins = dtree["n_bins"]
 
     for attr, domain in dtree["domains"].items():
-        if domain["type"] == "int64":
-            [vmin, vmax] = domain["range"]
+        if domain.type == "int64":
+            vmin, vmax = domain.range
             df_test[attr] = make_bins(df_test[attr], vmin, vmax, n_bins)
 
     correct_count = 0

@@ -13,8 +13,8 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "b": [2, 4, 4, 4, 3],
     }
     domains = {
-        "a": dict(type="int64", range=[None, None]),
-        "b": dict(type="int64", range=[None, None]),
+        "a": ppd.RealDomain(type="int64", range=(None, None)),
+        "b": ppd.RealDomain(type="int64", range=(None, None)),
     }
     pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
