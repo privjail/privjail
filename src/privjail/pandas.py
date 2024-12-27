@@ -24,6 +24,8 @@ def new_ptag() -> PTag:
     ptag_count += 1
     return ptag_count
 
+Domain = Any
+
 @overload
 def unwrap_prisoner(x: Prisoner[T]) -> T: ...
 @overload
@@ -103,12 +105,12 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of rows is treated as a sensitive value.
     """
-    _schema : dict[str, Any]
-    _ptag   : PTag
+    _ptag    : PTag
+    _domains : dict[str, Domain]
 
     def __init__(self,
                  data         : Any,
-                 schema       : dict[str, Any],
+                 domains      : dict[str, Domain],
                  distance     : Distance,
                  index        : Any                     = None,
                  columns      : Any                     = None,
@@ -124,7 +126,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         elif preserve_row is None:
             raise ValueError("preserve_row is required when parents are specified.")
 
-        self._schema = schema
+        self._domains = domains
 
         if preserve_row:
             parent_tags = [p._ptag for p in parents if isinstance(p, (PrivDataFrame, PrivSeries))]
@@ -160,17 +162,17 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
         if isinstance(key, str):
             # TODO: consider duplicated column names
-            return PrivSeries[Any](data=self._value.__getitem__(key), schema=self.schema[key], distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[Any](data=self._value.__getitem__(key), domain=self.domains[key], distance=self.distance, parents=[self], preserve_row=True)
 
         elif isinstance(key, list) and all(isinstance(x, str) for x in key):
-            new_schema = {c: v for c, v in self.schema.items() if c in key}
-            return PrivDataFrame(data=self._value.__getitem__(key), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            new_domains = {c: d for c, d in self.domains.items() if c in key}
+            return PrivDataFrame(data=self._value.__getitem__(key), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
         elif isinstance(key, Prisoner) and is_bool_indexer(key._value):
             if self._ptag != key._ptag:
                 raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-            return PrivDataFrame(data=self._value.__getitem__(key._value), schema=self.schema, distance=self.distance, parents=[self, key], preserve_row=False)
+            return PrivDataFrame(data=self._value.__getitem__(key._value), domains=self.domains, distance=self.distance, parents=[self, key], preserve_row=False)
 
         else:
             raise ValueError
@@ -201,26 +203,26 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         if isinstance(key, Prisoner) and is_bool_indexer(key._value) and self._ptag != key._ptag:
             raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
 
-        # TODO: consider schema transform for keys other than str
+        # TODO: consider domain transform for keys other than str
         if isinstance(key, str) and isinstance(value, PrivSeries):
-            new_schema = dict()
-            for col, col_schema in self.schema.items():
+            new_domains = dict()
+            for col, domain in self.domains.items():
                 if col == key:
-                    new_schema[col] = value.schema
+                    new_domains[col] = value.domain
                 else:
-                    new_schema[col] = col_schema
-            self._schema = new_schema
+                    new_domains[col] = domain
+            self._domains = new_domains
 
         self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
 
     def __eq__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
-        new_schema = {c: dict(type="bool") for c in self.schema}
+        new_domains = {c: dict(type="bool") for c in self.domains}
 
         if isinstance(other, PrivDataFrame):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value == other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivDataFrame(data=self._value == other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -229,16 +231,16 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value == other, schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value == other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     def __ne__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
-        new_schema = {c: dict(type="bool") for c in self.schema}
+        new_domains = {c: dict(type="bool") for c in self.domains}
 
         if isinstance(other, PrivDataFrame):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value != other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivDataFrame(data=self._value != other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -247,15 +249,15 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value != other, schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value != other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     def __lt__(self, other: Any) -> PrivDataFrame:
-        new_schema = {c: dict(type="bool") for c in self.schema}
+        new_domains = {c: dict(type="bool") for c in self.domains}
 
         if isinstance(other, PrivDataFrame):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
-            return PrivDataFrame(data=self._value < other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivDataFrame(data=self._value < other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -264,16 +266,16 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value < other, schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value < other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     def __le__(self, other: Any) -> PrivDataFrame:
-        new_schema = {c: dict(type="bool") for c in self.schema}
+        new_domains = {c: dict(type="bool") for c in self.domains}
 
         if isinstance(other, PrivDataFrame):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value <= other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivDataFrame(data=self._value <= other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -282,16 +284,16 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value <= other, schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value <= other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     def __gt__(self, other: Any) -> PrivDataFrame:
-        new_schema = {c: dict(type="bool") for c in self.schema}
+        new_domains = {c: dict(type="bool") for c in self.domains}
 
         if isinstance(other, PrivDataFrame):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value > other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivDataFrame(data=self._value > other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -300,16 +302,16 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value > other, schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value > other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     def __ge__(self, other: Any) -> PrivDataFrame:
-        new_schema = {c: dict(type="bool") for c in self.schema}
+        new_domains = {c: dict(type="bool") for c in self.domains}
 
         if isinstance(other, PrivDataFrame):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-            return PrivDataFrame(data=self._value >= other._value, schema=new_schema, distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivDataFrame(data=self._value >= other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -318,7 +320,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
 
         else:
-            return PrivDataFrame(data=self._value >= other, schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value >= other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     @property
     def shape(self) -> tuple[SensitiveInt, int]:
@@ -343,8 +345,8 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         return self._value.dtypes
 
     @property
-    def schema(self) -> dict[str, Any]:
-        return self._schema
+    def domains(self) -> dict[str, Domain]:
+        return self._domains
 
     @overload
     def replace(self,
@@ -375,35 +377,35 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
             # TODO: consider string and category dtype
             raise NotImplementedError
 
-        new_schema = dict()
-        for col, col_schema in self.schema.items():
-            if col_schema["type"] == "int64" and _np.isnan(value):
-                new_col_schema = col_schema.copy()
-                new_col_schema["type"] = "Int64"
-                new_schema[col] = new_col_schema
+        new_domains = dict()
+        for col, domain in self.domains.items():
+            if domain["type"] == "int64" and _np.isnan(value):
+                new_domain = domain.copy()
+                new_domain["type"] = "Int64"
+                new_domains[col] = new_domain
 
-            elif col_schema["type"] in ["int64", "Int64", "float64", "Float64"]:
-                [a, b] = col_schema["range"]
+            elif domain["type"] in ["int64", "Int64", "float64", "Float64"]:
+                [a, b] = domain["range"]
                 if (a is None or a <= to_replace) and (b is None or to_replace <= b):
                     new_a = min(a, value) if a is not None else None
                     new_b = max(b, value) if b is not None else None
 
-                    new_col_schema = col_schema.copy()
-                    new_col_schema["range"] = [new_a, new_b]
-                    new_schema[col] = new_col_schema
+                    new_domain = domain.copy()
+                    new_domain["range"] = [new_a, new_b]
+                    new_domains[col] = new_domain
 
                 else:
-                    new_schema[col] = col_schema
+                    new_domains[col] = domain
 
             else:
-                new_schema[col] = col_schema
+                new_domains[col] = domain
 
         if inplace:
             self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
-            self._schema = new_schema
+            self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
 
     @overload
     def dropna(self,
@@ -430,21 +432,21 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
-        new_schema = dict()
-        for col, col_schema in self.schema.items():
-            if col_schema["type"] == "Int64":
-                new_col_schema = col_schema.copy()
-                new_col_schema["type"] = "int64"
-                new_schema[col] = new_col_schema
+        new_domains = dict()
+        for col, domain in self.domains.items():
+            if domain["type"] == "Int64":
+                new_domain = domain.copy()
+                new_domain["type"] = "int64"
+                new_domains[col] = new_domain
             else:
-                new_schema[col] = col_schema
+                new_domains[col] = domain
 
         if inplace:
             self._value.dropna(inplace=inplace, **kwargs)
-            self._schema = new_schema
+            self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
     def groupby(self,
                 by         : str, # TODO: support more
@@ -456,8 +458,8 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 dropna     : bool                               = True,
                 keys       : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
                 ) -> PrivDataFrameGroupBy:
-        if self.schema[by]["type"] == "category":
-            keys = self.schema[by]["categories"]
+        if self.domains[by]["type"] == "category":
+            keys = self.domains[by]["categories"]
 
         if keys is None:
             raise DPError("Please provide the `keys` argument to prevent privacy leakage for non-categorical columns.")
@@ -480,8 +482,8 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
 
         # wrap each group by PrivDataFrame
-        # TODO: update childrens' category schema that is chosen for the groupby key
-        priv_groups = {key: PrivDataFrame(df, schema=self.schema, distance=d, parents=[prisoner_dummy], preserve_row=False) for (key, df), d in zip(groups.items(), distances)}
+        # TODO: update childrens' category domain that is chosen for the groupby key
+        priv_groups = {key: PrivDataFrame(df, domains=self.domains, distance=d, parents=[prisoner_dummy], preserve_row=False) for (key, df), d in zip(groups.items(), distances)}
 
         return PrivDataFrameGroupBy(priv_groups)
 
@@ -507,12 +509,12 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of values is treated as a sensitive value.
     """
-    _schema : dict[str, Any]
+    _domain : Domain
     _ptag   : PTag
 
     def __init__(self,
                  data         : Any,
-                 schema       : dict[str, Any],
+                 domain       : Domain,
                  distance     : Distance,
                  index        : Any                     = None,
                  *,
@@ -526,7 +528,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         elif preserve_row is None:
             raise ValueError("preserve_row is required when parents are specified.")
 
-        self._schema = schema
+        self._domain = domain
 
         if preserve_row:
             parent_tags = [p._ptag for p in parents if isinstance(p, (PrivDataFrame, PrivSeries))]
@@ -558,7 +560,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if self._ptag != key._ptag:
             raise DPError("ser[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
-        return PrivSeries[T](data=self._value.__getitem__(unwrap_prisoner(key)), schema=self.schema, distance=self.distance, parents=[self], preserve_row=False)
+        return PrivSeries[T](data=self._value.__getitem__(unwrap_prisoner(key)), domain=self.domain, distance=self.distance, parents=[self], preserve_row=False)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, slice):
@@ -589,7 +591,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value == other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivSeries[bool](data=self._value == other._value, domain=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -598,14 +600,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries[bool](data=self._value == other, schema=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[bool](data=self._value == other, domain=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
 
     def __ne__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
         if isinstance(other, PrivSeries):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value != other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivSeries[bool](data=self._value != other._value, domain=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -614,14 +616,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries[bool](data=self._value != other, schema=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[bool](data=self._value != other, domain=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
 
     def __lt__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value < other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivSeries[bool](data=self._value < other._value, domain=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -630,14 +632,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries[bool](data=self._value < other, schema=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[bool](data=self._value < other, domain=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
 
     def __le__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value <= other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivSeries[bool](data=self._value <= other._value, domain=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -646,14 +648,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries[bool](data=self._value <= other, schema=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[bool](data=self._value <= other, domain=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
 
     def __gt__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value > other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivSeries[bool](data=self._value > other._value, domain=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -662,14 +664,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries[bool](data=self._value > other, schema=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[bool](data=self._value > other, domain=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
 
     def __ge__(self, other: Any) -> PrivSeries[bool]:
         if isinstance(other, PrivSeries):
             if self._ptag != other._ptag:
                 raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value >= other._value, schema=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
+            return PrivSeries[bool](data=self._value >= other._value, domain=dict(type="bool"), distance=self.distance, parents=[self, other], preserve_row=True)
 
         elif isinstance(other, Prisoner):
             raise DPError("Sensitive values cannot be used for comparison.")
@@ -678,7 +680,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
 
         else:
-            return PrivSeries[bool](data=self._value >= other, schema=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[bool](data=self._value >= other, domain=dict(type="bool"), distance=self.distance, parents=[self], preserve_row=True)
 
     @property
     def shape(self) -> tuple[SensitiveInt]:
@@ -694,8 +696,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         return self._value.dtypes
 
     @property
-    def schema(self) -> dict[str, Any]:
-        return self._schema
+    def domain(self) -> Domain:
+        return self._domain
 
     @overload
     def replace(self,
@@ -726,31 +728,31 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             # TODO: consider string and category dtype
             raise NotImplementedError
 
-        if self.schema["type"] == "int64" and _np.isnan(value):
-            new_schema = self.schema.copy()
-            new_schema["type"] = "Int64"
+        if self.domain["type"] == "int64" and _np.isnan(value):
+            new_domain = self.domain.copy()
+            new_domain["type"] = "Int64"
 
-        elif self.schema["type"] in ["int64", "Int64", "float64", "Float64"]:
-            [a, b] = self.schema["range"]
+        elif self.domain["type"] in ["int64", "Int64", "float64", "Float64"]:
+            [a, b] = self.domain["range"]
             if (a is None or a <= to_replace) and (b is None or to_replace <= b):
                 new_a = min(a, value) if a is not None else None
                 new_b = max(b, value) if b is not None else None
 
-                new_schema = self.schema.copy()
-                new_schema["range"] = [new_a, new_b]
+                new_domain = self.domain.copy()
+                new_domain["range"] = [new_a, new_b]
 
             else:
-                new_schema = self.schema
+                new_domain = self.domain
 
         else:
-            new_schema = self.schema
+            new_domain = self.domain
 
         if inplace:
             self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
-            self._schema = new_schema
+            self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivSeries[T](data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
 
     @overload
     def dropna(self,
@@ -777,18 +779,18 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
-        if self.schema["type"] == "Int64":
-            new_schema = self.schema.copy()
-            new_schema["type"] = "int64"
+        if self.domain["type"] == "Int64":
+            new_domain = self.domain.copy()
+            new_domain["type"] = "int64"
         else:
-            new_schema = self.schema
+            new_domain = self.domain
 
         if inplace:
             self._value.dropna(inplace=inplace, **kwargs)
-            self._schema = new_schema
+            self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.dropna(inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[T](data=self._value.dropna(inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True)
 
     @overload
     def clip(self,
@@ -815,31 +817,31 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              inplace  : bool = False,
              **kwargs : Any,
              ) -> PrivSeries[T] | None:
-        new_schema = self.schema.copy()
-        [a, b] = self.schema["range"]
+        new_domain = self.domain.copy()
+        [a, b] = self.domain["range"]
         new_a = a if lower is None else lower if a is None else max(a, lower)
         new_b = b if upper is None else upper if b is None else min(b, upper)
-        new_schema["range"] = [new_a, new_b]
+        new_domain["range"] = [new_a, new_b]
 
         if inplace:
             self._value.clip(lower, upper, inplace=inplace, **kwargs) # type: ignore[arg-type]
-            self._schema = new_schema
+            self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), schema=new_schema, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
 
     def sum(self) -> SensitiveInt | SensitiveFloat:
-        if None in self.schema["range"]:
+        if None in self.domain["range"]:
             raise DPError("The range is unbounded. Use clip().")
 
-        [a, b] = self.schema["range"]
+        [a, b] = self.domain["range"]
         new_distance = self.distance * max(abs(a), abs(b))
 
         s = self._value.sum()
 
-        if self.schema["type"] in ["int64", "Int64"]:
+        if self.domain["type"] in ["int64", "Int64"]:
             return SensitiveInt(s, new_distance, parents=[self])
-        elif self.schema["type"] in ["float64", "Float64"]:
+        elif self.domain["type"] in ["float64", "Float64"]:
             return SensitiveFloat(s, new_distance, parents=[self])
         else:
             raise ValueError
@@ -848,10 +850,10 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if epsilon <= 0:
             raise DPError(f"Invalid epsilon ({epsilon})")
 
-        if None in self.schema["range"]:
+        if None in self.domain["range"]:
             raise DPError("The range is unbounded. Use clip().")
 
-        [a, b] = self.schema["range"]
+        [a, b] = self.domain["range"]
         sum_sensitivity = (self.distance * max(abs(a), abs(b))).max()
         count_sensitivity = self.distance.max()
 
@@ -881,8 +883,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if sort:
             raise DPError("The `sort` argument must be False.")
 
-        if self.schema["type"] == "category":
-            values = self.schema["categories"]
+        if self.domain["type"] == "category":
+            values = self.domain["categories"]
 
         if values is None:
             raise DPError("Please provide the `values` argument to prevent privacy leakage.")
@@ -946,7 +948,7 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
     else:
         schema = dict()
 
-    df_schema = dict()
+    domains = dict()
     for col in df.columns:
         if not isinstance(col, str):
             raise ValueError("Column name must be a string.")
@@ -956,13 +958,14 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
         else:
             col_schema = dict(type="string" if df.dtypes[col] == "object" else df.dtypes[col])
 
-        df_schema[col] = normalize_column_schema(col_schema)
+        col_schema = normalize_column_schema(col_schema)
 
-        df[col] = apply_column_schema(df[col], df_schema[col], col)
+        df[col] = apply_column_schema(df[col], col_schema, col)
 
-        df_schema[col].pop("na_value")
+        col_schema.pop("na_value")
+        domains[col] = col_schema
 
-    return PrivDataFrame(data=df, schema=df_schema, distance=Distance(1), root_name=filepath)
+    return PrivDataFrame(data=df, domains=domains, distance=Distance(1), root_name=filepath)
 
 def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
              columns      : PrivSeries[Any] | list[PrivSeries[Any]],
@@ -1054,6 +1057,6 @@ def cut(x        : PrivSeries[Any],
 
     ser = _pd.cut(x._value, bins, *args, **kwargs)
 
-    new_schema = dict(type="category", categories=list(ser.dtype.categories))
+    new_domain = dict(type="category", categories=list(ser.dtype.categories))
 
-    return PrivSeries[Any](ser, schema=new_schema, distance=x.distance, parents=[x], preserve_row=True)
+    return PrivSeries[Any](ser, domain=new_domain, distance=x.distance, parents=[x], preserve_row=True)

@@ -12,11 +12,11 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": [1, 2, 3, 4, 5],
         "b": [2, 4, 4, 4, 3],
     }
-    schema = {
+    domains = {
         "a": dict(type="int64", range=[None, None]),
         "b": dict(type="int64", range=[None, None]),
     }
-    pdf = ppd.PrivDataFrame(data, schema=schema, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
+    pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()

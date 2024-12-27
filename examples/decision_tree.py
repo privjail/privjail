@@ -19,8 +19,8 @@ def best_split(df, attributes, target_attr, epsilon):
     return pj.exponential_mechanism(gains, epsilon)
 
 def build_decision_tree(df, attributes, target_attr, max_depth, epsilon):
-    t = max([len(df.schema[attr]["categories"]) for attr in attributes])
-    n_classes = len(df.schema[target_attr]["categories"])
+    t = max([len(df.domains[attr]["categories"]) for attr in attributes])
+    n_classes = len(df.domains[target_attr]["categories"])
     n_rows = noisy_count(df, epsilon)
 
     if len(attributes) == 0 or max_depth == 0 or n_rows / (t * n_classes) < (2 ** 0.5) / epsilon:
@@ -50,11 +50,11 @@ def train(max_depth=5, n_bins=20, epsilon=1.0):
     df_train = ppd.read_csv("data/adult_train.csv", "schema/adult.json")
     df_train = df_train.dropna()
 
-    original_schema = df_train.schema.copy()
+    original_domains = df_train.domains.copy()
 
-    for attr, attrprop in df_train.schema.items():
-        if attrprop["type"] == "int64":
-            [vmin, vmax] = attrprop["range"]
+    for attr, domain in df_train.domains.items():
+        if domain["type"] == "int64":
+            [vmin, vmax] = domain["range"]
             df_train[attr] = make_bins(df_train[attr], vmin, vmax, n_bins)
 
     target_attr = "income"
@@ -65,7 +65,7 @@ def train(max_depth=5, n_bins=20, epsilon=1.0):
 
     print("Decision tree constructed.")
 
-    return dict(n_bins=n_bins, schema=original_schema, tree=dtree)
+    return dict(n_bins=n_bins, domains=original_domains, tree=dtree)
 
 def classify(dtree, row):
     if type(dtree) is str:
@@ -83,9 +83,9 @@ def test(dtree):
 
     n_bins = dtree["n_bins"]
 
-    for attr, attrprop in dtree["schema"].items():
-        if attrprop["type"] == "int64":
-            [vmin, vmax] = attrprop["range"]
+    for attr, domain in dtree["domains"].items():
+        if domain["type"] == "int64":
+            [vmin, vmax] = domain["range"]
             df_test[attr] = make_bins(df_test[attr], vmin, vmax, n_bins)
 
     correct_count = 0
