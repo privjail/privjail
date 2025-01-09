@@ -1,6 +1,8 @@
 from typing import get_origin, get_args, Union, List, Tuple, Dict
 import types
+import os
 import sys
+import tempfile
 import importlib.util
 from grpc_tools import protoc
 
@@ -205,28 +207,31 @@ def compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def):
     proto_msg_def += [""] + proto_req_def + [""] + proto_res_def
 
 def compile_proto():
-    proto_file = "dynamic.proto"
-    with open(proto_file, "w") as f:
-        f.write(proto_header + proto_content)
+    with tempfile.TemporaryDirectory(prefix="egrpc_") as tempdir:
+        proto_file = os.path.join(tempdir, "dynamic.proto")
 
-    protoc.main(
-        [
-            "grpc_tools.protoc",
-            "--proto_path=.",
-            "--python_out=.",
-            "--grpc_python_out=.",
-            proto_file,
-        ]
-    )
+        with open(proto_file, "w") as f:
+            f.write(proto_header + proto_content)
 
-    spec = importlib.util.spec_from_file_location("dynamic_pb2", "./dynamic_pb2.py")
-    dynamic_pb2 = importlib.util.module_from_spec(spec)
-    sys.modules["dynamic_pb2"] = dynamic_pb2
-    spec.loader.exec_module(dynamic_pb2)
+        protoc.main(
+            [
+                "grpc_tools.protoc",
+                f"--proto_path={tempdir}",
+                f"--python_out={tempdir}",
+                f"--grpc_python_out={tempdir}",
+                proto_file,
+            ]
+        )
 
-    spec_grpc = importlib.util.spec_from_file_location("dynamic_pb2_grpc", "./dynamic_pb2_grpc.py")
-    dynamic_pb2_grpc = importlib.util.module_from_spec(spec_grpc)
-    sys.modules["dynamic_pb2_grpc"] = dynamic_pb2_grpc
-    spec_grpc.loader.exec_module(dynamic_pb2_grpc)
+        def import_dynamic_module(module_name, filename):
+            filepath = os.path.join(tempdir, filename)
+            spec = importlib.util.spec_from_file_location(module_name, filepath)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            return module
 
-    return dynamic_pb2, dynamic_pb2_grpc
+        dynamic_pb2 = import_dynamic_module("dynamic_pb2", "dynamic_pb2.py")
+        dynamic_pb2_grpc = import_dynamic_module("dynamic_pb2_grpc", "dynamic_pb2_grpc.py")
+
+        return dynamic_pb2, dynamic_pb2_grpc
