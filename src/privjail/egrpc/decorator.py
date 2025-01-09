@@ -3,11 +3,10 @@ import functools
 import dataclasses
 import weakref
 
-from . import names
 from .util import egrpc_mode
 from .compiler import compile_function, compile_dataclass, compile_remoteclass
 from .proto_interface import pack_proto_function_request, pack_proto_function_response, unpack_proto_function_request, unpack_proto_function_response, pack_proto_method_request, pack_proto_method_response, unpack_proto_method_request, unpack_proto_method_response
-from .grpc_interface import grpc_register_service, grpc_function_call, grpc_method_call
+from .grpc_interface import grpc_register_function, grpc_register_method, grpc_function_call, grpc_method_call
 
 def function_decorator(func):
     compile_function(func)
@@ -18,9 +17,7 @@ def function_decorator(func):
             result = func(**args)
             return pack_proto_function_response(func, result)
 
-        proto_rpc_name = names.proto_function_rpc_name(func)
-        proto_service_name = names.proto_function_service_name(func)
-        grpc_register_service(proto_service_name, {proto_rpc_name: function_handler})
+        grpc_register_function(func, function_handler)
 
         return func
 
@@ -48,23 +45,20 @@ def remoteclass_decorator(cls):
             pass
         cls.__del__ = __del__
 
+    cls.__instance_count = 0
+    cls.__instance_map = {}
+
     methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
 
     compile_remoteclass(cls, methods)
 
-    cls.__instance_count = 0
-    cls.__instance_map = {}
-
     if egrpc_mode == "server":
-        handlers = {}
-
         def init_handler(self, proto_req, context):
             args = unpack_proto_method_request(cls, cls.__init__, proto_req)
             obj = cls(**args)
             return pack_proto_method_response(cls, cls.__init__, obj)
 
-        proto_rpc_name = names.proto_method_rpc_name(cls, cls.__init__)
-        handlers[proto_rpc_name] = init_handler
+        grpc_register_method(cls, cls.__init__, init_handler)
 
         def del_handler(self, proto_req, context):
             args = unpack_proto_method_request(cls, cls.__del__, proto_req)
@@ -73,8 +67,7 @@ def remoteclass_decorator(cls):
             assert sys.getrefcount(obj) == 3
             return pack_proto_method_response(cls, cls.__del__, None)
 
-        proto_rpc_name = names.proto_method_rpc_name(cls, cls.__del__)
-        handlers[proto_rpc_name] = del_handler
+        grpc_register_method(cls, cls.__del__, del_handler)
 
         for method_name, method in methods.items():
             def method_handler(self, proto_req, context, method=method):
@@ -82,11 +75,7 @@ def remoteclass_decorator(cls):
                 result = method(**args)
                 return pack_proto_method_response(cls, method, result)
 
-            proto_rpc_name = names.proto_method_rpc_name(cls, method)
-            handlers[proto_rpc_name] = method_handler
-
-        proto_service_name = names.proto_remoteclass_service_name(cls)
-        grpc_register_service(proto_service_name, handlers)
+            grpc_register_method(cls, method, method_handler)
 
         return cls
 

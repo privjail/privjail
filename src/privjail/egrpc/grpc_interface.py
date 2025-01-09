@@ -16,9 +16,22 @@ def get_grpc_module():
 
 proto_handlers = {}
 
-def grpc_register_service(proto_service_name, handlers):
+def grpc_register_function(func, handler):
+    proto_service_name = names.proto_function_service_name(func)
+    proto_rpc_name = names.proto_function_rpc_name(func)
+
     global proto_handlers
-    proto_handlers[proto_service_name] = handlers
+    assert proto_service_name not in proto_handlers
+    proto_handlers[proto_service_name] = {proto_rpc_name: handler}
+
+def grpc_register_method(cls, method, handler):
+    proto_service_name = names.proto_remoteclass_service_name(cls)
+    proto_rpc_name = names.proto_method_rpc_name(cls, method)
+
+    global proto_handlers
+    if proto_service_name not in proto_handlers:
+        proto_handlers[proto_service_name] = {}
+    proto_handlers[proto_service_name][proto_rpc_name] = handler
 
 def init_server(port):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1), maximum_concurrent_rpcs=1)
