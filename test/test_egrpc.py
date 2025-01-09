@@ -135,9 +135,6 @@ class Point():
         self.y = y
         self.z = z
 
-    def __del__(self):
-        pass
-
     @egrpc.method
     def norm(self) -> float:
         return math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)

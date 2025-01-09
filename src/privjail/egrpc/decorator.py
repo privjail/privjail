@@ -43,6 +43,11 @@ def method_decorator(method):
     return method
 
 def remoteclass_decorator(cls):
+    if not hasattr(cls, "__del__"):
+        def __del__(self):
+            pass
+        cls.__del__ = __del__
+
     methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
 
     compile_remoteclass(cls, methods)
