@@ -1,11 +1,10 @@
 from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict
-import inspect
 import types
-import weakref
 
 from . import names
-from .compiler import InstanceRef, proto_primitive_type_mapping, proto_dataclass_type_mapping, proto_remoteclass_type_mapping
-from .util import egrpc_mode, is_type_match, get_function_typed_params, get_function_return_type, get_method_self_name, get_method_typed_params, get_method_return_type
+from .util import is_type_match, get_function_typed_params, get_function_return_type, get_method_typed_params, get_method_return_type, normalize_args
+from .compiler import proto_primitive_type_mapping, proto_dataclass_type_mapping, proto_remoteclass_type_mapping
+from .instance_ref import InstanceRefType, get_ref_from_instance, get_instance_from_ref
 
 dynamic_pb2 = None
 
@@ -25,16 +24,13 @@ def new_proto_function_response(func):
     return getattr(get_proto_module(), names.proto_function_res_name(func))()
 
 def pack_proto_function_request(func, *args, **kwargs):
-    type_hints = get_type_hints(func)
-
-    sig = inspect.signature(func)
-    bound_args = sig.bind(*args, **kwargs)
-    bound_args.apply_defaults()
+    typed_params = get_function_typed_params(func)
+    normalized_args = normalize_args(func, *args, **kwargs)
 
     msg = new_proto_function_request(func)
 
-    for param_name, arg in bound_args.arguments.items():
-        set_proto_field(msg, param_name, type_hints[param_name], arg)
+    for param_name, arg in normalized_args.items():
+        set_proto_field(msg, param_name, typed_params[param_name], arg)
 
     return msg
 
@@ -60,42 +56,33 @@ def new_proto_method_response(cls, method):
     return getattr(get_proto_module(), names.proto_method_res_name(cls, method))()
 
 def pack_proto_method_request(cls, method, *args, **kwargs):
-    type_hints = get_type_hints(method)
-
-    sig = inspect.signature(method)
-    bound_args = sig.bind(*args, **kwargs)
-    bound_args.apply_defaults()
+    typed_params = get_method_typed_params(cls, method)
+    normalized_args = normalize_args(method, *args, **kwargs)
 
     msg = new_proto_method_request(cls, method)
 
-    for i, (param_name, arg) in enumerate(bound_args.arguments.items()):
-        if i == 0:
-            if method.__name__ != "__init__":
-                set_proto_field(msg, param_name, InstanceRef, arg.__instance_ref)
-        else:
-            set_proto_field(msg, param_name, type_hints[param_name], arg)
+    for i, (param_name, arg) in enumerate(normalized_args.items()):
+        if i == 0 and method.__name__ == "__init__":
+            continue
+        set_proto_field(msg, param_name, typed_params[param_name], arg)
 
     return msg
 
 def unpack_proto_method_request(cls, method, msg):
     typed_params = get_method_typed_params(cls, method)
-    args = {param_name: get_proto_field(msg, param_name, type_hint) \
-            for param_name, type_hint in typed_params.items()}
 
     if method.__name__ == "__init__":
-        return args
+        typed_params = dict(list(typed_params.items())[1:])
 
-    else:
-        self_name = get_method_self_name(cls, method)
-        instance_ref = get_proto_field(msg, self_name, InstanceRef)
-        obj = cls.__instance_map[instance_ref]
-        return {self_name: obj, **args}
+    return {param_name: get_proto_field(msg, param_name, type_hint) \
+            for param_name, type_hint in typed_params.items()}
 
 def pack_proto_method_response(cls, method, obj):
     msg = new_proto_method_response(cls, method)
 
     if method.__name__ == "__init__":
-        set_proto_field(msg, "return", cls, obj)
+        instance_ref = get_ref_from_instance(cls, obj)
+        set_proto_field(msg, "return", InstanceRefType, instance_ref)
         return msg
 
     elif method.__name__ == "__del__":
@@ -108,7 +95,7 @@ def pack_proto_method_response(cls, method, obj):
 
 def unpack_proto_method_response(cls, method, msg):
     if method.__name__ == "__init__":
-        return get_proto_field(msg, "return", InstanceRef)
+        return get_proto_field(msg, "return", InstanceRefType)
 
     elif method.__name__ == "__del__":
         return None
@@ -116,13 +103,6 @@ def unpack_proto_method_response(cls, method, msg):
     else:
         return_type = get_method_return_type(cls, method)
         return get_proto_field(msg, "return", return_type)
-
-def assign_instance_ref(cls, obj):
-    instance_ref = cls.__instance_count
-    cls.__instance_count += 1
-
-    obj.__instance_ref = instance_ref
-    cls.__instance_map[instance_ref] = obj
 
 def get_proto_field(proto_msg, param_name, type_hint):
     type_origin = get_origin(type_hint)
@@ -143,23 +123,8 @@ def get_proto_field(proto_msg, param_name, type_hint):
 
         elif type_hint in proto_remoteclass_type_mapping:
             cls = type_hint
-            instance_ref = getattr(proto_msg, param_name)
-
-            if egrpc_mode == "server":
-                assert instance_ref in cls.__instance_map
-                return cls.__instance_map[instance_ref]
-
-            elif egrpc_mode == "client":
-                if instance_ref in cls.__instance_map:
-                    return cls.__instance_map[instance_ref]()
-                else:
-                    obj = object.__new__(cls)
-                    obj.__instance_ref = instance_ref
-                    cls.__instance_map[instance_ref] = weakref.ref(obj)
-                    return obj
-
-            else:
-                raise Exception
+            instance_ref = getattr(proto_msg, param_name).ref
+            return get_instance_from_ref(cls, instance_ref)
 
         else:
             raise TypeError(f"Type '{type_hint}' is unknown.")
@@ -193,17 +158,17 @@ def get_proto_field(proto_msg, param_name, type_hint):
     else:
         raise Exception
 
-def set_proto_repeated_field(repeated_container, param_name, type_hint, objs):
+def get_proto_repeated_field(repeated_container, param_name, type_hint):
     if get_origin(type_hint) is None:
         # RepeatedScalarContainer
-        repeated_container.extend(objs)
+        return list(repeated_container)
     else:
         # RepeatedCompositeContainer
-        for o in objs:
-            # https://stackoverflow.com/questions/57222346/how-to-get-type-contained-by-protobufs-repeatedcompositecontainer-or-repeatedsc
-            child_proto_msg = repeated_container.add()
+        objs = []
+        for child_proto_msg in repeated_container:
             WrapperMsg = type("WrapperMessage", (), {param_name: child_proto_msg})
-            set_proto_field(WrapperMsg, param_name, type_hint, o)
+            objs.append(get_proto_field(WrapperMsg, param_name, type_hint))
+        return objs
 
 def set_proto_field(proto_msg, param_name, type_hint, obj):
     type_origin = get_origin(type_hint)
@@ -222,9 +187,9 @@ def set_proto_field(proto_msg, param_name, type_hint, obj):
                 set_proto_field(proto_class_msg, member_name, th, getattr(obj, member_name))
 
         elif type_hint in proto_remoteclass_type_mapping:
-            if egrpc_mode == "server" and not hasattr(obj, "__instance_ref"):
-                assign_instance_ref(type_hint, obj)
-            setattr(proto_msg, param_name, obj.__instance_ref)
+            cls = type_hint
+            instance_ref = get_ref_from_instance(cls, obj)
+            getattr(proto_msg, param_name).ref = instance_ref
 
         else:
             raise TypeError(f"Type '{type_hint}' is unknown.")
@@ -255,14 +220,14 @@ def set_proto_field(proto_msg, param_name, type_hint, obj):
     else:
         raise Exception
 
-def get_proto_repeated_field(repeated_container, param_name, type_hint):
+def set_proto_repeated_field(repeated_container, param_name, type_hint, objs):
     if get_origin(type_hint) is None:
         # RepeatedScalarContainer
-        return list(repeated_container)
+        repeated_container.extend(objs)
     else:
         # RepeatedCompositeContainer
-        objs = []
-        for child_proto_msg in repeated_container:
+        for o in objs:
+            # https://stackoverflow.com/questions/57222346/how-to-get-type-contained-by-protobufs-repeatedcompositecontainer-or-repeatedsc
+            child_proto_msg = repeated_container.add()
             WrapperMsg = type("WrapperMessage", (), {param_name: child_proto_msg})
-            objs.append(get_proto_field(WrapperMsg, param_name, type_hint))
-        return objs
+            set_proto_field(WrapperMsg, param_name, type_hint, o)

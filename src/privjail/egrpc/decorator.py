@@ -1,12 +1,11 @@
-import sys
 import functools
 import dataclasses
-import weakref
 
 from .util import egrpc_mode
 from .compiler import compile_function, compile_dataclass, compile_remoteclass
 from .proto_interface import pack_proto_function_request, pack_proto_function_response, unpack_proto_function_request, unpack_proto_function_response, pack_proto_method_request, pack_proto_method_response, unpack_proto_method_request, unpack_proto_method_response
 from .grpc_interface import grpc_register_function, grpc_register_method, grpc_function_call, grpc_method_call
+from .instance_ref import init_remoteclass, assign_ref_to_instance, del_instance
 
 def function_decorator(func):
     compile_function(func)
@@ -40,13 +39,7 @@ def method_decorator(method):
     return method
 
 def remoteclass_decorator(cls):
-    if not hasattr(cls, "__del__"):
-        def __del__(self):
-            pass
-        cls.__del__ = __del__
-
-    cls.__instance_count = 0
-    cls.__instance_map = {}
+    init_remoteclass(cls)
 
     methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
 
@@ -62,9 +55,7 @@ def remoteclass_decorator(cls):
 
         def del_handler(self, proto_req, context):
             args = unpack_proto_method_request(cls, cls.__del__, proto_req)
-            obj = list(args.values())[0]
-            del cls.__instance_map[obj.__instance_ref]
-            assert sys.getrefcount(obj) == 3
+            del_instance(cls, list(args.values())[0])
             return pack_proto_method_response(cls, cls.__del__, None)
 
         grpc_register_method(cls, cls.__del__, del_handler)
@@ -85,13 +76,7 @@ def remoteclass_decorator(cls):
             proto_req = pack_proto_method_request(cls, cls.__init__, *args, **kwargs)
             proto_res = grpc_method_call(cls, cls.__init__, proto_req)
             instance_ref = unpack_proto_method_response(cls, cls.__init__, proto_res)
-
-            self = args[0]
-
-            assert instance_ref not in cls.__instance_map
-            cls.__instance_map[instance_ref] = weakref.ref(self)
-
-            self.__instance_ref = instance_ref
+            assign_ref_to_instance(cls, args[0], instance_ref)
 
         cls.__init__ = init_wrapper
 

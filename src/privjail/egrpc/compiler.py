@@ -7,9 +7,10 @@ import importlib.util
 from grpc_tools import protoc
 
 from . import names
-from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_self_name, get_method_typed_params, get_method_return_type
+from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_typed_params, get_method_return_type
+from .instance_ref import InstanceRefType
 
-InstanceRef = int
+InstanceRef = InstanceRefType
 
 proto_primitive_type_mapping = {
     str        : "string",
@@ -140,16 +141,17 @@ def compile_dataclass(cls):
     proto_dataclass_type_mapping[cls] = proto_msgname
 
 def compile_remoteclass(cls, methods):
-    global proto_remoteclass_type_mapping
-    proto_remoteclass_type_mapping[cls] = proto_primitive_type_mapping[InstanceRef]
-
     proto_service_name = names.proto_remoteclass_service_name(cls)
+    proto_instance_ref_name = names.proto_instance_ref_name(cls)
 
     proto_rpc_def = []
     proto_msg_def = []
 
-    proto_instance_def = gen_proto_msg_def(names.proto_instance_ref_name(cls), {"instance_ref": InstanceRef})
+    proto_instance_def = gen_proto_msg_def(proto_instance_ref_name, {"ref": InstanceRefType})
     proto_msg_def += [""] + proto_instance_def
+
+    global proto_remoteclass_type_mapping
+    proto_remoteclass_type_mapping[cls] = proto_instance_ref_name
 
     compile_remoteclass_init(cls, proto_rpc_def, proto_msg_def)
     compile_remoteclass_del(cls, proto_rpc_def, proto_msg_def)
@@ -172,27 +174,26 @@ def compile_remoteclass_init(cls, proto_rpc_def, proto_msg_def):
     proto_req_name = names.proto_method_req_name(cls, cls.__init__)
     proto_res_name = names.proto_method_res_name(cls, cls.__init__)
 
-    proto_req_def = gen_proto_msg_def(proto_req_name, typed_params)
-    proto_res_def = gen_proto_msg_def(proto_res_name, {"return": InstanceRef})
+    proto_req_def = gen_proto_msg_def(proto_req_name, dict(list(typed_params.items())[1:]))
+    proto_res_def = gen_proto_msg_def(proto_res_name, {"return": InstanceRefType})
 
     proto_rpc_def.append(f"  rpc {proto_rpc_name} ({proto_req_name}) returns ({proto_res_name});")
     proto_msg_def += [""] + proto_req_def + [""] + proto_res_def
 
 def compile_remoteclass_del(cls, proto_rpc_def, proto_msg_def):
-    self_name = get_method_self_name(cls, cls.__del__)
+    typed_params = get_method_typed_params(cls, cls.__del__)
 
     proto_rpc_name = names.proto_method_rpc_name(cls, cls.__del__)
     proto_req_name = names.proto_method_req_name(cls, cls.__del__)
     proto_res_name = names.proto_method_res_name(cls, cls.__del__)
 
-    proto_req_def = gen_proto_msg_def(proto_req_name, {self_name: InstanceRef})
+    proto_req_def = gen_proto_msg_def(proto_req_name, typed_params)
     proto_res_def = gen_proto_msg_def(proto_res_name, {})
 
     proto_rpc_def.append(f"  rpc {proto_rpc_name} ({proto_req_name}) returns ({proto_res_name});")
     proto_msg_def += [""] + proto_req_def + [""] + proto_res_def
 
 def compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def):
-    self_name = get_method_self_name(cls, method)
     typed_params = get_method_typed_params(cls, method)
     return_type = get_method_return_type(cls, method)
 
@@ -200,7 +201,7 @@ def compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def):
     proto_req_name = names.proto_method_req_name(cls, method)
     proto_res_name = names.proto_method_res_name(cls, method)
 
-    proto_req_def = gen_proto_msg_def(proto_req_name, {self_name: InstanceRef, **typed_params})
+    proto_req_def = gen_proto_msg_def(proto_req_name, typed_params)
     proto_res_def = gen_proto_msg_def(proto_res_name, {"return": return_type})
 
     proto_rpc_def.append(f"  rpc {proto_rpc_name} ({proto_req_name}) returns ({proto_res_name});")

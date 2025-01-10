@@ -50,16 +50,20 @@ def get_function_return_type(func):
 def get_class_typed_members(cls):
     return get_type_hints(cls)
 
-def get_method_self_name(cls, method):
-    return list(inspect.signature(method).parameters.keys())[0]
-
 def get_method_typed_params(cls, method):
     globalns = {cls.__name__: cls, **globals()}
     type_hints = get_type_hints(method, globalns=globalns)
     param_names = list(inspect.signature(method).parameters.keys())
-    return {param_name: type_hints[param_name] for param_name in param_names[1:]}
+    return {param_names[0]: cls,
+            **{param_name: type_hints[param_name] for param_name in param_names[1:]}}
 
 def get_method_return_type(cls, method):
     globalns = {cls.__name__: cls, **globals()}
     type_hints = get_type_hints(method, globalns=globalns)
     return type_hints["return"]
+
+def normalize_args(func, *args, **kwargs):
+    sig = inspect.signature(func)
+    bound_args = sig.bind(*args, **kwargs)
+    bound_args.apply_defaults()
+    return bound_args.arguments
