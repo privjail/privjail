@@ -153,11 +153,13 @@ def compile_remoteclass(cls, methods):
     global proto_remoteclass_type_mapping
     proto_remoteclass_type_mapping[cls] = proto_instance_ref_name
 
-    compile_remoteclass_init(cls, proto_rpc_def, proto_msg_def)
-    compile_remoteclass_del(cls, proto_rpc_def, proto_msg_def)
-
     for method_name, method in methods.items():
-        compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def)
+        if method_name == "__init__":
+            compile_remoteclass_init(cls, proto_rpc_def, proto_msg_def)
+        else:
+            compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def)
+
+    compile_remoteclass_del(cls, proto_rpc_def, proto_msg_def)
 
     global proto_content
     proto_content += f"""

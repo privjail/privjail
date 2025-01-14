@@ -46,12 +46,22 @@ def remoteclass_decorator(cls):
     compile_remoteclass(cls, methods)
 
     if egrpc_mode == "server":
-        def init_handler(self, proto_req, context):
-            args = unpack_proto_method_request(cls, cls.__init__, proto_req)
-            obj = cls(**args)
-            return pack_proto_method_response(cls, cls.__init__, obj)
+        for method_name, method in methods.items():
+            if method_name == "__init__":
+                def init_handler(self, proto_req, context):
+                    args = unpack_proto_method_request(cls, cls.__init__, proto_req)
+                    obj = cls(**args)
+                    return pack_proto_method_response(cls, cls.__init__, obj)
 
-        grpc_register_method(cls, cls.__init__, init_handler)
+                grpc_register_method(cls, cls.__init__, init_handler)
+
+            else:
+                def method_handler(self, proto_req, context, method=method):
+                    args = unpack_proto_method_request(cls, method, proto_req)
+                    result = method(**args)
+                    return pack_proto_method_response(cls, method, result)
+
+                grpc_register_method(cls, method, method_handler)
 
         def del_handler(self, proto_req, context):
             args = unpack_proto_method_request(cls, cls.__del__, proto_req)
@@ -60,25 +70,28 @@ def remoteclass_decorator(cls):
 
         grpc_register_method(cls, cls.__del__, del_handler)
 
-        for method_name, method in methods.items():
-            def method_handler(self, proto_req, context, method=method):
-                args = unpack_proto_method_request(cls, method, proto_req)
-                result = method(**args)
-                return pack_proto_method_response(cls, method, result)
-
-            grpc_register_method(cls, method, method_handler)
-
         return cls
 
     elif egrpc_mode == "client":
-        @functools.wraps(cls.__init__)
-        def init_wrapper(*args, **kwargs):
-            proto_req = pack_proto_method_request(cls, cls.__init__, *args, **kwargs)
-            proto_res = grpc_method_call(cls, cls.__init__, proto_req)
-            instance_ref = unpack_proto_method_response(cls, cls.__init__, proto_res)
-            assign_ref_to_instance(cls, args[0], instance_ref)
+        for method_name, method in methods.items():
+            if method_name == "__init__":
+                @functools.wraps(cls.__init__)
+                def init_wrapper(*args, **kwargs):
+                    proto_req = pack_proto_method_request(cls, cls.__init__, *args, **kwargs)
+                    proto_res = grpc_method_call(cls, cls.__init__, proto_req)
+                    instance_ref = unpack_proto_method_response(cls, cls.__init__, proto_res)
+                    assign_ref_to_instance(cls, args[0], instance_ref)
 
-        cls.__init__ = init_wrapper
+                cls.__init__ = init_wrapper
+
+            else:
+                @functools.wraps(method)
+                def wrapper(*args, method=method, **kwargs):
+                    proto_req = pack_proto_method_request(cls, method, *args, **kwargs)
+                    proto_res = grpc_method_call(cls, method, proto_req)
+                    return unpack_proto_method_response(cls, method, proto_res)
+
+                setattr(cls, method_name, wrapper)
 
         @functools.wraps(cls.__del__)
         def del_wrapper(self):
@@ -86,14 +99,5 @@ def remoteclass_decorator(cls):
             grpc_method_call(cls, cls.__del__, proto_req)
 
         cls.__del__ = del_wrapper
-
-        for method_name, method in methods.items():
-            @functools.wraps(method)
-            def wrapper(*args, method=method, **kwargs):
-                proto_req = pack_proto_method_request(cls, method, *args, **kwargs)
-                proto_res = grpc_method_call(cls, method, proto_req)
-                return unpack_proto_method_response(cls, method, proto_res)
-
-            setattr(cls, method_name, wrapper)
 
         return cls
