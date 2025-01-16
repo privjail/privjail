@@ -1,14 +1,12 @@
-from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict, Any, TypeVar, Callable, Type
+from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict, Any, TypeVar, Callable, Type, ParamSpec
 import types
-import os
 import inspect
 
 T = TypeVar("T")
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
 TypeHint = Any
-
-egrpc_mode = os.getenv("EGRPC_MODE", "client")
 
 # https://github.com/python/mypy/issues/15630
 def my_get_origin(type_hint: Any) -> Any:
@@ -47,31 +45,31 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
     else:
         raise Exception
 
-def get_function_typed_params(func: F) -> dict[str, TypeHint]:
+def get_function_typed_params(func: Callable[P, R]) -> dict[str, TypeHint]:
     type_hints = get_type_hints(func)
     param_names = list(inspect.signature(func).parameters.keys())
     return {param_name: type_hints[param_name] for param_name in param_names}
 
-def get_function_return_type(func: F) -> TypeHint:
+def get_function_return_type(func: Callable[P, R]) -> TypeHint:
     type_hints = get_type_hints(func)
     return type_hints["return"]
 
 def get_class_typed_members(cls: Type[T]) -> dict[str, TypeHint]:
     return get_type_hints(cls)
 
-def get_method_typed_params(cls: Type[T], method: F) -> dict[str, TypeHint]:
+def get_method_typed_params(cls: Type[T], method: Callable[P, R]) -> dict[str, TypeHint]:
     globalns = {cls.__name__: cls, **globals()}
     type_hints = get_type_hints(method, globalns=globalns)
     param_names = list(inspect.signature(method).parameters.keys())
     return {param_names[0]: cls,
             **{param_name: type_hints[param_name] for param_name in param_names[1:]}}
 
-def get_method_return_type(cls: Type[T], method: F) -> TypeHint:
+def get_method_return_type(cls: Type[T], method: Callable[P, R]) -> TypeHint:
     globalns = {cls.__name__: cls, **globals()}
     type_hints = get_type_hints(method, globalns=globalns)
     return type_hints["return"]
 
-def normalize_args(func: F, *args: Any, **kwargs: Any) -> dict[str, Any]:
+def normalize_args(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
     sig = inspect.signature(func)
     bound_args = sig.bind(*args, **kwargs)
     bound_args.apply_defaults()

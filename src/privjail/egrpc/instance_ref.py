@@ -1,8 +1,6 @@
 from typing import TypeVar, Type, Any
 import weakref
 
-from .util import egrpc_mode
-
 T = TypeVar("T")
 
 WeakRef = weakref.ref
@@ -15,19 +13,15 @@ def init_remoteclass(cls: Type[T]) -> None:
             pass
         setattr(cls, "__del__", __del__)
 
-    if egrpc_mode == "server":
-        setattr(cls, "__instance_count", 0)
-        setattr(cls, "__instance_map_server", {})
-    elif egrpc_mode == "client":
-        setattr(cls, "__instance_map_client", {})
+    setattr(cls, "__instance_count", 0)
+    setattr(cls, "__instance_map_server", {})
+    setattr(cls, "__instance_map_client", {})
 
 def _get_instance_map_server(cls: Type[T]) -> dict[InstanceRefType, T]:
-    assert egrpc_mode == "server"
     instance_map: dict[InstanceRefType, T] = getattr(cls, "__instance_map_server")
     return instance_map
 
 def _get_instance_map_client(cls: Type[T]) -> dict[InstanceRefType, WeakRef[T]]:
-    assert egrpc_mode == "client"
     instance_map: dict[InstanceRefType, WeakRef[T]] = getattr(cls, "__instance_map_client")
     return instance_map
 
@@ -35,21 +29,21 @@ def _get_instance_ref(obj: T) -> int:
     instance_ref: int = getattr(obj, "__instance_ref")
     return instance_ref
 
-def get_ref_from_instance(cls: Type[T], obj: T) -> InstanceRefType:
-    if egrpc_mode == "server" and not hasattr(obj, "__instance_ref"):
+def get_ref_from_instance(cls: Type[T], obj: T, on_server: bool) -> InstanceRefType:
+    if on_server and not hasattr(obj, "__instance_ref"):
         instance_ref = getattr(cls, "__instance_count")
         setattr(cls, "__instance_count", instance_ref + 1)
-        assign_ref_to_instance(cls, obj, instance_ref)
+        assign_ref_to_instance(cls, obj, instance_ref, on_server)
 
     return _get_instance_ref(obj)
 
-def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType) -> T:
-    if egrpc_mode == "server":
+def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType, on_server: bool) -> T:
+    if on_server:
         instance_map_server = _get_instance_map_server(cls)
         assert instance_ref in instance_map_server
         return instance_map_server[instance_ref]
 
-    elif egrpc_mode == "client":
+    else:
         instance_map_client = _get_instance_map_client(cls)
         if instance_ref in instance_map_client:
             obj = instance_map_client[instance_ref]()
@@ -57,28 +51,22 @@ def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType) -> T:
             return obj
         else:
             obj = object.__new__(cls)
-            assign_ref_to_instance(cls, obj, instance_ref)
+            assign_ref_to_instance(cls, obj, instance_ref, on_server)
             return obj
 
-    else:
-        raise Exception
-
-def assign_ref_to_instance(cls: Type[T], obj: T, instance_ref: InstanceRefType) -> None:
+def assign_ref_to_instance(cls: Type[T], obj: T, instance_ref: InstanceRefType, on_server: bool) -> None:
     setattr(obj, "__instance_ref", instance_ref)
 
-    if egrpc_mode == "server":
+    if on_server:
         instance_map_server = _get_instance_map_server(cls)
         assert instance_ref not in instance_map_server
         instance_map_server[instance_ref] = obj
 
-    elif egrpc_mode == "client":
+    else:
         # use weakref so that obj is garbage collected regardless of instance map
         instance_map_client = _get_instance_map_client(cls)
         assert instance_ref not in instance_map_client
         instance_map_client[instance_ref] = weakref.ref(obj)
-
-    else:
-        raise Exception
 
 def del_instance(cls: Type[T], obj: T) -> None:
     instance_map = _get_instance_map_server(cls)

@@ -73,6 +73,9 @@ def get_client_channel() -> ChannelType:
     assert client_channel is not None
     return client_channel
 
+def remote_connected() -> bool:
+    return client_channel is not None
+
 def grpc_function_call(func: Callable[P, R], proto_req: ProtoMsg) -> ProtoMsg:
     proto_service_name = names.proto_function_service_name(func)
     proto_rpc_name = names.proto_function_rpc_name(func)

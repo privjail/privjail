@@ -5,9 +5,6 @@ import multiprocessing
 import time
 import math
 import pytest
-
-if "EGRPC_MODE" not in os.environ:
-    os.environ["EGRPC_MODE"] = "client"
 from privjail import egrpc
 
 env_name = "client"
@@ -32,12 +29,8 @@ def server() -> Iterator[None]:
 
     error_queue: Any = multiprocessing.Queue()
 
-    os.environ["EGRPC_MODE"] = "server"
-
     server_process = multiprocessing.Process(target=serve, args=(port, error_queue))
     server_process.start()
-
-    os.environ["EGRPC_MODE"] = "client"
 
     time.sleep(1)
 
