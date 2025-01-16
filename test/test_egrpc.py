@@ -1,21 +1,23 @@
-from typing import Union, List, Tuple, Dict, Optional
-import os
-import importlib
+from typing import Union, List, Tuple, Dict, Optional, Iterator, Any
 import sys
+import os
 import multiprocessing
 import time
 import math
-from pathlib import Path
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
-egrpc = importlib.import_module("privjail.egrpc")
+if "EGRPC_MODE" not in os.environ:
+    os.environ["EGRPC_MODE"] = "client"
+from privjail import egrpc
 
 env_name = "client"
 
-def serve(port, error_queue):
+def serve(port: int, error_queue: Any) -> None:
     global env_name
     env_name = "server"
+
+    # redirect stdout to parent process
+    sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
     try:
         egrpc.serve(port)
@@ -25,10 +27,10 @@ def serve(port, error_queue):
         error_queue.put(f"Unexpected error: {e}")
 
 @pytest.fixture(scope="module")
-def server():
+def server() -> Iterator[None]:
     port = 12345
 
-    error_queue = multiprocessing.Queue()
+    error_queue: Any = multiprocessing.Queue()
 
     os.environ["EGRPC_MODE"] = "server"
 
@@ -59,7 +61,7 @@ def server():
 def get_gvar() -> str:
     return env_name
 
-def test_remote_exec(server):
+def test_remote_exec(server: Any) -> None:
     assert env_name == "client"
     assert get_gvar() == "server"
 
@@ -95,7 +97,7 @@ def func7(d: Dict[str, int]) -> dict[str, list[str]]:
 def func8(x: Optional[int] = None) -> int | None:
     return x * x if x is not None else None
 
-def test_function(server):
+def test_function(server: Any) -> None:
     assert func1("Alice", 30) == "Alice: 30"
     assert func2("Bob", 60) == "Bob: 60.00"
     assert func2("Bob", 60.2) == "Bob: 60.20"
@@ -122,11 +124,11 @@ def dcfunc1(d: Data) -> float:
 def dcfunc2(d1: Data, d2: Data) -> bool:
     return d1 == d2
 
-def test_dataclass(server):
-    d = Data(3, 2.2)
+def test_dataclass(server: Any) -> None:
+    d = Data(3, 2.2) # type: ignore[call-arg]
     assert dcfunc1(d) == pytest.approx(3 * 2.2)
     assert dcfunc2(d, d) == True
-    assert dcfunc2(d, Data(2, 2.2)) == False
+    assert dcfunc2(d, Data(2, 2.2)) == False # type: ignore[call-arg]
 
 @egrpc.remoteclass
 class Point():
@@ -156,7 +158,7 @@ def identity(p: Point) -> Point:
 def norm(p: Point) -> float:
     return p.norm()
 
-def test_remoteclass(server):
+def test_remoteclass(server: Any) -> None:
     p1 = Point(1, 2, 3)
     p2 = Point(1.1, 2.2, 3.3)
 

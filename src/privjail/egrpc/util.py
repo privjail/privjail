@@ -1,12 +1,21 @@
-from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict
+from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict, Any, TypeVar, Callable, Type
 import types
 import os
 import inspect
 
+T = TypeVar("T")
+F = TypeVar("F", bound=Callable[..., Any])
+
+TypeHint = Any
+
 egrpc_mode = os.getenv("EGRPC_MODE", "client")
 
-def is_type_match(obj, type_hint) -> bool:
-    type_origin = get_origin(type_hint)
+# https://github.com/python/mypy/issues/15630
+def my_get_origin(type_hint: Any) -> Any:
+    return get_origin(type_hint)
+
+def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
+    type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
     if type_origin is None:
@@ -38,31 +47,31 @@ def is_type_match(obj, type_hint) -> bool:
     else:
         raise Exception
 
-def get_function_typed_params(func):
+def get_function_typed_params(func: F) -> dict[str, TypeHint]:
     type_hints = get_type_hints(func)
     param_names = list(inspect.signature(func).parameters.keys())
     return {param_name: type_hints[param_name] for param_name in param_names}
 
-def get_function_return_type(func):
+def get_function_return_type(func: F) -> TypeHint:
     type_hints = get_type_hints(func)
     return type_hints["return"]
 
-def get_class_typed_members(cls):
+def get_class_typed_members(cls: Type[T]) -> dict[str, TypeHint]:
     return get_type_hints(cls)
 
-def get_method_typed_params(cls, method):
+def get_method_typed_params(cls: Type[T], method: F) -> dict[str, TypeHint]:
     globalns = {cls.__name__: cls, **globals()}
     type_hints = get_type_hints(method, globalns=globalns)
     param_names = list(inspect.signature(method).parameters.keys())
     return {param_names[0]: cls,
             **{param_name: type_hints[param_name] for param_name in param_names[1:]}}
 
-def get_method_return_type(cls, method):
+def get_method_return_type(cls: Type[T], method: F) -> TypeHint:
     globalns = {cls.__name__: cls, **globals()}
     type_hints = get_type_hints(method, globalns=globalns)
     return type_hints["return"]
 
-def normalize_args(func, *args, **kwargs):
+def normalize_args(func: F, *args: Any, **kwargs: Any) -> dict[str, Any]:
     sig = inspect.signature(func)
     bound_args = sig.bind(*args, **kwargs)
     bound_args.apply_defaults()

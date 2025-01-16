@@ -1,16 +1,18 @@
-from typing import get_origin, get_args, Union, List, Tuple, Dict
-import types
+from typing import get_args, Union, List, Tuple, Dict, Callable, Any, TypeVar, Type, ParamSpec
+from types import UnionType, ModuleType
 import os
 import sys
 import tempfile
 import importlib.util
-from grpc_tools import protoc
+from grpc_tools import protoc # type: ignore[import-untyped]
 
 from . import names
-from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_typed_params, get_method_return_type
+from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_typed_params, get_method_return_type, TypeHint, my_get_origin
 from .instance_ref import InstanceRefType
 
-InstanceRef = InstanceRefType
+T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R")
 
 proto_primitive_type_mapping = {
     str        : "string",
@@ -20,19 +22,23 @@ proto_primitive_type_mapping = {
     type(None) : "bool",
 }
 
-proto_dataclass_type_mapping = {}
-proto_remoteclass_type_mapping = {}
+proto_dataclass_type_mapping: dict[Any, str] = {}
+proto_remoteclass_type_mapping: dict[Any, str] = {}
 
 proto_header = """syntax = "proto3";
 """
 
 proto_content = ""
 
-def indent_str(depth):
+def indent_str(depth: int) -> str:
     return " " * depth * 2
 
-def gen_proto_field_def(index, param_name, type_hint, repeated=False, depth=0):
-    type_origin = get_origin(type_hint)
+def gen_proto_field_def(index      : int,
+                        param_name : str,
+                        type_hint  : TypeHint,
+                        repeated   : bool = False,
+                        depth      : int = 0) -> tuple[list[str], list[str], int]:
+    type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
     repeated_str = "repeated " if repeated else ""
@@ -48,7 +54,7 @@ def gen_proto_field_def(index, param_name, type_hint, repeated=False, depth=0):
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{proto_type} {param_name} = {index + 1};")
         index += 1
 
-    elif type_origin in (Union, types.UnionType):
+    elif type_origin in (Union, UnionType):
         msgname = f"{param_name.capitalize()}UnionMessage"
         child_type_hints = {f"member{i}": th for i, th in enumerate(type_args)}
         proto_defs += gen_proto_msg_def(msgname, child_type_hints, oneof=True)
@@ -79,7 +85,11 @@ def gen_proto_field_def(index, param_name, type_hint, repeated=False, depth=0):
 
     return proto_fields, proto_defs, index
 
-def gen_proto_msg_def(msgname, typed_params, repeated=False, oneof=False, depth=0):
+def gen_proto_msg_def(msgname      : str,
+                      typed_params : dict[str, TypeHint],
+                      repeated     : bool = False,
+                      oneof        : bool = False,
+                      depth        : int = 0) -> list[str]:
     index = 0
     proto_defs = []
     proto_inner_defs = []
@@ -104,7 +114,7 @@ def gen_proto_msg_def(msgname, typed_params, repeated=False, oneof=False, depth=
 
     return proto_defs
 
-def compile_function(func):
+def compile_function(func: Callable[P, R]) -> None:
     typed_params = get_function_typed_params(func)
     return_type = get_function_return_type(func)
 
@@ -127,7 +137,7 @@ service {proto_service_name} {{
 {chr(10).join(proto_res_def)}
 """
 
-def compile_dataclass(cls):
+def compile_dataclass(cls: Type[T]) -> None:
     proto_msgname = names.proto_dataclass_name(cls)
 
     proto_def = gen_proto_msg_def(proto_msgname, get_class_typed_members(cls))
@@ -140,12 +150,12 @@ def compile_dataclass(cls):
     global proto_dataclass_type_mapping
     proto_dataclass_type_mapping[cls] = proto_msgname
 
-def compile_remoteclass(cls, methods):
+def compile_remoteclass(cls: Type[T], methods: dict[str, Callable[..., Any]]) -> None:
     proto_service_name = names.proto_remoteclass_service_name(cls)
     proto_instance_ref_name = names.proto_instance_ref_name(cls)
 
-    proto_rpc_def = []
-    proto_msg_def = []
+    proto_rpc_def: list[str] = []
+    proto_msg_def: list[str] = []
 
     proto_instance_def = gen_proto_msg_def(proto_instance_ref_name, {"ref": InstanceRefType})
     proto_msg_def += [""] + proto_instance_def
@@ -169,12 +179,14 @@ service {proto_service_name} {{
 {chr(10).join(proto_msg_def)}
 """
 
-def compile_remoteclass_init(cls, proto_rpc_def, proto_msg_def):
-    typed_params = get_method_typed_params(cls, cls.__init__)
+def compile_remoteclass_init(cls: Type[T], proto_rpc_def: list[str], proto_msg_def: list[str]) -> None:
+    init_method = getattr(cls, "__init__")
 
-    proto_rpc_name = names.proto_method_rpc_name(cls, cls.__init__)
-    proto_req_name = names.proto_method_req_name(cls, cls.__init__)
-    proto_res_name = names.proto_method_res_name(cls, cls.__init__)
+    typed_params = get_method_typed_params(cls, init_method)
+
+    proto_rpc_name = names.proto_method_rpc_name(cls, init_method)
+    proto_req_name = names.proto_method_req_name(cls, init_method)
+    proto_res_name = names.proto_method_res_name(cls, init_method)
 
     proto_req_def = gen_proto_msg_def(proto_req_name, dict(list(typed_params.items())[1:]))
     proto_res_def = gen_proto_msg_def(proto_res_name, {"return": InstanceRefType})
@@ -182,12 +194,14 @@ def compile_remoteclass_init(cls, proto_rpc_def, proto_msg_def):
     proto_rpc_def.append(f"  rpc {proto_rpc_name} ({proto_req_name}) returns ({proto_res_name});")
     proto_msg_def += [""] + proto_req_def + [""] + proto_res_def
 
-def compile_remoteclass_del(cls, proto_rpc_def, proto_msg_def):
-    typed_params = get_method_typed_params(cls, cls.__del__)
+def compile_remoteclass_del(cls: Type[T], proto_rpc_def: list[str], proto_msg_def: list[str]) -> None:
+    del_method = getattr(cls, "__del__")
 
-    proto_rpc_name = names.proto_method_rpc_name(cls, cls.__del__)
-    proto_req_name = names.proto_method_req_name(cls, cls.__del__)
-    proto_res_name = names.proto_method_res_name(cls, cls.__del__)
+    typed_params = get_method_typed_params(cls, del_method)
+
+    proto_rpc_name = names.proto_method_rpc_name(cls, del_method)
+    proto_req_name = names.proto_method_req_name(cls, del_method)
+    proto_res_name = names.proto_method_res_name(cls, del_method)
 
     proto_req_def = gen_proto_msg_def(proto_req_name, typed_params)
     proto_res_def = gen_proto_msg_def(proto_res_name, {})
@@ -195,7 +209,7 @@ def compile_remoteclass_del(cls, proto_rpc_def, proto_msg_def):
     proto_rpc_def.append(f"  rpc {proto_rpc_name} ({proto_req_name}) returns ({proto_res_name});")
     proto_msg_def += [""] + proto_req_def + [""] + proto_res_def
 
-def compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def):
+def compile_remoteclass_method(cls: Type[T], method: Callable[P, R], proto_rpc_def: list[str], proto_msg_def: list[str]) -> None:
     typed_params = get_method_typed_params(cls, method)
     return_type = get_method_return_type(cls, method)
 
@@ -209,7 +223,7 @@ def compile_remoteclass_method(cls, method, proto_rpc_def, proto_msg_def):
     proto_rpc_def.append(f"  rpc {proto_rpc_name} ({proto_req_name}) returns ({proto_res_name});")
     proto_msg_def += [""] + proto_req_def + [""] + proto_res_def
 
-def compile_proto():
+def compile_proto() -> tuple[ModuleType, ModuleType]:
     with tempfile.TemporaryDirectory(prefix="egrpc_") as tempdir:
         proto_file = os.path.join(tempdir, "dynamic.proto")
 
@@ -226,9 +240,11 @@ def compile_proto():
             ]
         )
 
-        def import_dynamic_module(module_name, filename):
+        def import_dynamic_module(module_name: str, filename: str) -> ModuleType:
             filepath = os.path.join(tempdir, filename)
             spec = importlib.util.spec_from_file_location(module_name, filepath)
+            assert spec is not None
+            assert spec.loader is not None
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)

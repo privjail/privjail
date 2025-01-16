@@ -1,29 +1,35 @@
-from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict
-import types
+from typing import get_type_hints, get_args, Union, List, Tuple, Dict, TypeVar, Callable, Any, ParamSpec, Type
+from types import UnionType, ModuleType
 
 from . import names
-from .util import is_type_match, get_function_typed_params, get_function_return_type, get_method_typed_params, get_method_return_type, normalize_args
+from .util import is_type_match, get_function_typed_params, get_function_return_type, get_method_typed_params, get_method_return_type, normalize_args, TypeHint, my_get_origin
 from .compiler import proto_primitive_type_mapping, proto_dataclass_type_mapping, proto_remoteclass_type_mapping
 from .instance_ref import InstanceRefType, get_ref_from_instance, get_instance_from_ref
 
-dynamic_pb2 = None
+T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R")
 
-def init_proto(module):
+ProtoMsg = Any
+
+dynamic_pb2: ModuleType | None = None
+
+def init_proto(module: ModuleType) -> None:
     global dynamic_pb2
     dynamic_pb2 = module
 
-def get_proto_module():
+def get_proto_module() -> ModuleType:
     global dynamic_pb2
     assert dynamic_pb2 is not None
     return dynamic_pb2
 
-def new_proto_function_request(func):
+def new_proto_function_request(func: Callable[P, R]) -> ProtoMsg:
     return getattr(get_proto_module(), names.proto_function_req_name(func))()
 
-def new_proto_function_response(func):
+def new_proto_function_response(func: Callable[P, R]) -> ProtoMsg:
     return getattr(get_proto_module(), names.proto_function_res_name(func))()
 
-def pack_proto_function_request(func, *args, **kwargs):
+def pack_proto_function_request(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> ProtoMsg:
     typed_params = get_function_typed_params(func)
     normalized_args = normalize_args(func, *args, **kwargs)
 
@@ -34,28 +40,28 @@ def pack_proto_function_request(func, *args, **kwargs):
 
     return msg
 
-def unpack_proto_function_request(func, msg):
+def unpack_proto_function_request(func: Callable[P, R], msg: ProtoMsg) -> dict[str, Any]:
     typed_params = get_function_typed_params(func)
     return {param_name: get_proto_field(msg, param_name, type_hint) \
             for param_name, type_hint in typed_params.items()}
 
-def pack_proto_function_response(func, obj):
+def pack_proto_function_response(func: Callable[P, R], obj: R) -> ProtoMsg:
     msg = new_proto_function_response(func)
     return_type = get_function_return_type(func)
     set_proto_field(msg, "return", return_type, obj)
     return msg
 
-def unpack_proto_function_response(func, msg):
+def unpack_proto_function_response(func: Callable[P, R], msg: ProtoMsg) -> Any:
     return_type = get_function_return_type(func)
     return get_proto_field(msg, "return", return_type)
 
-def new_proto_method_request(cls, method):
+def new_proto_method_request(cls: Type[T], method: Callable[P, R]) -> ProtoMsg:
     return getattr(get_proto_module(), names.proto_method_req_name(cls, method))()
 
-def new_proto_method_response(cls, method):
+def new_proto_method_response(cls: Type[T], method: Callable[P, R]) -> ProtoMsg:
     return getattr(get_proto_module(), names.proto_method_res_name(cls, method))()
 
-def pack_proto_method_request(cls, method, *args, **kwargs):
+def pack_proto_method_request(cls: Type[T], method: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> ProtoMsg:
     typed_params = get_method_typed_params(cls, method)
     normalized_args = normalize_args(method, *args, **kwargs)
 
@@ -68,7 +74,7 @@ def pack_proto_method_request(cls, method, *args, **kwargs):
 
     return msg
 
-def unpack_proto_method_request(cls, method, msg):
+def unpack_proto_method_request(cls: Type[T], method: Callable[P, R], msg: ProtoMsg) -> dict[str, Any]:
     typed_params = get_method_typed_params(cls, method)
 
     if method.__name__ == "__init__":
@@ -77,7 +83,7 @@ def unpack_proto_method_request(cls, method, msg):
     return {param_name: get_proto_field(msg, param_name, type_hint) \
             for param_name, type_hint in typed_params.items()}
 
-def pack_proto_method_response(cls, method, obj):
+def pack_proto_method_response(cls: Type[T], method: Callable[P, R], obj: R) -> ProtoMsg:
     msg = new_proto_method_response(cls, method)
 
     if method.__name__ == "__init__":
@@ -93,7 +99,7 @@ def pack_proto_method_response(cls, method, obj):
         set_proto_field(msg, "return", return_type, obj)
         return msg
 
-def unpack_proto_method_response(cls, method, msg):
+def unpack_proto_method_response(cls: Type[T], method: Callable[P, R], msg: ProtoMsg) -> Any:
     if method.__name__ == "__init__":
         return get_proto_field(msg, "return", InstanceRefType)
 
@@ -104,8 +110,8 @@ def unpack_proto_method_response(cls, method, msg):
         return_type = get_method_return_type(cls, method)
         return get_proto_field(msg, "return", return_type)
 
-def get_proto_field(proto_msg, param_name, type_hint):
-    type_origin = get_origin(type_hint)
+def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint) -> Any:
+    type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
     if type_origin is None:
@@ -129,7 +135,7 @@ def get_proto_field(proto_msg, param_name, type_hint):
         else:
             raise TypeError(f"Type '{type_hint}' is unknown.")
 
-    elif type_origin in (Union, types.UnionType):
+    elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
         for i, th in enumerate(type_args):
             if child_proto_msg.HasField(f"member{i}"):
@@ -158,8 +164,8 @@ def get_proto_field(proto_msg, param_name, type_hint):
     else:
         raise Exception
 
-def get_proto_repeated_field(repeated_container, param_name, type_hint):
-    if get_origin(type_hint) is None:
+def get_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint) -> list[Any]:
+    if my_get_origin(type_hint) is None:
         # RepeatedScalarContainer
         return list(repeated_container)
     else:
@@ -170,8 +176,8 @@ def get_proto_repeated_field(repeated_container, param_name, type_hint):
             objs.append(get_proto_field(WrapperMsg, param_name, type_hint))
         return objs
 
-def set_proto_field(proto_msg, param_name, type_hint, obj):
-    type_origin = get_origin(type_hint)
+def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, obj: Any) -> None:
+    type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
     if type_origin is None:
@@ -194,7 +200,7 @@ def set_proto_field(proto_msg, param_name, type_hint, obj):
         else:
             raise TypeError(f"Type '{type_hint}' is unknown.")
 
-    elif type_origin in (Union, types.UnionType):
+    elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
         for i, th in enumerate(type_args):
             if is_type_match(obj, th):
@@ -220,8 +226,8 @@ def set_proto_field(proto_msg, param_name, type_hint, obj):
     else:
         raise Exception
 
-def set_proto_repeated_field(repeated_container, param_name, type_hint, objs):
-    if get_origin(type_hint) is None:
+def set_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, objs: list[Any]) -> None:
+    if my_get_origin(type_hint) is None:
         # RepeatedScalarContainer
         repeated_container.extend(objs)
     else:

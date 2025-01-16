@@ -1,22 +1,31 @@
+from typing import TypeVar, Callable, Type, Any, ParamSpec
+from types import ModuleType
 from concurrent import futures
-import grpc
+import grpc # type: ignore[import-untyped]
 
 from . import names
+from .proto_interface import ProtoMsg
 
-dynamic_pb2_grpc = None
+T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R")
 
-def init_grpc(module):
+dynamic_pb2_grpc: ModuleType | None = None
+
+def init_grpc(module: ModuleType) -> None:
     global dynamic_pb2_grpc
     dynamic_pb2_grpc = module
 
-def get_grpc_module():
+def get_grpc_module() -> ModuleType:
     global dynamic_pb2_grpc
     assert dynamic_pb2_grpc is not None
     return dynamic_pb2_grpc
 
-proto_handlers = {}
+HandlerType = Callable[[Any, ProtoMsg, Any], ProtoMsg]
 
-def grpc_register_function(func, handler):
+proto_handlers: dict[str, dict[str, HandlerType]] = {}
+
+def grpc_register_function(func: Callable[P, R], handler: HandlerType) -> None:
     proto_service_name = names.proto_function_service_name(func)
     proto_rpc_name = names.proto_function_rpc_name(func)
 
@@ -24,7 +33,7 @@ def grpc_register_function(func, handler):
     assert proto_service_name not in proto_handlers
     proto_handlers[proto_service_name] = {proto_rpc_name: handler}
 
-def grpc_register_method(cls, method, handler):
+def grpc_register_method(cls: Type[T], method: Callable[P, R], handler: HandlerType) -> None:
     proto_service_name = names.proto_remoteclass_service_name(cls)
     proto_rpc_name = names.proto_method_rpc_name(cls, method)
 
@@ -33,7 +42,7 @@ def grpc_register_method(cls, method, handler):
         proto_handlers[proto_service_name] = {}
     proto_handlers[proto_service_name][proto_rpc_name] = handler
 
-def init_server(port):
+def init_server(port: int) -> Any:
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1), maximum_concurrent_rpcs=1)
 
     global proto_handlers
@@ -49,18 +58,20 @@ def init_server(port):
 
     return server
 
-client_channel = None
+ChannelType = Any
 
-def init_client(hostname, port):
+client_channel: ChannelType | None = None
+
+def init_client(hostname: str, port: int) -> None:
     global client_channel
     client_channel = grpc.insecure_channel(f"{hostname}:{port}")
 
-def get_client_channel():
+def get_client_channel() -> ChannelType:
     global client_channel
     assert client_channel is not None
     return client_channel
 
-def grpc_function_call(func, proto_req):
+def grpc_function_call(func: Callable[P, R], proto_req: ProtoMsg) -> ProtoMsg:
     proto_service_name = names.proto_function_service_name(func)
     proto_rpc_name = names.proto_function_rpc_name(func)
 
@@ -70,7 +81,7 @@ def grpc_function_call(func, proto_req):
 
     return proto_res
 
-def grpc_method_call(cls, method, proto_req):
+def grpc_method_call(cls: Type[T], method: Callable[P, R], proto_req: ProtoMsg) -> ProtoMsg:
     proto_service_name = names.proto_remoteclass_service_name(cls)
     proto_rpc_name = names.proto_method_rpc_name(cls, method)
 
