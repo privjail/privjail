@@ -43,7 +43,9 @@ def grpc_register_method(cls: Type[T], method: Callable[P, R], handler: HandlerT
     proto_handlers[proto_service_name][proto_rpc_name] = handler
 
 def init_server(port: int) -> Any:
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=1), maximum_concurrent_rpcs=1)
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=1),
+                         maximum_concurrent_rpcs=1,
+                         options=(("grpc.so_reuseport", 0),))
 
     global proto_handlers
     for proto_service_name, handlers in proto_handlers.items():
