@@ -50,6 +50,8 @@ def server() -> Iterator[None]:
         server_process.terminate()
         server_process.join()
 
+        egrpc.disconnect()
+
 @egrpc.function
 def get_gvar() -> str:
     return env_name

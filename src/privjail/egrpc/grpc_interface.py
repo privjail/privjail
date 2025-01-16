@@ -68,6 +68,10 @@ def init_client(hostname: str, port: int) -> None:
     global client_channel
     client_channel = grpc.insecure_channel(f"{hostname}:{port}")
 
+def del_client() -> None:
+    global client_channel
+    client_channel = None
+
 def get_client_channel() -> ChannelType:
     global client_channel
     assert client_channel is not None
