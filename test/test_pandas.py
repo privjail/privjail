@@ -158,12 +158,12 @@ def test_priv_dataframe_getitem() -> None:
     assert (pdf[["a", "b"]]._value == df[["a", "b"]]).all().all()
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (dataframe)
-    with pytest.raises(pj.DPError):
-        pdf[[True, True, False, False, True]] # type: ignore
+    with pytest.raises(TypeError):
+        pdf[[True, True, False, False, True]]
 
     # An irrelevant, non-sensitve bool vector should not be accepted for filtering (series)
-    with pytest.raises(pj.DPError):
-        pdf["a"][[True, True, False, False, True]] # type: ignore
+    with pytest.raises(TypeError):
+        pdf["a"][[True, True, False, False, True]]
 
     # A bool-filtered view should be successfully retrieved from a private dataframe
     assert isinstance(pdf[pdf["a"] > 3], ppd.PrivDataFrame)
@@ -185,18 +185,18 @@ def test_priv_dataframe_getitem() -> None:
     x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be used as a column name
-    with pytest.raises(pj.DPError):
-        pdf[x] # type: ignore
+    with pytest.raises(TypeError):
+        pdf[x]
 
     # A slice should not be used for selecting rows of a dataframe
     # TODO: it might be legal to accept a slice
-    with pytest.raises(pj.DPError):
-        pdf[2:5] # type: ignore
+    with pytest.raises(TypeError):
+        pdf[2:5]
 
     # A slice should not be used for selecting rows of a series
     # TODO: it might be legal to accept a slice
-    with pytest.raises(pj.DPError):
-        pdf["a"][2:5] # type: ignore
+    with pytest.raises(TypeError):
+        pdf["a"][2:5]
 
 def test_priv_dataframe_setitem() -> None:
     pdf, df = load_dataframe()
@@ -243,55 +243,31 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    # A non-private series can be assigned to a private single-column view
-    # (because this operation succeeds regardless of the row number)
-    # TODO: this may be disallowed if we track the value domain for each column
-    pdf["i"] = df["c"]
-    df["i"] = df["c"]
-    assert (pdf.columns == df.columns).all()
-    assert (pdf._value == df).all().all()
-
-    # A non-private dataframe can be assigned to a private multi-column view
-    # (because this operation succeeds regardless of the row number)
-    # TODO: this may be disallowed if we track the value domain for each column
-    pdf[["j", "k"]] = df[["a", "b"]]
-    df[["j", "k"]] = df[["a", "b"]]
-    assert (pdf.columns == df.columns).all()
-    assert (pdf._value == df).all().all()
-
-    # An irrelevant, non-private dataframe can be assigned to a bool-filtered view
-    # (because this operation succeeds regardless of the row number)
-    # TODO: this may be disallowed if we track the value domain for each column
-    pdf[pdf["a"] > 3] = df
-    df[df["a"] > 3] = df
-    assert (pdf.columns == df.columns).all()
-    assert (pdf._value == df).all().all()
-
     x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be assigned to a single-column view
-    with pytest.raises(pj.DPError):
+    with pytest.raises(TypeError):
         pdf["x"] = x
 
     # A sensitive value should not be assigned to a multi-column view
-    with pytest.raises(pj.DPError):
+    with pytest.raises(TypeError):
         pdf[["x", "y"]] = x
 
     # A sensitive value should not be assigned to a bool-filtered view
-    with pytest.raises(pj.DPError):
+    with pytest.raises(TypeError):
         pdf[pdf["a"] > 3] = x
 
     # An irrelevant, non-private array should not be assigned to a column view
-    with pytest.raises(pj.DPError):
+    with pytest.raises(TypeError):
         pdf["x"] = [1, 2, 3, 4, 5]
 
     # An irrelevant, non-private 2d array should not be assigned to a bool-filtered view
-    with pytest.raises(pj.DPError):
+    with pytest.raises(TypeError):
         pdf[pdf["a"] > 3] = [[list(range(len(pdf.columns)))] for x in range(5)]
 
     # A sensitive value should not be used as a column name
-    with pytest.raises(pj.DPError):
-        pdf[x] = 10 # type: ignore
+    with pytest.raises(TypeError):
+        pdf[x] = 10
 
     # A sensitve bool vector of potentially different size should not be accepted for filtering (dataframe)
     pdf_ = pdf[pdf["a"] >= 0]
@@ -304,8 +280,8 @@ def test_priv_dataframe_setitem() -> None:
 
     # A slice should not be used for selecting rows
     # TODO: it might be legal to accept a slice
-    with pytest.raises(pj.DPError):
-        pdf[2:5] = 0 # type: ignore
+    with pytest.raises(TypeError):
+        pdf[2:5] = 0
 
 def test_priv_dataframe_replace() -> None:
     pdf, df = load_dataframe()

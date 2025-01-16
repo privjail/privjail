@@ -7,14 +7,15 @@ import copy
 import numpy as _np
 import pandas as _pd
 from pandas.api.types import is_list_like
-# FIXME: pandas.core.common API is not public
-from pandas.core.common import is_bool_indexer
+from multimethod import multimethod
 
-from .util import DPError, is_integer, is_floating, is_realnum, realnum
+from .util import DPError, is_realnum, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from .distance import Distance
 
 T = TypeVar("T")
+
+ElementType = realnum | str | bool
 
 PTag = int
 
@@ -24,17 +25,6 @@ def new_ptag() -> PTag:
     global ptag_count
     ptag_count += 1
     return ptag_count
-
-@overload
-def unwrap_prisoner(x: Prisoner[T]) -> T: ...
-@overload
-def unwrap_prisoner(x: T) -> T: ...
-
-def unwrap_prisoner(x: Prisoner[T] | T) -> T:
-    if isinstance(x, Prisoner):
-        return x._value
-    else:
-        return x
 
 def is_2d_array(x: Any) -> bool:
     return (
@@ -187,75 +177,85 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
-    @overload
-    def __getitem__(self, key: PrivDataFrame | PrivSeries[bool] | list[str]) -> PrivDataFrame: ...
-    @overload
-    def __getitem__(self, key: str) -> PrivSeries[Any]: ...
+    @multimethod
+    def __getitem__(self, key: str) -> PrivSeries[Any]:
+        # TODO: consider duplicated column names
+        return PrivSeries[Any](data         = self._value.__getitem__(key),
+                               domain       = self.domains[key],
+                               distance     = self.distance,
+                               parents      = [self],
+                               preserve_row = True)
 
-    def __getitem__(self, key: PrivDataFrame | PrivSeries[bool] | list[str] | str) -> PrivDataFrame | PrivSeries[Any]:
-        if isinstance(key, slice):
-            raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
+    @__getitem__.register
+    def _(self, key: list[str]) -> PrivDataFrame:
+        new_domains = {c: d for c, d in self.domains.items() if c in key}
+        return PrivDataFrame(data         = self._value.__getitem__(key),
+                             domains      = new_domains,
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-        if isinstance(key, Prisoner) and not is_bool_indexer(key._value):
-            raise DPError("df[key] is not allowed for sensitive keys other than boolean vectors.")
+    @__getitem__.register
+    def _(self, key: PrivSeries[bool]) -> PrivDataFrame:
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if not isinstance(key, Prisoner) and is_bool_indexer(key):
-            raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
+        return PrivDataFrame(data         = self._value.__getitem__(key._value),
+                             domains      = self.domains,
+                             distance     = self.distance,
+                             parents      = [self, key],
+                             preserve_row = False)
 
-        if isinstance(key, str):
-            # TODO: consider duplicated column names
-            return PrivSeries[Any](data=self._value.__getitem__(key), domain=self.domains[key], distance=self.distance, parents=[self], preserve_row=True)
+    @multimethod
+    def __setitem__(self, key: str, value: ElementType) -> None:
+        # TODO: consider domain transform
+        self._value[key] = value
 
-        elif isinstance(key, list) and all(isinstance(x, str) for x in key):
-            new_domains = {c: d for c, d in self.domains.items() if c in key}
-            return PrivDataFrame(data=self._value.__getitem__(key), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
+    @__setitem__.register
+    def _(self, key: str, value: PrivSeries[Any]) -> None:
+        new_domains = dict()
+        for col, domain in self.domains.items():
+            if col == key:
+                new_domains[col] = value.domain
+            else:
+                new_domains[col] = domain
+        self._domains = new_domains
 
-        elif isinstance(key, Prisoner) and is_bool_indexer(key._value):
-            if self._ptag != key._ptag:
-                raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
+        self._value[key] = value._value
 
-            return PrivDataFrame(data=self._value.__getitem__(key._value), domains=self.domains, distance=self.distance, parents=[self, key], preserve_row=False)
+    @__setitem__.register
+    def _(self, key: list[str], value: ElementType) -> None:
+        # TODO: consider domain transform
+        self._value[key] = value
 
-        else:
-            raise ValueError
+    @__setitem__.register
+    def _(self, key: list[str], value: PrivDataFrame) -> None:
+        # TODO: consider domain transform
+        self._value[key] = value._value
 
-    def __setitem__(self, key: PrivDataFrame | PrivSeries[bool] | list[str] | str, value: Any) -> None:
-        if isinstance(key, slice):
-            raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
+    @__setitem__.register
+    def _(self, key: PrivSeries[bool], value: ElementType) -> None:
+        # TODO: consider domain transform
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if isinstance(key, Prisoner) and not is_bool_indexer(key._value):
-            raise DPError("df[key] is not allowed for sensitive keys other than boolean vectors.")
+        self._value[key._value] = value
 
-        if not isinstance(key, Prisoner) and is_bool_indexer(key):
-            raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
+    @__setitem__.register
+    def _(self, key: PrivSeries[bool], value: Sequence[ElementType]) -> None:
+        # TODO: consider domain transform
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if isinstance(value, Prisoner) and not isinstance(value, (PrivDataFrame, PrivSeries)):
-            raise DPError("Sensitive values (other than PrivDataFrame and PrivSeries) cannot be assigned to dataframe.")
+        self._value[key._value] = value
 
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and isinstance(value, PrivSeries):
-            raise DPError("Private Series cannot be assigned to filtered rows because the series is treated as columns here.")
+    @__setitem__.register
+    def _(self, key: PrivSeries[bool], value: PrivDataFrame) -> None:
+        # TODO: consider domain transform
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if is_2d_array(value):
-            raise DPError("2D array cannot be assigned because len(df) can be leaked.")
-
-        if not isinstance(key, Prisoner) and not is_bool_indexer(key) and \
-                not isinstance(value, Prisoner) and is_list_like(value) and not isinstance(value, (_pd.DataFrame, _pd.Series)):
-            raise DPError("List-like values (other than DataFrame and Series) cannot be assigned because len(df) can be leaked.")
-
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
-
-        # TODO: consider domain transform for keys other than str
-        if isinstance(key, str) and isinstance(value, PrivSeries):
-            new_domains = dict()
-            for col, domain in self.domains.items():
-                if col == key:
-                    new_domains[col] = value.domain
-                else:
-                    new_domains[col] = domain
-            self._domains = new_domains
-
-        self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
+        self._value[key._value] = value._value
 
     def __eq__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
         new_domains = {c: BoolDomain() for c in self.domains}
@@ -590,44 +590,23 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
 
+    @multimethod
     def __getitem__(self, key: PrivSeries[bool]) -> PrivSeries[T]:
-        if isinstance(key, slice):
-            raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
-
-        if not isinstance(key, Prisoner):
-            raise DPError("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
-
-        if not is_bool_indexer(key._value):
-            raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
-
         if self._ptag != key._ptag:
             raise DPError("ser[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
-        return PrivSeries[T](data=self._value.__getitem__(unwrap_prisoner(key)), domain=self.domain, distance=self.distance, parents=[self], preserve_row=False)
+        return PrivSeries[T](data         = self._value.__getitem__(key._value),
+                             domain       = self.domain,
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = False)
 
-    def __setitem__(self, key: Any, value: Any) -> None:
-        if isinstance(key, slice):
-            raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
+    @multimethod
+    def __setitem__(self, key: PrivSeries[bool], value: ElementType) -> None:
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
-        if not isinstance(key, Prisoner):
-            raise DPError("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
-
-        if not is_bool_indexer(key._value):
-            raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
-
-        if isinstance(value, Prisoner) and not isinstance(value, (PrivDataFrame, PrivSeries)):
-            raise DPError("Sensitive values (other than PrivDataFrame and PrivSeries) cannot be assigned to dataframe.")
-
-        if isinstance(value, PrivSeries):
-            raise DPError("Private Series cannot be assigned to filtered rows because the series is treated as columns here.")
-
-        if is_2d_array(value):
-            raise DPError("2D array cannot be assigned because len(df) can be leaked.")
-
-        if isinstance(key, PrivSeries) and is_bool_indexer(key._value) and self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
-
-        self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
+        self._value[key._value] = value
 
     def __eq__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
         if isinstance(other, PrivSeries):
