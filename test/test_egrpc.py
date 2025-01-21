@@ -127,7 +127,6 @@ def test_dataclass(server: Any) -> None:
 
 @egrpc.remoteclass
 class Point():
-    @egrpc.method
     def __init__(self, x: int | float, y: int | float, z: int | float):
         self.x = x
         self.y = y

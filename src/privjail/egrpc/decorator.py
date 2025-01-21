@@ -1,4 +1,5 @@
-from typing import TypeVar, Callable, Type, Any, cast, ParamSpec
+from types import MethodType
+from typing import TypeVar, Callable, Type, Any, cast, ParamSpec, Generic
 import functools
 import dataclasses
 
@@ -37,59 +38,62 @@ def dataclass_decorator(cls: Type[T]) -> Type[T]:
     compile_dataclass(datacls)
     return datacls
 
-def method_decorator(method: Callable[P, R]) -> Callable[P, R]:
-    setattr(method, "__egrpc_enabled", True)
-    return method
+class method_decorator(Generic[P, R]):
+    def __init__(self, method: Callable[P, R]):
+        self.method = method
+        functools.update_wrapper(self, method)
+
+    def __set_name__(self, cls: Type[T], method_name: str) -> None:
+        self.cls = cls
+        self.method_name = method_name
+
+        method = self.method
+
+        def method_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
+            args = unpack_proto_method_request(cls, method, proto_req)
+            result = method(**args) # type: ignore[call-arg]
+            return pack_proto_method_response(cls, method, result)
+
+        grpc_register_method(cls, method, method_handler)
+
+        compile_remoteclass_method(cls, method)
+
+    def __get__(self, instance: T, cls: Type[T]) -> Callable[..., R]:
+        return MethodType(self, instance)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> R:
+        if remote_connected():
+            proto_req = pack_proto_method_request(self.cls, self.method, *args, **kwargs)
+            proto_res = grpc_method_call(self.cls, self.method, proto_req)
+            return unpack_proto_method_response(self.cls, self.method, proto_res) # type: ignore[no-any-return]
+        else:
+            return self.method(*args, **kwargs)
 
 def remoteclass_decorator(cls: Type[T]) -> Type[T]:
     init_remoteclass(cls)
-    methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
 
-    for method_name, method in methods.items():
-        if method_name == "__init__":
-            init_method = getattr(cls, "__init__")
+    init_method = getattr(cls, "__init__")
 
-            def init_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
-                args = unpack_proto_method_request(cls, init_method, proto_req)
-                obj = cls(**args)
-                return pack_proto_method_response(cls, init_method, obj)
+    def init_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
+        args = unpack_proto_method_request(cls, init_method, proto_req)
+        obj = cls(**args)
+        return pack_proto_method_response(cls, init_method, obj)
 
-            grpc_register_method(cls, init_method, init_handler)
+    grpc_register_method(cls, init_method, init_handler)
 
-            @functools.wraps(init_method)
-            def init_wrapper(*args: Any, init_method: Callable[P, R] = init_method, **kwargs: Any) -> None:
-                if remote_connected():
-                    proto_req = pack_proto_method_request(cls, init_method, *args, **kwargs)
-                    proto_res = grpc_method_call(cls, init_method, proto_req)
-                    instance_ref = unpack_proto_method_response(cls, init_method, proto_res)
-                    assign_ref_to_instance(cls, args[0], instance_ref, False)
-                else:
-                    init_method(*args, **kwargs)
-
-            setattr(cls, "__init__", init_wrapper)
-
-            compile_remoteclass_init(cls)
-
+    @functools.wraps(init_method)
+    def init_wrapper(*args: Any, **kwargs: Any) -> None:
+        if remote_connected():
+            proto_req = pack_proto_method_request(cls, init_method, *args, **kwargs)
+            proto_res = grpc_method_call(cls, init_method, proto_req)
+            instance_ref = unpack_proto_method_response(cls, init_method, proto_res)
+            assign_ref_to_instance(cls, args[0], instance_ref, False)
         else:
-            def method_handler(self: Any, proto_req: ProtoMsg, context: Any, method: Callable[P, R] = method) -> ProtoMsg:
-                args = unpack_proto_method_request(cls, method, proto_req)
-                result = method(**args) # type: ignore[call-arg]
-                return pack_proto_method_response(cls, method, result)
+            init_method(*args, **kwargs)
 
-            grpc_register_method(cls, method, method_handler)
+    setattr(cls, "__init__", init_wrapper)
 
-            @functools.wraps(method)
-            def method_wrapper(*args: Any, method: Callable[P, R] = method, **kwargs: Any) -> Any:
-                if remote_connected():
-                    proto_req = pack_proto_method_request(cls, method, *args, **kwargs)
-                    proto_res = grpc_method_call(cls, method, proto_req)
-                    return unpack_proto_method_response(cls, method, proto_res)
-                else:
-                    return method(*args, **kwargs)
-
-            setattr(cls, method_name, method_wrapper)
-
-            compile_remoteclass_method(cls, method)
+    compile_remoteclass_init(cls)
 
     del_method = getattr(cls, "__del__")
 
