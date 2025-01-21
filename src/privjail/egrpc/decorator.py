@@ -2,7 +2,7 @@ from typing import TypeVar, Callable, Type, Any, cast, ParamSpec
 import functools
 import dataclasses
 
-from .compiler import compile_function, compile_dataclass, compile_remoteclass
+from .compiler import compile_function, compile_dataclass, compile_remoteclass, compile_remoteclass_init, compile_remoteclass_method, compile_remoteclass_del
 from .proto_interface import pack_proto_function_request, pack_proto_function_response, unpack_proto_function_request, unpack_proto_function_response, pack_proto_method_request, pack_proto_method_response, unpack_proto_method_request, unpack_proto_method_response, ProtoMsg
 from .grpc_interface import grpc_register_function, grpc_register_method, grpc_function_call, grpc_method_call, remote_connected
 from .instance_ref import init_remoteclass, assign_ref_to_instance, del_instance
@@ -12,8 +12,6 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 def function_decorator(func: Callable[P, R]) -> Callable[P, R]:
-    compile_function(func)
-
     def function_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
         args = unpack_proto_function_request(func, proto_req)
         result = func(**args) # type: ignore[call-arg]
@@ -30,6 +28,8 @@ def function_decorator(func: Callable[P, R]) -> Callable[P, R]:
         else:
             return func(*args, **kwargs)
 
+    compile_function(func)
+
     return cast(Callable[P, R], wrapper)
 
 def dataclass_decorator(cls: Type[T]) -> Type[T]:
@@ -44,7 +44,6 @@ def method_decorator(method: Callable[P, R]) -> Callable[P, R]:
 def remoteclass_decorator(cls: Type[T]) -> Type[T]:
     init_remoteclass(cls)
     methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
-    compile_remoteclass(cls, methods)
 
     for method_name, method in methods.items():
         if method_name == "__init__":
@@ -69,6 +68,8 @@ def remoteclass_decorator(cls: Type[T]) -> Type[T]:
 
             setattr(cls, "__init__", init_wrapper)
 
+            compile_remoteclass_init(cls)
+
         else:
             def method_handler(self: Any, proto_req: ProtoMsg, context: Any, method: Callable[P, R] = method) -> ProtoMsg:
                 args = unpack_proto_method_request(cls, method, proto_req)
@@ -88,6 +89,8 @@ def remoteclass_decorator(cls: Type[T]) -> Type[T]:
 
             setattr(cls, method_name, method_wrapper)
 
+            compile_remoteclass_method(cls, method)
+
     del_method = getattr(cls, "__del__")
 
     def del_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
@@ -106,5 +109,9 @@ def remoteclass_decorator(cls: Type[T]) -> Type[T]:
             del_method(self)
 
     setattr(cls, "__del__", del_wrapper)
+
+    compile_remoteclass_del(cls)
+
+    compile_remoteclass(cls)
 
     return cls
