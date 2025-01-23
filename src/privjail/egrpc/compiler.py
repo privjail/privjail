@@ -197,10 +197,8 @@ service {proto_service_name} {{
     del proto_remoteclass_rpc_defs[cls]
     del proto_remoteclass_msg_defs[cls]
 
-def compile_remoteclass_init(cls: Type[T]) -> None:
+def compile_remoteclass_init(cls: Type[T], init_method: Callable[P, R]) -> None:
     define_remoteclass_instance_ref(cls)
-
-    init_method = getattr(cls, "__init__")
 
     typed_params = get_method_typed_params(cls, init_method)
 
@@ -214,10 +212,8 @@ def compile_remoteclass_init(cls: Type[T]) -> None:
 
     add_remoteclass_method_def(cls, proto_rpc_def, proto_req_def, proto_res_def)
 
-def compile_remoteclass_del(cls: Type[T]) -> None:
+def compile_remoteclass_del(cls: Type[T], del_method: Callable[P, R]) -> None:
     define_remoteclass_instance_ref(cls)
-
-    del_method = getattr(cls, "__del__")
 
     typed_params = get_method_typed_params(cls, del_method)
 

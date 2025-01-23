@@ -49,14 +49,25 @@ class method_decorator(Generic[P, R]):
 
         method = self.method
 
-        def method_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
-            args = unpack_proto_method_request(cls, method, proto_req)
-            result = method(**args) # type: ignore[call-arg]
-            return pack_proto_method_response(cls, method, result)
+        if method_name == "__init__":
+            def init_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
+                args = unpack_proto_method_request(cls, method, proto_req)
+                obj = cls(**args)
+                return pack_proto_method_response(cls, method, obj)
 
-        grpc_register_method(cls, method, method_handler)
+            grpc_register_method(cls, method, init_handler)
 
-        compile_remoteclass_method(cls, method)
+            compile_remoteclass_init(cls, method)
+
+        else:
+            def method_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
+                args = unpack_proto_method_request(cls, method, proto_req)
+                result = method(**args) # type: ignore[call-arg]
+                return pack_proto_method_response(cls, method, result)
+
+            grpc_register_method(cls, method, method_handler)
+
+            compile_remoteclass_method(cls, method)
 
     def __get__(self, instance: T, cls: Type[T]) -> Callable[..., R]:
         return MethodType(self, instance)
@@ -65,35 +76,20 @@ class method_decorator(Generic[P, R]):
         if remote_connected():
             proto_req = pack_proto_method_request(self.cls, self.method, *args, **kwargs)
             proto_res = grpc_method_call(self.cls, self.method, proto_req)
-            return unpack_proto_method_response(self.cls, self.method, proto_res) # type: ignore[no-any-return]
+
+            if self.method_name == "__init__":
+                instance_ref = unpack_proto_method_response(self.cls, self.method, proto_res)
+                assign_ref_to_instance(self.cls, args[0], instance_ref, False)
+                return None # type: ignore[return-value]
+
+            else:
+                return unpack_proto_method_response(self.cls, self.method, proto_res) # type: ignore[no-any-return]
+
         else:
             return self.method(*args, **kwargs)
 
 def remoteclass_decorator(cls: Type[T]) -> Type[T]:
     init_remoteclass(cls)
-
-    init_method = getattr(cls, "__init__")
-
-    def init_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
-        args = unpack_proto_method_request(cls, init_method, proto_req)
-        obj = cls(**args)
-        return pack_proto_method_response(cls, init_method, obj)
-
-    grpc_register_method(cls, init_method, init_handler)
-
-    @functools.wraps(init_method)
-    def init_wrapper(*args: Any, **kwargs: Any) -> None:
-        if remote_connected():
-            proto_req = pack_proto_method_request(cls, init_method, *args, **kwargs)
-            proto_res = grpc_method_call(cls, init_method, proto_req)
-            instance_ref = unpack_proto_method_response(cls, init_method, proto_res)
-            assign_ref_to_instance(cls, args[0], instance_ref, False)
-        else:
-            init_method(*args, **kwargs)
-
-    setattr(cls, "__init__", init_wrapper)
-
-    compile_remoteclass_init(cls)
 
     del_method = getattr(cls, "__del__")
 
@@ -114,7 +110,7 @@ def remoteclass_decorator(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "__del__", del_wrapper)
 
-    compile_remoteclass_del(cls)
+    compile_remoteclass_del(cls, del_method)
 
     compile_remoteclass(cls)
 
