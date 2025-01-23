@@ -6,6 +6,9 @@ import tempfile
 import importlib.util
 from grpc_tools import protoc # type: ignore[import-untyped]
 
+# TODO: make egrpc independent of numpy
+import numpy as _np
+
 from . import names
 from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_typed_params, get_method_return_type, TypeHint, my_get_origin
 from .instance_ref import InstanceRefType
@@ -15,11 +18,13 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 proto_primitive_type_mapping = {
-    str        : "string",
-    int        : "int64",
-    float      : "float",
-    bool       : "bool",
-    type(None) : "bool",
+    str          : "string",
+    int          : "int64",
+    float        : "float",
+    bool         : "bool",
+    type(None)   : "bool",
+    _np.integer  : "int64",
+    _np.floating : "float",
 }
 
 proto_dataclass_type_mapping: dict[Any, str] = {}
@@ -41,16 +46,19 @@ def gen_proto_field_def(index      : int,
     type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
+    type_origin = type_hint if type_origin is None else type_origin
+
     repeated_str = "repeated " if repeated else ""
 
     proto_fields = []
     proto_defs = []
 
-    if type_origin is None:
-        proto_type_mapping = {**proto_primitive_type_mapping,
-                              **proto_dataclass_type_mapping,
-                              **proto_remoteclass_type_mapping}
-        proto_type = proto_type_mapping[type_hint]
+    proto_type_mapping = {**proto_primitive_type_mapping,
+                          **proto_dataclass_type_mapping,
+                          **proto_remoteclass_type_mapping}
+
+    if type_origin in proto_type_mapping:
+        proto_type = proto_type_mapping[type_origin]
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{proto_type} {param_name} = {index + 1};")
         index += 1
 
@@ -81,7 +89,7 @@ def gen_proto_field_def(index      : int,
         index += 1
 
     else:
-        raise Exception
+        raise TypeError(f"Type {type_origin} is not supported.")
 
     return proto_fields, proto_defs, index
 

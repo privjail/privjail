@@ -114,26 +114,24 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
     type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
-    if type_origin is None:
-        if type_hint is type(None):
-            return None
+    type_origin = type_hint if type_origin is None else type_origin
 
-        elif type_hint in proto_primitive_type_mapping:
-            return getattr(proto_msg, param_name)
+    if type_origin is type(None):
+        return None
 
-        elif type_hint in proto_dataclass_type_mapping:
-            proto_class_msg = getattr(proto_msg, param_name)
-            args = {member_name: get_proto_field(proto_class_msg, member_name, th, on_server)
-                    for member_name, th in get_type_hints(type_hint).items()}
-            return type_hint(**args)
+    elif type_origin in proto_primitive_type_mapping:
+        return getattr(proto_msg, param_name)
 
-        elif type_hint in proto_remoteclass_type_mapping:
-            cls = type_hint
-            instance_ref = getattr(proto_msg, param_name).ref
-            return get_instance_from_ref(cls, instance_ref, on_server)
+    elif type_origin in proto_dataclass_type_mapping:
+        proto_class_msg = getattr(proto_msg, param_name)
+        args = {member_name: get_proto_field(proto_class_msg, member_name, th, on_server)
+                for member_name, th in get_type_hints(type_origin).items()}
+        return type_origin(**args)
 
-        else:
-            raise TypeError(f"Type '{type_hint}' is unknown.")
+    elif type_origin in proto_remoteclass_type_mapping:
+        cls = type_origin
+        instance_ref = getattr(proto_msg, param_name).ref
+        return get_instance_from_ref(cls, instance_ref, on_server)
 
     elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
@@ -162,7 +160,7 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
         return dict(zip(keys, values))
 
     else:
-        raise Exception
+        raise TypeError(f"Type {type_origin} is not supported.")
 
 def get_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, on_server: bool) -> list[Any]:
     if my_get_origin(type_hint) is None:
@@ -180,25 +178,23 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
     type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
-    if type_origin is None:
-        if type_hint is type(None):
-            setattr(proto_msg, param_name, True)
+    type_origin = type_hint if type_origin is None else type_origin
 
-        elif type_hint in proto_primitive_type_mapping:
-            setattr(proto_msg, param_name, obj)
+    if type_origin is type(None):
+        setattr(proto_msg, param_name, True)
 
-        elif type_hint in proto_dataclass_type_mapping:
-            proto_class_msg = getattr(proto_msg, param_name)
-            for member_name, th in get_type_hints(type_hint).items():
-                set_proto_field(proto_class_msg, member_name, th, getattr(obj, member_name), on_server)
+    elif type_origin in proto_primitive_type_mapping:
+        setattr(proto_msg, param_name, obj)
 
-        elif type_hint in proto_remoteclass_type_mapping:
-            cls = type_hint
-            instance_ref = get_ref_from_instance(cls, obj, on_server)
-            getattr(proto_msg, param_name).ref = instance_ref
+    elif type_origin in proto_dataclass_type_mapping:
+        proto_class_msg = getattr(proto_msg, param_name)
+        for member_name, th in get_type_hints(type_origin).items():
+            set_proto_field(proto_class_msg, member_name, th, getattr(obj, member_name), on_server)
 
-        else:
-            raise TypeError(f"Type '{type_hint}' is unknown.")
+    elif type_origin in proto_remoteclass_type_mapping:
+        cls = type_origin
+        instance_ref = get_ref_from_instance(cls, obj, on_server)
+        getattr(proto_msg, param_name).ref = instance_ref
 
     elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
@@ -224,7 +220,7 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
         set_proto_repeated_field(repeated_container_v, param_name, type_args[1], obj.values(), on_server)
 
     else:
-        raise Exception
+        raise TypeError(f"Type {type_origin} is not supported.")
 
 def set_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, objs: list[Any], on_server: bool) -> None:
     if my_get_origin(type_hint) is None:

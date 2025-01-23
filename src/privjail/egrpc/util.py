@@ -43,7 +43,7 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
         )
 
     else:
-        raise Exception
+        raise TypeError(f"Type {type_origin} is not supported.")
 
 def get_function_typed_params(func: Callable[P, R]) -> dict[str, TypeHint]:
     type_hints = get_type_hints(func)
