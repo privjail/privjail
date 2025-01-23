@@ -79,7 +79,7 @@ def remoteclass_decorator(cls: Type[T]) -> Type[T]:
 def register_remoteclass_init(cls: Type[T]) -> None:
     init_method = getattr(cls, "__init__")
 
-    compile_remoteclass_init(cls)
+    compile_remoteclass_init(cls, init_method)
 
     def init_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
         args = unpack_proto_method_request(cls, init_method, proto_req)
@@ -103,7 +103,7 @@ def register_remoteclass_init(cls: Type[T]) -> None:
 def register_remoteclass_del(cls: Type[T]) -> None:
     del_method = getattr(cls, "__del__")
 
-    compile_remoteclass_del(cls)
+    compile_remoteclass_del(cls, del_method)
 
     def del_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
         args = unpack_proto_method_request(cls, del_method, proto_req)

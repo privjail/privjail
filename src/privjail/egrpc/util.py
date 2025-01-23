@@ -58,15 +58,13 @@ def get_class_typed_members(cls: Type[T]) -> dict[str, TypeHint]:
     return get_type_hints(cls)
 
 def get_method_typed_params(cls: Type[T], method: Callable[P, R]) -> dict[str, TypeHint]:
-    globalns = {cls.__name__: cls, **globals()}
-    type_hints = get_type_hints(method, globalns=globalns)
+    type_hints = get_type_hints(method)
     param_names = list(inspect.signature(method).parameters.keys())
     return {param_names[0]: cls,
             **{param_name: type_hints[param_name] for param_name in param_names[1:]}}
 
 def get_method_return_type(cls: Type[T], method: Callable[P, R]) -> TypeHint:
-    globalns = {cls.__name__: cls, **globals()}
-    type_hints = get_type_hints(method, globalns=globalns)
+    type_hints = get_type_hints(method)
     return type_hints["return"]
 
 def normalize_args(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:

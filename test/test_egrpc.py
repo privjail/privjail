@@ -172,3 +172,39 @@ def test_remoteclass(server: Any) -> None:
 
     with pytest.raises(AttributeError):
         p1.x
+
+@egrpc.remoteclass
+class Hoge():
+    def __init__(self, x: int):
+        self.x = x
+
+    @egrpc.method
+    def value(self) -> int:
+        return self.x
+
+    @egrpc.method
+    def fuga(self) -> "Fuga":
+        return Fuga(str(self.x))
+
+@egrpc.remoteclass
+class Fuga():
+    def __init__(self, x: str):
+        self.x = x
+
+    @egrpc.method
+    def value(self) -> str:
+        return self.x
+
+    @egrpc.method
+    def hoge(self) -> "Hoge":
+        return Hoge(int(self.x))
+
+@egrpc.function
+def gen_hoge(x: int) -> Hoge:
+    return Hoge(x)
+
+def test_remoteclass2(server: Any) -> None:
+    hoge = gen_hoge(1)
+    fuga = hoge.fuga()
+    hoge_ = fuga.hoge()
+    assert hoge.value() == hoge_.value()
