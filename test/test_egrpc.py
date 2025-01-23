@@ -141,9 +141,13 @@ class Point():
     def __str__(self) -> str:
         return ",".join([str(self.x), str(self.y), str(self.z)])
 
-    @egrpc.method
+    @egrpc.multimethod
     def __mul__(self, other: int | float) -> "Point":
         return Point(self.x * other, self.y * other, self.z * other)
+
+    @__mul__.register
+    def _(self, other: "Point") -> float:
+        return self.x * other.x + self.y * other.y + self.z * other.z
 
 @egrpc.function
 def identity(p: Point) -> Point:
@@ -164,6 +168,7 @@ def test_remoteclass(server: Any) -> None:
     assert str(p1) == "1,2,3"
     assert (p1 * 2) != p1
     assert (p1 * 2).norm() == pytest.approx(math.sqrt(56))
+    assert p1 * p2 == pytest.approx(15.4)
 
     with pytest.raises(AttributeError):
         p1.x
