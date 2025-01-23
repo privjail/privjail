@@ -104,7 +104,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pj.DPError): pdf >= [[list(range(len(pdf.columns)))] for x in range(5)]
 
     # An irrelevant, non-private array should not be compared against a private series
-    with pytest.raises(pj.DPError): pdf["a"] == [0, 1, 2, 3, 4]
+    with pytest.raises(TypeError): pdf["a"] == [0, 1, 2, 3, 4]
     with pytest.raises(pj.DPError): pdf["a"] != [0, 1, 2, 3, 4]
     with pytest.raises(pj.DPError): pdf["a"] <  [0, 1, 2, 3, 4]
     with pytest.raises(pj.DPError): pdf["a"] <= [0, 1, 2, 3, 4]
@@ -122,7 +122,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pj.DPError): pdf >= x
 
     # A sensitive value should not be compared against a private series
-    with pytest.raises(pj.DPError): pdf["a"] == x
+    with pytest.raises(TypeError): pdf["a"] == x
     with pytest.raises(pj.DPError): pdf["a"] != x
     with pytest.raises(pj.DPError): pdf["a"] <  x
     with pytest.raises(pj.DPError): pdf["a"] <= x
@@ -139,7 +139,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pj.DPError): pdf >= pdf_
 
     # Sensitive series of potentially different size should not be compared
-    with pytest.raises(pj.DPError): pdf["a"] == pdf_["a"]
+    with pytest.raises(TypeError): pdf["a"] == pdf_["a"]
     with pytest.raises(pj.DPError): pdf["a"] != pdf_["a"]
     with pytest.raises(pj.DPError): pdf["a"] <  pdf_["a"]
     with pytest.raises(pj.DPError): pdf["a"] <= pdf_["a"]
@@ -530,7 +530,7 @@ def test_privacy_budget_parallel_composition() -> None:
     assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 5
 
     assert crosstab.loc[1, 5].distance.max() == 1 # type: ignore
-    pj.laplace_mechanism(crosstab.loc[1, 5], eps=eps) # type: ignore
+    pj.laplace_mechanism(crosstab.loc[1, 5], eps=eps)
     assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 6
 
     # groupby()

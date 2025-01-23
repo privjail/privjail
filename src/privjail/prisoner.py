@@ -1,9 +1,12 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
+
+import numpy as _np
+
 from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, consume_privacy_budget, consumed_privacy_budget_all, ChildrenType
 from .distance import Distance, _max as dmax
-import numpy as _np
+from . import egrpc
 
 T = TypeVar("T")
 
@@ -60,6 +63,7 @@ class Prisoner(Generic[T]):
         assert len(self.provenance) > 0
         return self.provenance[0].root_name
 
+@egrpc.remoteclass
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
                  value         : integer,
@@ -73,22 +77,21 @@ class SensitiveInt(Prisoner[integer]):
             raise ValueError("`value` must be int for SensitveInt.")
         super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
 
-    @overload
-    def __add__(self, other: integer | SensitiveInt) -> SensitiveInt: ...
-    @overload
-    def __add__(self, other: floating | SensitiveFloat) -> SensitiveFloat: ...
+    @egrpc.multimethod
+    def __add__(self, other: integer) -> SensitiveInt:
+        return SensitiveInt(self._value + other, distance=self.distance, parents=[self])
 
-    def __add__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
-        if is_integer(other):
-            return SensitiveInt(self._value + other, distance=self.distance, parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveInt):
-            return SensitiveInt(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        elif isinstance(other, SensitiveFloat):
-            return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @__add__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
+
+    @__add__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return SensitiveInt(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
+
+    @__add__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
 
     @overload
     def __radd__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
@@ -161,6 +164,7 @@ class SensitiveInt(Prisoner[integer]):
         else:
             raise ValueError("`other` must be a real number.")
 
+@egrpc.remoteclass
 class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
                  value         : floating,

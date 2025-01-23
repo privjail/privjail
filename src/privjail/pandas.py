@@ -7,11 +7,11 @@ import copy
 import numpy as _np
 import pandas as _pd
 from pandas.api.types import is_list_like
-from multimethod import multimethod
 
 from .util import DPError, is_realnum, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from .distance import Distance
+from . import egrpc
 
 T = TypeVar("T")
 
@@ -131,6 +131,7 @@ class CategoryDomain(Domain):
         self.categories = categories
         super().__init__(type="categories")
 
+@egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
     """Private DataFrame.
 
@@ -177,7 +178,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
-    @multimethod
+    @egrpc.multimethod
     def __getitem__(self, key: str) -> PrivSeries[Any]:
         # TODO: consider duplicated column names
         return PrivSeries[Any](data         = self._value.__getitem__(key),
@@ -206,7 +207,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              parents      = [self, key],
                              preserve_row = False)
 
-    @multimethod
+    @egrpc.multimethod
     def __setitem__(self, key: str, value: ElementType) -> None:
         # TODO: consider domain transform
         self._value[key] = value
@@ -242,7 +243,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         self._value[key._value] = value
 
     @__setitem__.register
-    def _(self, key: PrivSeries[bool], value: Sequence[ElementType]) -> None:
+    def _(self, key: PrivSeries[bool], value: list[ElementType]) -> None:
         # TODO: consider domain transform
         if self._ptag != key._ptag:
             raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
@@ -364,23 +365,19 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         else:
             return PrivDataFrame(data=self._value >= other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
 
-    @property
+    @egrpc.property
     def shape(self) -> tuple[SensitiveInt, int]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         ncols = self._value.shape[1]
         return (nrows, ncols)
 
-    @property
+    @egrpc.property
     def size(self) -> SensitiveInt:
         return SensitiveInt(value=self._value.size, distance=self.distance * len(self._value.columns), parents=[self])
 
     @property
     def columns(self) -> _pd.Index[str]:
         return self._value.columns
-
-    @columns.setter
-    def columns(self, value: _pd.Index[str]) -> None:
-        self._value.columns = value
 
     @property
     def dtypes(self) -> _pd.Series[Any]:
@@ -546,6 +543,7 @@ class PrivDataFrameGroupBy:
 
 # to avoid TypeError: type 'Series' is not subscriptable
 # class PrivSeries(Prisoner[_pd.Series[T]]):
+@egrpc.remoteclass
 class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
 
@@ -590,7 +588,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
 
-    @multimethod
+    @egrpc.multimethod
     def __getitem__(self, key: PrivSeries[bool]) -> PrivSeries[T]:
         if self._ptag != key._ptag:
             raise DPError("ser[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
@@ -601,28 +599,31 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                              parents      = [self],
                              preserve_row = False)
 
-    @multimethod
+    @egrpc.multimethod
     def __setitem__(self, key: PrivSeries[bool], value: ElementType) -> None:
         if self._ptag != key._ptag:
             raise DPError("df[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
         self._value[key._value] = value
 
-    def __eq__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
+    @egrpc.multimethod
+    def __eq__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value == other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
+        return PrivSeries[bool](data         = self._value == other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
-
-        else:
-            return PrivSeries[bool](data=self._value == other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
+    @__eq__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value == other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
     def __ne__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
         if isinstance(other, PrivSeries):
@@ -704,12 +705,12 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         else:
             return PrivSeries[bool](data=self._value >= other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
 
-    @property
+    @egrpc.property
     def shape(self) -> tuple[SensitiveInt]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         return (nrows,)
 
-    @property
+    @egrpc.property
     def size(self) -> SensitiveInt:
         return SensitiveInt(value=self._value.size, distance=self.distance, parents=[self])
 
@@ -974,6 +975,7 @@ class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
         # TODO: args?
         return smin(self)
 
+@egrpc.function
 def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
     # TODO: more vaildation for the input data
     df = _pd.read_csv(filepath)

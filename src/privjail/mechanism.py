@@ -1,31 +1,36 @@
 from typing import Any, TypeVar, overload
+
 import numpy as _np
-from .util import DPError
+import pandas as _pd
+
+from .util import DPError, floating, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .pandas import SensitiveSeries, SensitiveDataFrame
+from . import egrpc
 
 T = TypeVar("T")
 
-def laplace_mechanism(prisoner: Prisoner[Any] | SensitiveSeries[Any] | SensitiveDataFrame, eps: float) -> Any:
-    if isinstance(prisoner, (SensitiveSeries, SensitiveDataFrame)):
-        return prisoner.map(lambda x: laplace_mechanism(x, eps))
+@egrpc.multifunction
+def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) -> float:
+    sensitivity = prisoner.distance.max()
 
-    elif isinstance(prisoner, Prisoner):
-        sensitivity = prisoner.distance.max()
+    if sensitivity <= 0:
+        raise DPError(f"Invalid sensitivity ({sensitivity})")
 
-        if sensitivity <= 0:
-            raise DPError(f"Invalid sensitivity ({sensitivity})")
+    if eps <= 0:
+        raise DPError(f"Invalid epsilon ({eps})")
 
-        if eps <= 0:
-            raise DPError(f"Invalid epsilon ({eps})")
+    prisoner.consume_privacy_budget(float(eps))
 
-        prisoner.consume_privacy_budget(eps)
+    return float(_np.random.laplace(loc=prisoner._value, scale=sensitivity / eps))
 
-        # TODO: type check for values, otherwise sensitive values can be leaked via errors (e.g., string)
-        return _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
+@laplace_mechanism.register(remote=False) # type: ignore
+def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
+    return prisoner.map(lambda x: laplace_mechanism(x, eps))
 
-    else:
-        raise ValueError
+@laplace_mechanism.register(remote=False) # type: ignore
+def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
+    return prisoner.map(lambda x: laplace_mechanism(x, eps))
 
 # TODO: add test
 @overload

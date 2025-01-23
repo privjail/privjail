@@ -24,11 +24,11 @@ def function_decorator(func: Callable[P, R]) -> Callable[P, R]:
     grpc_register_function(func, function_handler)
 
     @functools.wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         if remote_connected():
             proto_req = pack_proto_function_request(func, *args, **kwargs)
             proto_res = grpc_function_call(func, proto_req)
-            return unpack_proto_function_response(func, proto_res)
+            return unpack_proto_function_response(func, proto_res) # type: ignore[no-any-return]
         else:
             return func(*args, **kwargs)
 
@@ -38,21 +38,37 @@ class multifunction_decorator:
     def __init__(self, func: Callable[P, R]):
         self.qualname = func.__qualname__
         self.count = 0
-        wrapper = self._do_register(func)
-        self.mm = multimethod.multimethod(wrapper)
 
+        def __base(*args: Any) -> Any:
+            raise TypeError
+
+        self.md = multimethod.multidispatch(__base)
+
+        self._do_register(func)
+
+    @multimethod.multidispatch
     def register(self, func: Callable[P, R]) -> None:
         self.count += 1
-        wrapper = self._do_register(func)
-        self.mm.register(wrapper)
+        self._do_register(func)
         return None
 
-    def _do_register(self, func: Callable[P, R]) -> Callable[P, R]:
+    @register.register
+    def _(self, remote: bool) -> Callable[[Callable[P, R]], None]:
+        def register_decorator(func: Callable[P, R]) -> None:
+            if remote:
+                self.count += 1
+                self._do_register(func)
+            else:
+                self.md.register(func)
+        return register_decorator
+
+    def _do_register(self, func: Callable[P, R]) -> None:
         func.__qualname__ = f"{self.qualname}.{self.count}"
-        return function_decorator(func)
+        wrapper = function_decorator(func)
+        self.md.register(wrapper)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.mm(*args, **kwargs)
+        return self.md(*args, **kwargs)
 
 def dataclass_decorator(cls: Type[T]) -> Type[T]:
     datacls = dataclasses.dataclass(cls)
@@ -186,19 +202,20 @@ def register_remoteclass_method(cls: Type[T], method: Callable[P, R]) -> Callabl
     return method_wrapper
 
 def register_remoteclass_multimethod(cls: Type[T], mmd: multimethod_decorator) -> Callable[..., Any]:
+    def __base(*args: Any) -> Any:
+        print(*args)
+        raise TypeError
+
+    md = multimethod.multidispatch(__base)
+
     qualname = mmd.methods[0].__qualname__
 
     for i, method in enumerate(mmd.methods):
         method.__qualname__ = f"{qualname}.{i}"
-
-    method_wrapper = register_remoteclass_method(cls, mmd.methods[0])
-    mm = multimethod.multimethod(method_wrapper)
-
-    for method in mmd.methods[1:]:
         method_wrapper = register_remoteclass_method(cls, method)
-        mm.register(method_wrapper)
+        md.register(method_wrapper)
 
-    return mm
+    return md
 
 def register_remoteclass_property(cls: Type[T], prop: property_decorator) -> property:
     assert prop.fget is not None
