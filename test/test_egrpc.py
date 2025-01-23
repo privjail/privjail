@@ -194,9 +194,13 @@ class Hoge():
     def __init__(self, x: int):
         self.x = x
 
-    @egrpc.method
+    @egrpc.property
     def value(self) -> int:
         return self.x
+
+    @value.setter
+    def value(self, x: int) -> None:
+        self.x = x
 
     @egrpc.method
     def fuga(self) -> "Fuga":
@@ -207,9 +211,13 @@ class Fuga():
     def __init__(self, x: str):
         self.x = x
 
-    @egrpc.method
+    @egrpc.property
     def value(self) -> str:
         return self.x
+
+    @value.setter
+    def value(self, x: str) -> None:
+        self.x = x
 
     @egrpc.method
     def hoge(self) -> "Hoge":
@@ -223,4 +231,8 @@ def test_remoteclass2(server: Any) -> None:
     hoge = gen_hoge(1)
     fuga = hoge.fuga()
     hoge_ = fuga.hoge()
-    assert hoge.value() == hoge_.value()
+    assert hoge.value == hoge_.value
+
+    hoge.value = 2
+    assert hoge.value == 2
+    assert hoge.fuga().value == "2"

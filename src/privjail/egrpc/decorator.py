@@ -1,4 +1,4 @@
-from typing import TypeVar, Callable, Type, Any, cast, ParamSpec
+from typing import TypeVar, Callable, Type, Any, cast, ParamSpec, TYPE_CHECKING
 import functools
 import dataclasses
 
@@ -77,26 +77,48 @@ class multimethod_decorator:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("@egrpc.remoteclass is missing")
 
+# https://github.com/python/mypy/issues/6158
+if TYPE_CHECKING:
+    property_decorator = property
+else:
+    class property_decorator(property):
+        def __init__(self,
+                     fget: Callable[[Any], R],
+                     fset: Callable[[Any, R], None] | None = None,
+                     fdel: Callable[[Any], None] | None    = None,
+                     fdoc: str | None                      = None):
+            setattr(self, "__egrpc_enabled", True)
+            super().__init__(fget=fget, fset=fset)
+
 def remoteclass_decorator(cls: Type[T]) -> Type[T]:
     init_remoteclass(cls)
     methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
 
     for method_name, method in methods.items():
         if isinstance(method, multimethod_decorator):
-            register_remoteclass_multimethod(cls, method, method_name)
-        else:
-            if method_name == "__init__":
-                register_remoteclass_init(cls)
-            else:
-                register_remoteclass_method(cls, method, method_name)
+            multimethod_wrapper = register_remoteclass_multimethod(cls, method)
+            setattr(cls, method_name, multimethod_wrapper)
 
-    register_remoteclass_del(cls)
+        elif isinstance(method, property_decorator):
+            property_wrapper = register_remoteclass_property(cls, method)
+            setattr(cls, method_name, property_wrapper)
+
+        elif method_name == "__init__":
+            init_wrapper = register_remoteclass_init(cls)
+            setattr(cls, "__init__", init_wrapper)
+
+        else:
+            method_wrapper = register_remoteclass_method(cls, method)
+            setattr(cls, method_name, method_wrapper)
+
+    del_wrapper = register_remoteclass_del(cls)
+    setattr(cls, "__del__", del_wrapper)
 
     compile_remoteclass(cls)
 
     return cls
 
-def register_remoteclass_init(cls: Type[T]) -> None:
+def register_remoteclass_init(cls: Type[T]) -> Callable[..., None]:
     init_method = getattr(cls, "__init__")
 
     compile_remoteclass_init(cls, init_method)
@@ -118,9 +140,9 @@ def register_remoteclass_init(cls: Type[T]) -> None:
         else:
             init_method(*args, **kwargs)
 
-    setattr(cls, "__init__", init_wrapper)
+    return init_wrapper
 
-def register_remoteclass_del(cls: Type[T]) -> None:
+def register_remoteclass_del(cls: Type[T]) -> Callable[..., None]:
     del_method = getattr(cls, "__del__")
 
     compile_remoteclass_del(cls, del_method)
@@ -140,9 +162,9 @@ def register_remoteclass_del(cls: Type[T]) -> None:
         else:
             del_method(self)
 
-    setattr(cls, "__del__", del_wrapper)
+    return del_wrapper
 
-def register_remoteclass_method(cls: Type[T], method: Callable[P, R], method_name: str) -> None:
+def register_remoteclass_method(cls: Type[T], method: Callable[P, R]) -> Callable[P, R]:
     compile_remoteclass_method(cls, method)
 
     def method_handler(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
@@ -161,38 +183,34 @@ def register_remoteclass_method(cls: Type[T], method: Callable[P, R], method_nam
         else:
             return method(*args, **kwargs)
 
-    setattr(cls, method_name, method_wrapper)
+    return method_wrapper
 
-def register_remoteclass_multimethod(cls: Type[T], mmd: multimethod_decorator, method_name: str) -> None:
+def register_remoteclass_multimethod(cls: Type[T], mmd: multimethod_decorator) -> Callable[..., Any]:
     qualname = mmd.methods[0].__qualname__
 
     for i, method in enumerate(mmd.methods):
         method.__qualname__ = f"{qualname}.{i}"
 
-        compile_remoteclass_method(cls, method)
-
-        def method_handler(self: Any, proto_req: ProtoMsg, context: Any, method: Callable[P, R] = method) -> ProtoMsg:
-            args = unpack_proto_method_request(cls, method, proto_req)
-            result = method(**args) # type: ignore[call-arg]
-            return pack_proto_method_response(cls, method, result)
-
-        grpc_register_method(cls, method, method_handler)
-
-    def gen_wrapper(method: Callable[P, R]) -> Callable[P, R]:
-        @functools.wraps(method)
-        def method_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            if remote_connected():
-                proto_req = pack_proto_method_request(cls, method, *args, **kwargs)
-                proto_res = grpc_method_call(cls, method, proto_req)
-                return unpack_proto_method_response(cls, method, proto_res) # type: ignore[no-any-return]
-            else:
-                return method(*args, **kwargs)
-
-        return method_wrapper
-
-    mm = multimethod.multimethod(gen_wrapper(mmd.methods[0]))
+    method_wrapper = register_remoteclass_method(cls, mmd.methods[0])
+    mm = multimethod.multimethod(method_wrapper)
 
     for method in mmd.methods[1:]:
-        mm.register(gen_wrapper(method))
+        method_wrapper = register_remoteclass_method(cls, method)
+        mm.register(method_wrapper)
 
-    setattr(cls, method_name, mm)
+    return mm
+
+def register_remoteclass_property(cls: Type[T], prop: property_decorator) -> property:
+    assert prop.fget is not None
+    qualname = prop.fget.__qualname__
+
+    prop.fget.__qualname__ = f"{qualname}.getter"
+    fget_wrapper = register_remoteclass_method(cls, prop.fget)
+
+    if prop.fset is not None:
+        prop.fset.__qualname__ = f"{qualname}.setter"
+        fset_wrapper = register_remoteclass_method(cls, prop.fset)
+    else:
+        fset_wrapper = None
+
+    return property(fget=fget_wrapper, fset=fset_wrapper)
