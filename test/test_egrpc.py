@@ -127,7 +127,6 @@ def test_dataclass(server: Any) -> None:
 
 @egrpc.remoteclass
 class Point():
-    @egrpc.method # type: ignore
     def __init__(self, x: int | float, y: int | float, z: int | float):
         self.x = x
         self.y = y
@@ -143,7 +142,7 @@ class Point():
 
     @egrpc.method
     def __mul__(self, other: int | float) -> "Point":
-        return Point(self.x * other, self.y * other, self.z * other) # type: ignore
+        return Point(self.x * other, self.y * other, self.z * other)
 
 @egrpc.function
 def identity(p: Point) -> Point:
