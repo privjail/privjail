@@ -34,6 +34,26 @@ def function_decorator(func: Callable[P, R]) -> Callable[P, R]:
 
     return cast(Callable[P, R], wrapper)
 
+class multifunction_decorator:
+    def __init__(self, func: Callable[P, R]):
+        self.qualname = func.__qualname__
+        self.count = 0
+        wrapper = self._do_register(func)
+        self.mm = multimethod.multimethod(wrapper)
+
+    def register(self, func: Callable[P, R]) -> None:
+        self.count += 1
+        wrapper = self._do_register(func)
+        self.mm.register(wrapper)
+        return None
+
+    def _do_register(self, func: Callable[P, R]) -> Callable[P, R]:
+        func.__qualname__ = f"{self.qualname}.{self.count}"
+        return function_decorator(func)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.mm(*args, **kwargs)
+
 def dataclass_decorator(cls: Type[T]) -> Type[T]:
     datacls = dataclasses.dataclass(cls)
     compile_dataclass(datacls)

@@ -106,6 +106,22 @@ def test_function(server: Any) -> None:
     assert func8(2) == 4
     assert func8() == None
 
+@egrpc.multifunction
+def mfunc1(x: int | float, y: int | float) -> float:
+    return x + y
+
+@mfunc1.register
+def _(x: int, y: int) -> int:
+    return x + y
+
+def test_multifunction(server: Any) -> None:
+    assert mfunc1(1, 2) == 3
+    assert isinstance(mfunc1(1, 2), int)
+    assert mfunc1(1.1, 2) == pytest.approx(3.1)
+    assert isinstance(mfunc1(1.1, 2), float)
+    assert mfunc1(1.1, 2.2) == pytest.approx(3.3)
+    assert isinstance(mfunc1(1.1, 2.2), float)
+
 @egrpc.dataclass
 class Data():
     x: int
