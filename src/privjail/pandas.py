@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping
+from abc import ABC, abstractmethod
 import warnings
 import json
 import copy
@@ -96,20 +97,21 @@ def column_schema2domain(col_schema: dict[str, Any]) -> Domain:
     else:
         raise RuntimeError
 
-class Domain:
+class Domain(ABC):
     dtype: str
 
     def __init__(self, dtype: str):
         self.dtype = dtype
 
-    def type(self) -> Any:
-        return Any
+    @abstractmethod
+    def type(self) -> type:
+        pass
 
 class BoolDomain(Domain):
     def __init__(self) -> None:
         super().__init__(dtype="bool")
 
-    def type(self) -> Any:
+    def type(self) -> type:
         return bool
 
 class RealDomain(Domain):
@@ -126,7 +128,7 @@ class StrDomain(Domain):
     def __init__(self) -> None:
         super().__init__(dtype="string")
 
-    def type(self) -> Any:
+    def type(self) -> type:
         return str
 
 class CategoryDomain(Domain):
@@ -136,7 +138,7 @@ class CategoryDomain(Domain):
         self.categories = categories
         super().__init__(dtype="categories")
 
-    def type(self) -> Any:
+    def type(self) -> type:
         return str
 
 @egrpc.remoteclass
@@ -191,7 +193,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # TODO: consider duplicated column names
         value_type = self.domains[key].type()
         # TODO: how to pass `value_type` from server to client via egrpc?
-        return PrivSeries[value_type](data         = self._value.__getitem__(key),
+        return PrivSeries[value_type](data         = self._value.__getitem__(key), # type: ignore[valid-type]
                                       domain       = self.domains[key],
                                       distance     = self.distance,
                                       parents      = [self],
@@ -307,7 +309,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = True)
 
     @egrpc.multimethod
-    def __lt__(self, other: PrivDataFrame) -> PrivDataFrame:
+    def __lt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive dataframes for comparison can be different.")
 
@@ -326,7 +328,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = True)
 
     @egrpc.multimethod
-    def __le__(self, other: PrivDataFrame) -> PrivDataFrame:
+    def __le__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive dataframes for comparison can be different.")
 
@@ -345,7 +347,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = True)
 
     @egrpc.multimethod
-    def __gt__(self, other: PrivDataFrame) -> PrivDataFrame:
+    def __gt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive dataframes for comparison can be different.")
 
@@ -364,7 +366,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = True)
 
     @egrpc.multimethod
-    def __ge__(self, other: PrivDataFrame) -> PrivDataFrame:
+    def __ge__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive dataframes for comparison can be different.")
 
@@ -659,7 +661,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                 preserve_row = True)
 
     @egrpc.multimethod
-    def __lt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+    def __lt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive series for comparison can be different.")
 
@@ -678,7 +680,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                 preserve_row = True)
 
     @egrpc.multimethod
-    def __le__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+    def __le__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive series for comparison can be different.")
 
@@ -697,7 +699,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                 preserve_row = True)
 
     @egrpc.multimethod
-    def __gt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+    def __gt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive series for comparison can be different.")
 
@@ -716,7 +718,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                 preserve_row = True)
 
     @egrpc.multimethod
-    def __ge__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+    def __ge__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         if self._ptag != other._ptag:
             raise DPError("Length of sensitive series for comparison can be different.")
 
