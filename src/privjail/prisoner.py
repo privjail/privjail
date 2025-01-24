@@ -51,10 +51,12 @@ class Prisoner(Generic[T]):
             raise RuntimeError
 
     def __str__(self) -> str:
-        return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        # return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        return f"Prisoner()"
 
     def __repr__(self) -> str:
-        return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        # return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        return f"Prisoner()"
 
     def consume_privacy_budget(self, privacy_budget: float) -> None:
         consume_privacy_budget(self.provenance, privacy_budget)

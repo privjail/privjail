@@ -1,5 +1,7 @@
-from typing import TypeVar, Type, Any
+from typing import TypeVar, Type, Any, get_args
 import weakref
+
+from .util import TypeHint
 
 T = TypeVar("T")
 
@@ -37,7 +39,7 @@ def get_ref_from_instance(cls: Type[T], obj: T, on_server: bool) -> InstanceRefT
 
     return _get_instance_ref(obj)
 
-def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType, on_server: bool) -> T:
+def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType, type_hint: TypeHint, on_server: bool) -> T:
     if on_server:
         instance_map_server = _get_instance_map_server(cls)
         assert instance_ref in instance_map_server
@@ -45,12 +47,20 @@ def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType, on_server
 
     else:
         instance_map_client = _get_instance_map_client(cls)
+
         if instance_ref in instance_map_client:
             obj = instance_map_client[instance_ref]()
             assert obj is not None
             return obj
+
         else:
             obj = object.__new__(cls)
+
+            # If this type is a generic type, set `__orig_class__` attribute
+            # so that this information is used for type-based dispatch (by multimethod.multidispatch)
+            if len(get_args(type_hint)) > 0:
+                setattr(obj, "__orig_class__", type_hint)
+
             assign_ref_to_instance(cls, obj, instance_ref, on_server)
             return obj
 

@@ -28,11 +28,11 @@ def function_decorator(func: Callable[P, R]) -> Callable[P, R]:
         if remote_connected():
             proto_req = pack_proto_function_request(func, *args, **kwargs)
             proto_res = grpc_function_call(func, proto_req)
-            return unpack_proto_function_response(func, proto_res) # type: ignore[no-any-return]
+            return cast(R, unpack_proto_function_response(func, proto_res))
         else:
             return func(*args, **kwargs)
 
-    return cast(Callable[P, R], wrapper)
+    return wrapper
 
 class multifunction_decorator:
     def __init__(self, func: Callable[P, R]):
@@ -191,11 +191,11 @@ def register_remoteclass_method(cls: Type[T], method: Callable[P, R]) -> Callabl
     grpc_register_method(cls, method, method_handler)
 
     @functools.wraps(method)
-    def method_wrapper(*args: Any, **kwargs: Any) -> Any:
+    def method_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         if remote_connected():
             proto_req = pack_proto_method_request(cls, method, *args, **kwargs)
             proto_res = grpc_method_call(cls, method, proto_req)
-            return unpack_proto_method_response(cls, method, proto_res)
+            return cast(R, unpack_proto_method_response(cls, method, proto_res))
         else:
             return method(*args, **kwargs)
 
@@ -203,7 +203,6 @@ def register_remoteclass_method(cls: Type[T], method: Callable[P, R]) -> Callabl
 
 def register_remoteclass_multimethod(cls: Type[T], mmd: multimethod_decorator) -> Callable[..., Any]:
     def __base(*args: Any) -> Any:
-        print(*args)
         raise TypeError
 
     md = multimethod.multidispatch(__base)

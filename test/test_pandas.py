@@ -13,8 +13,8 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "b": [2, 4, 4, 4, 3],
     }
     domains = {
-        "a": ppd.RealDomain(type="int64", range=(None, None)),
-        "b": ppd.RealDomain(type="int64", range=(None, None)),
+        "a": ppd.RealDomain(dtype="int64", range=(None, None)),
+        "b": ppd.RealDomain(dtype="int64", range=(None, None)),
     }
     pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
@@ -88,46 +88,46 @@ def test_priv_dataframe_comp() -> None:
     assert ((pdf["a"] >= 3)._value == (df["a"] >= 3)).all()
 
     # An irrelevant, non-private dataframe should not be compared against a private dataframe
-    with pytest.raises(pj.DPError): pdf == df
-    with pytest.raises(pj.DPError): pdf != df
-    with pytest.raises(pj.DPError): pdf <  df
-    with pytest.raises(pj.DPError): pdf <= df
-    with pytest.raises(pj.DPError): pdf >  df
-    with pytest.raises(pj.DPError): pdf >= df
+    with pytest.raises(TypeError): pdf == df
+    with pytest.raises(TypeError): pdf != df
+    with pytest.raises(TypeError): pdf <  df
+    with pytest.raises(TypeError): pdf <= df
+    with pytest.raises(TypeError): pdf >  df
+    with pytest.raises(TypeError): pdf >= df
 
     # An irrelevant, non-private 2d array should not be compared against a private dataframe
-    with pytest.raises(pj.DPError): pdf == [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pj.DPError): pdf != [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pj.DPError): pdf <  [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pj.DPError): pdf <= [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pj.DPError): pdf >  [[list(range(len(pdf.columns)))] for x in range(5)]
-    with pytest.raises(pj.DPError): pdf >= [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(TypeError): pdf == [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(TypeError): pdf != [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(TypeError): pdf <  [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(TypeError): pdf <= [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(TypeError): pdf >  [[list(range(len(pdf.columns)))] for x in range(5)]
+    with pytest.raises(TypeError): pdf >= [[list(range(len(pdf.columns)))] for x in range(5)]
 
     # An irrelevant, non-private array should not be compared against a private series
     with pytest.raises(TypeError): pdf["a"] == [0, 1, 2, 3, 4]
-    with pytest.raises(pj.DPError): pdf["a"] != [0, 1, 2, 3, 4]
-    with pytest.raises(pj.DPError): pdf["a"] <  [0, 1, 2, 3, 4]
-    with pytest.raises(pj.DPError): pdf["a"] <= [0, 1, 2, 3, 4]
-    with pytest.raises(pj.DPError): pdf["a"] >  [0, 1, 2, 3, 4]
-    with pytest.raises(pj.DPError): pdf["a"] >= [0, 1, 2, 3, 4]
+    with pytest.raises(TypeError): pdf["a"] != [0, 1, 2, 3, 4]
+    with pytest.raises(TypeError): pdf["a"] <  [0, 1, 2, 3, 4]
+    with pytest.raises(TypeError): pdf["a"] <= [0, 1, 2, 3, 4]
+    with pytest.raises(TypeError): pdf["a"] >  [0, 1, 2, 3, 4]
+    with pytest.raises(TypeError): pdf["a"] >= [0, 1, 2, 3, 4]
 
     x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be compared against a private dataframe
-    with pytest.raises(pj.DPError): pdf == x
-    with pytest.raises(pj.DPError): pdf != x
-    with pytest.raises(pj.DPError): pdf <  x
-    with pytest.raises(pj.DPError): pdf <= x
-    with pytest.raises(pj.DPError): pdf >  x
-    with pytest.raises(pj.DPError): pdf >= x
+    with pytest.raises(TypeError): pdf == x
+    with pytest.raises(TypeError): pdf != x
+    with pytest.raises(TypeError): pdf <  x
+    with pytest.raises(TypeError): pdf <= x
+    with pytest.raises(TypeError): pdf >  x
+    with pytest.raises(TypeError): pdf >= x
 
     # A sensitive value should not be compared against a private series
     with pytest.raises(TypeError): pdf["a"] == x
-    with pytest.raises(pj.DPError): pdf["a"] != x
-    with pytest.raises(pj.DPError): pdf["a"] <  x
-    with pytest.raises(pj.DPError): pdf["a"] <= x
-    with pytest.raises(pj.DPError): pdf["a"] >  x
-    with pytest.raises(pj.DPError): pdf["a"] >= x
+    with pytest.raises(TypeError): pdf["a"] != x
+    with pytest.raises(TypeError): pdf["a"] <  x
+    with pytest.raises(TypeError): pdf["a"] <= x
+    with pytest.raises(TypeError): pdf["a"] >  x
+    with pytest.raises(TypeError): pdf["a"] >= x
 
     # Sensitive dataframes of potentially different size should not be compared
     pdf_ = pdf[pdf["a"] >= 0]
@@ -139,7 +139,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(pj.DPError): pdf >= pdf_
 
     # Sensitive series of potentially different size should not be compared
-    with pytest.raises(TypeError): pdf["a"] == pdf_["a"]
+    with pytest.raises(pj.DPError): pdf["a"] == pdf_["a"]
     with pytest.raises(pj.DPError): pdf["a"] != pdf_["a"]
     with pytest.raises(pj.DPError): pdf["a"] <  pdf_["a"]
     with pytest.raises(pj.DPError): pdf["a"] <= pdf_["a"]

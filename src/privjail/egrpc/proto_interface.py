@@ -108,7 +108,8 @@ def unpack_proto_method_response(cls: Type[T], method: Callable[P, R], msg: Prot
 
     else:
         return_type = get_method_return_type(cls, method)
-        return get_proto_field(msg, "return", return_type, False)
+        o = get_proto_field(msg, "return", return_type, False)
+        return o
 
 def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, on_server: bool) -> Any:
     type_origin = my_get_origin(type_hint)
@@ -131,7 +132,7 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
     elif type_origin in proto_remoteclass_type_mapping:
         cls = type_origin
         instance_ref = getattr(proto_msg, param_name).ref
-        return get_instance_from_ref(cls, instance_ref, on_server)
+        return get_instance_from_ref(cls, instance_ref, type_hint, on_server)
 
     elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
