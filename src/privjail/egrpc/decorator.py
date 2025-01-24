@@ -1,4 +1,4 @@
-from typing import TypeVar, Callable, Type, Any, cast, ParamSpec, TYPE_CHECKING
+from typing import TypeVar, Callable, Type, Any, cast, ParamSpec, NoReturn, TYPE_CHECKING
 import functools
 import dataclasses
 
@@ -39,7 +39,7 @@ class multifunction_decorator:
         self.qualname = func.__qualname__
         self.count = 0
 
-        def __base(*args: Any) -> Any:
+        def __base(*args: Any) -> NoReturn:
             raise TypeError
 
         self.md = multimethod.multidispatch(__base)
@@ -202,7 +202,7 @@ def register_remoteclass_method(cls: Type[T], method: Callable[P, R]) -> Callabl
     return method_wrapper
 
 def register_remoteclass_multimethod(cls: Type[T], mmd: multimethod_decorator) -> Callable[..., Any]:
-    def __base(*args: Any) -> Any:
+    def __base(*args: Any) -> NoReturn:
         raise TypeError
 
     md = multimethod.multidispatch(__base)

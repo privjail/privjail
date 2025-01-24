@@ -3,7 +3,8 @@ import uuid
 import privjail as pj
 
 def new_sensitive_int(value: int) -> pj.SensitiveInt:
-    return pj.SensitiveInt(value, distance=pj.Distance(1), root_name=str(uuid.uuid4())) + 0
+    # TODO: how to handle multimethod function types?
+    return pj.SensitiveInt(value, distance=pj.Distance(1), root_name=str(uuid.uuid4())) + 0 # type: ignore[no-any-return]
 
 def test_sensitive_real_number() -> None:
     x = new_sensitive_int(12)
@@ -36,8 +37,8 @@ def test_sensitive_real_number() -> None:
     assert x._value == 1
     assert x.distance.max() == 6
 
-    with pytest.raises(pj.DPError):
-        x * x # type: ignore
+    with pytest.raises(TypeError):
+        x * x
 
     z = x + y
     assert z._value == pytest.approx(2.0)
@@ -47,8 +48,8 @@ def test_sensitive_real_number() -> None:
     assert z._value == pytest.approx(-1.0)
     assert z.distance.max() == pytest.approx(6.0 + 1 / 6)
 
-    with pytest.raises(pj.DPError):
-        x * y # type: ignore
+    with pytest.raises(TypeError):
+        x * y
 
 def test_min_max() -> None:
     x = new_sensitive_int(11)
