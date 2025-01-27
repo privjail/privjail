@@ -408,28 +408,26 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @overload
     def replace(self,
-                to_replace : Any = ...,
-                value      : Any = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
                 inplace    : Literal[True],
-                **kwargs   : Any,
                 ) -> None: ...
 
     @overload
     def replace(self,
-                to_replace : Any  = ...,
-                value      : Any  = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
-                inplace    : bool = ...,
-                **kwargs   : Any,
+                inplace    : Literal[False] = ...,
                 ) -> PrivDataFrame: ...
 
+    @egrpc.method
     def replace(self,
-                to_replace : Any  = None,
-                value      : Any  = None,
+                to_replace : ElementType | None = None,
+                value      : ElementType | None = None,
                 *,
                 inplace    : bool = False,
-                **kwargs   : Any,
                 ) -> PrivDataFrame | None:
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
             # TODO: consider string and category dtype
@@ -459,33 +457,35 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 new_domains[col] = domain
 
         if inplace:
-            self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
+            self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivDataFrame(data         = self._value.replace(to_replace, value, inplace=inplace), # type: ignore[arg-type]
+                                 domains      = new_domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     @overload
     def dropna(self,
                *,
                inplace      : Literal[True],
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> None: ...
 
     @overload
     def dropna(self,
                *,
-               inplace      : bool = ...,
+               inplace      : Literal[False] = ...,
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> PrivDataFrame: ...
 
+    @egrpc.method
     def dropna(self,
                *,
                inplace      : bool = False,
                ignore_index : bool = False,
-               **kwargs : Any,
                ) -> PrivDataFrame | None:
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
@@ -500,11 +500,15 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 new_domains[col] = domain
 
         if inplace:
-            self._value.dropna(inplace=inplace, **kwargs)
+            self._value.dropna(inplace=inplace)
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data         = self._value.dropna(inplace=inplace),
+                                 domains      = new_domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     def groupby(self,
                 by         : str, # TODO: support more
@@ -755,28 +759,26 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @overload
     def replace(self,
-                to_replace : Any = ...,
-                value      : Any = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
                 inplace    : Literal[True],
-                **kwargs   : Any,
                 ) -> None: ...
 
     @overload
     def replace(self,
-                to_replace : Any  = ...,
-                value      : Any  = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
-                inplace    : bool = ...,
-                **kwargs   : Any,
+                inplace    : Literal[False] = ...,
                 ) -> PrivSeries[T]: ...
 
+    @egrpc.method
     def replace(self,
-                to_replace : Any  = None,
-                value      : Any  = None,
+                to_replace : ElementType | None = None,
+                value      : ElementType | None = None,
                 *,
                 inplace    : bool = False,
-                **kwargs   : Any,
                 ) -> PrivSeries[T] | None:
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
             # TODO: consider string and category dtype
@@ -802,33 +804,35 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             new_domain = self.domain
 
         if inplace:
-            self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
+            self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivSeries[T](data         = self._value.replace(to_replace, value, inplace=inplace), # type: ignore[arg-type]
+                                 domain       = new_domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     @overload
     def dropna(self,
                *,
                inplace      : Literal[True],
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> None: ...
 
     @overload
     def dropna(self,
                *,
-               inplace      : bool = ...,
+               inplace      : Literal[False] = ...,
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> PrivSeries[T]: ...
 
+    @egrpc.method
     def dropna(self,
                *,
                inplace      : bool = False,
                ignore_index : bool = False,
-               **kwargs : Any,
                ) -> PrivSeries[T] | None:
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
@@ -840,11 +844,15 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             new_domain = self.domain
 
         if inplace:
-            self._value.dropna(inplace=inplace, **kwargs)
+            self._value.dropna(inplace=inplace)
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.dropna(inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[T](data         = self._value.dropna(inplace=inplace),
+                                 domain       = new_domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     @overload
     def clip(self,
@@ -852,7 +860,6 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              upper    : realnum | None = None,
              *,
              inplace  : Literal[True],
-             **kwargs : Any,
              ) -> None: ...
 
     @overload
@@ -860,16 +867,15 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              lower    : realnum | None = None,
              upper    : realnum | None = None,
              *,
-             inplace  : bool = ...,
-             **kwargs : Any,
+             inplace  : Literal[False] = ...,
              ) -> PrivSeries[T]: ...
 
+    @egrpc.method
     def clip(self,
              lower    : realnum | None = None,
              upper    : realnum | None = None,
              *,
              inplace  : bool = False,
-             **kwargs : Any,
              ) -> PrivSeries[T] | None:
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
@@ -881,11 +887,15 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         new_domain.range = (new_a, new_b)
 
         if inplace:
-            self._value.clip(lower, upper, inplace=inplace, **kwargs) # type: ignore[arg-type]
+            self._value.clip(lower, upper, inplace=inplace) # type: ignore[arg-type]
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivSeries[T](data         = self._value.clip(lower, upper, inplace=inplace), # type: ignore[arg-type]
+                                 domain       = new_domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     def sum(self) -> SensitiveInt | SensitiveFloat:
         if not isinstance(self.domain, RealDomain):
