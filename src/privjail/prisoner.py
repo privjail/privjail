@@ -295,5 +295,6 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 
     return result
 
+@egrpc.function
 def consumed_privacy_budget() -> dict[str, float]:
     return consumed_privacy_budget_all()

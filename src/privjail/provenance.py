@@ -30,12 +30,11 @@ def new_provenance_root(name: str) -> ProvenanceEntity:
     global provenance_roots
 
     if name in provenance_roots:
-        raise ValueError(f"Name '{name}' already exists")
-
-    pe = ProvenanceEntity([], "inclusive", root_name=name)
-    provenance_roots[name] = pe
-
-    return pe
+        return provenance_roots[name]
+    else:
+        pe = ProvenanceEntity([], "inclusive", root_name=name)
+        provenance_roots[name] = pe
+        return pe
 
 def new_provenance_node(parents: list[ProvenanceEntity], children_type: ChildrenType) -> ProvenanceEntity:
     assert len(parents) > 0
