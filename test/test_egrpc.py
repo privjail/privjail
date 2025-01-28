@@ -102,9 +102,7 @@ def test_function(server: Any) -> None:
     assert func4(["a", "b", "c"], 2) == ["a", "b", "c", "a", "b", "c"]
     assert func5([1, "b", 3], 2) == [1, "b", 3, 1, "b", 3]
     assert func6((1, "a")) == ("a", 1)
-    print("aaa")
     assert func7({"a": 1, "b": 2}) == {"a": ["a"], "b": ["b", "b"]}
-    print("bbb")
     assert func8(2) == 4
     assert func8() == None
 

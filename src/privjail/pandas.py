@@ -428,9 +428,14 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     def size(self) -> SensitiveInt:
         return SensitiveInt(value=self._value.size, distance=self.distance * len(self._value.columns), parents=[self])
 
+    # TODO: define privjail's own Index[T] type
     @property
     def columns(self) -> _pd.Index[str]:
-        return self._value.columns
+        return _pd.Index(self._get_columns())
+
+    @egrpc.method
+    def _get_columns(self) -> list[str]:
+        return list(self._value.columns)
 
     @property
     def dtypes(self) -> _pd.Series[Any]:
