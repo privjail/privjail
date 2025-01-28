@@ -173,10 +173,7 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
         raise TypeError(f"Type {type_origin} is not supported.")
 
 def get_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, allow_subclass: bool, on_server: bool) -> list[Any]:
-    # TODO: refactor
-    proto_types = subclasses(type_hint, proto_dataclass_type_mapping)
-    if (not is_subclass(type_hint, proto_dataclass_type_mapping) and my_get_origin(type_hint) is None) or (
-            is_subclass(type_hint, proto_dataclass_type_mapping) and (not allow_subclass or len(proto_types) == 0)):
+    if type_hint in proto_primitive_type_mapping:
         # RepeatedScalarContainer
         return list(repeated_container)
     else:
@@ -245,10 +242,7 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
         raise TypeError(f"Type {type_origin} is not supported.")
 
 def set_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, objs: list[Any], allow_subclass: bool, on_server: bool) -> None:
-    # TODO: refactor
-    proto_types = subclasses(type_hint, proto_dataclass_type_mapping)
-    if (not is_subclass(type_hint, proto_dataclass_type_mapping) and my_get_origin(type_hint) is None) or (
-            is_subclass(type_hint, proto_dataclass_type_mapping) and (not allow_subclass or len(proto_types) == 0)):
+    if type_hint in proto_primitive_type_mapping:
         # RepeatedScalarContainer
         repeated_container.extend(objs)
     else:

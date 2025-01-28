@@ -1,5 +1,6 @@
 from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dict, Any, TypeVar, Callable, Type, ParamSpec
-import types
+from types import UnionType
+from collections.abc import Sequence, Mapping
 import inspect
 
 # TODO: make egrpc independent of numpy
@@ -22,7 +23,7 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
     if type_origin is None:
         return isinstance(obj, type_hint)
 
-    elif type_origin in (Union, types.UnionType):
+    elif type_origin in (Union, UnionType):
         return any(is_type_match(obj, th) for th in type_args)
 
     elif type_origin in (tuple, Tuple):
@@ -32,13 +33,13 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
             and all(is_type_match(o, th) for o, th in zip(obj, type_args))
         )
 
-    elif type_origin in (list, List):
+    elif type_origin in (list, List, Sequence):
         return (
             isinstance(obj, list)
             and all(is_type_match(o, type_args[0]) for o in obj)
         )
 
-    elif type_origin in (dict, Dict):
+    elif type_origin in (dict, Dict, Mapping):
         return (
             isinstance(obj, dict)
             and all(is_type_match(k, type_args[0]) for k in obj.keys())

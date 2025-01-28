@@ -137,6 +137,20 @@ if TYPE_CHECKING:
         def type(self) -> type:
             return str
 
+    @dataclass
+    class PrivDataFrameGroupBy:
+        # TODO: groups are ordered?
+        groups: Mapping[ElementType, PrivDataFrame]
+
+        def __len__(self) -> int:
+            return len(self.groups)
+
+        def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+            return iter(self.groups.items())
+
+        def get_group(self, key: Any) -> PrivDataFrame:
+            return self.groups[key]
+
 else:
     @egrpc.dataclass
     class Domain(ABC):
@@ -174,6 +188,20 @@ else:
 
         def type(self) -> type:
             return str
+
+    @egrpc.dataclass
+    class PrivDataFrameGroupBy:
+        # TODO: groups are ordered?
+        groups: Mapping[ElementType, PrivDataFrame]
+
+        def __len__(self) -> int:
+            return len(self.groups)
+
+        def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+            return iter(self.groups.items())
+
+        def get_group(self, key: Any) -> PrivDataFrame:
+            return self.groups[key]
 
 @egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
@@ -549,15 +577,16 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                                  parents      = [self],
                                  preserve_row = True)
 
+    @egrpc.method
     def groupby(self,
                 by         : str, # TODO: support more
-                level      : Any                                = None,
-                as_index   : bool                               = True,
-                sort       : bool                               = True,
-                group_keys : bool                               = True,
-                observed   : bool                               = True,
-                dropna     : bool                               = True,
-                keys       : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
+                level      : int | None                   = None, # TODO: support multiindex?
+                as_index   : bool                         = True,
+                sort       : bool                         = True,
+                group_keys : bool                         = True,
+                observed   : bool                         = True,
+                dropna     : bool                         = True,
+                keys       : Sequence[ElementType] | None = None, # extra argument for privjail
                 ) -> PrivDataFrameGroupBy:
         key_domain = self.domains[by]
         if isinstance(key_domain, CategoryDomain):
@@ -575,7 +604,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # include empty groups for absent `keys` and sort by `keys`
         columns = self._value.columns
         dtypes = self._value.dtypes
-        groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys}
+        groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys} # type: ignore
 
         # create new child distance variables to express exclusiveness
         distances = self.distance.create_exclusive_distances(len(groups))
@@ -587,21 +616,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # TODO: update childrens' category domain that is chosen for the groupby key
         priv_groups = {key: PrivDataFrame(df, domains=self.domains, distance=d, parents=[prisoner_dummy], preserve_row=False) for (key, df), d in zip(groups.items(), distances)}
 
-        return PrivDataFrameGroupBy(priv_groups)
-
-class PrivDataFrameGroupBy:
-    def __init__(self, groups: Mapping[Any, PrivDataFrame]):
-        # TODO: groups are ordered?
-        self.groups = groups
-
-    def __len__(self) -> int:
-        return len(self.groups)
-
-    def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
-        return iter(self.groups.items())
-
-    def get_group(self, key: Any) -> PrivDataFrame:
-        return self.groups[key]
+        return PrivDataFrameGroupBy(priv_groups) # type: ignore[arg-type]
 
 # to avoid TypeError: type 'Series' is not subscriptable
 # class PrivSeries(Prisoner[_pd.Series[T]]):
