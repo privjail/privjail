@@ -473,6 +473,24 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     def domains(self) -> Mapping[str, Domain]:
         return self._domains
 
+    # TODO: add test
+    @egrpc.method
+    def head(self, n: int = 5) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value.head(n),
+                             domains      = self.domains,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
+    # TODO: add test
+    @egrpc.method
+    def tail(self, n: int = 5) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value.tail(n),
+                             domains      = self.domains,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
     @overload
     def replace(self,
                 to_replace : ElementType | None = ...,
@@ -810,6 +828,24 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     @egrpc.property
     def domain(self) -> Domain:
         return self._domain
+
+    # TODO: add test
+    @egrpc.method
+    def head(self, n: int = 5) -> PrivSeries[T]:
+        return PrivSeries[T](data         = self._value.head(n),
+                             domain       = self.domain,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
+    # TODO: add test
+    @egrpc.method
+    def tail(self, n: int = 5) -> PrivSeries[T]:
+        return PrivSeries[T](data         = self._value.tail(n),
+                             domain       = self.domain,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
 
     @overload
     def replace(self,
