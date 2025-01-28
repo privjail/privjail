@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping
+from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import warnings
 import json
 import copy
+from dataclasses import dataclass, field
 
 import numpy as _np
 import pandas as _pd
@@ -97,49 +98,82 @@ def column_schema2domain(col_schema: dict[str, Any]) -> Domain:
     else:
         raise RuntimeError
 
-class Domain(ABC):
-    dtype: str
+# suppress mypy errors
+if TYPE_CHECKING:
+    @dataclass
+    class Domain(ABC):
+        dtype: str
 
-    def __init__(self, dtype: str):
-        self.dtype = dtype
+        @abstractmethod
+        def type(self) -> type:
+            pass
 
-    @abstractmethod
-    def type(self) -> type:
-        pass
+    @dataclass
+    class BoolDomain(Domain):
+        dtype: str = "bool"
 
-class BoolDomain(Domain):
-    def __init__(self) -> None:
-        super().__init__(dtype="bool")
+        def type(self) -> type:
+            return bool
 
-    def type(self) -> type:
-        return bool
+    @dataclass
+    class RealDomain(Domain):
+        range: tuple[realnum | None, realnum | None]
 
-class RealDomain(Domain):
-    range: tuple[realnum | None, realnum | None]
+        def type(self) -> Any:
+            return int if self.dtype in ("int64", "Int64") else float
 
-    def __init__(self, dtype: str, range: tuple[realnum | None, realnum | None]):
-        self.range = range
-        super().__init__(dtype=dtype)
+    @dataclass
+    class StrDomain(Domain):
+        dtype: str = "string"
 
-    def type(self) -> Any:
-        return int if self.dtype in ("int64", "Int64") else float
+        def type(self) -> type:
+            return str
 
-class StrDomain(Domain):
-    def __init__(self) -> None:
-        super().__init__(dtype="string")
+    @dataclass
+    class CategoryDomain(Domain):
+        dtype: str = "categories"
+        categories: list[str] = field(default_factory=list)
 
-    def type(self) -> type:
-        return str
+        def type(self) -> type:
+            return str
 
-class CategoryDomain(Domain):
-    categories: list[str]
+else:
+    @egrpc.dataclass
+    class Domain(ABC):
+        dtype: str
 
-    def __init__(self, categories: list[str]):
-        self.categories = categories
-        super().__init__(dtype="categories")
+        @abstractmethod
+        def type(self) -> type:
+            pass
 
-    def type(self) -> type:
-        return str
+    @egrpc.dataclass
+    class BoolDomain(Domain):
+        dtype: str = "bool"
+
+        def type(self) -> type:
+            return bool
+
+    @egrpc.dataclass
+    class RealDomain(Domain):
+        range: tuple[realnum | None, realnum | None]
+
+        def type(self) -> Any:
+            return int if self.dtype in ("int64", "Int64") else float
+
+    @egrpc.dataclass
+    class StrDomain(Domain):
+        dtype: str = "string"
+
+        def type(self) -> type:
+            return str
+
+    @egrpc.dataclass
+    class CategoryDomain(Domain):
+        dtype: str = "categories"
+        categories: list[str] = field(default_factory=list)
+
+        def type(self) -> type:
+            return str
 
 @egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
@@ -402,7 +436,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
 
-    @property
+    @egrpc.property
     def domains(self) -> Mapping[str, Domain]:
         return self._domains
 
@@ -753,7 +787,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     def dtypes(self) -> Any:
         return self._value.dtypes
 
-    @property
+    @egrpc.property
     def domain(self) -> Domain:
         return self._domain
 
@@ -1135,6 +1169,6 @@ def cut(x        : PrivSeries[Any],
 
     ser = _pd.cut(x._value, bins, *args, **kwargs)
 
-    new_domain = CategoryDomain(list(ser.dtype.categories))
+    new_domain = CategoryDomain(categories=list(ser.dtype.categories))
 
     return PrivSeries[Any](ser, domain=new_domain, distance=x.distance, parents=[x], preserve_row=True)

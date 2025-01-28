@@ -1,5 +1,7 @@
+from __future__ import annotations
 from typing import get_args, Union, List, Tuple, Dict, Callable, Any, TypeVar, Type, ParamSpec
 from types import UnionType, ModuleType
+from collections.abc import Sequence, Mapping
 import os
 import sys
 import tempfile
@@ -38,11 +40,21 @@ proto_content = ""
 def indent_str(depth: int) -> str:
     return " " * depth * 2
 
-def gen_proto_field_def(index      : int,
-                        param_name : str,
-                        type_hint  : TypeHint,
-                        repeated   : bool = False,
-                        depth      : int = 0) -> tuple[list[str], list[str], int]:
+def is_subclass(type_hint: TypeHint, type_mapping: dict[Any, str]) -> bool:
+    return isinstance(type_hint, type) and issubclass(type_hint, tuple(type_mapping.keys()))
+
+def subclasses(type_hint: TypeHint, type_mapping: dict[Any, str]) -> dict[TypeHint, str]:
+    if isinstance(type_hint, type):
+        return {th: proto_type for th, proto_type in type_mapping.items() if issubclass(th, type_hint)}
+    else:
+        return {}
+
+def gen_proto_field_def(index          : int,
+                        param_name     : str,
+                        type_hint      : TypeHint,
+                        allow_subclass : bool = True,
+                        repeated       : bool = False,
+                        depth          : int = 0) -> tuple[list[str], list[str], int]:
     type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
@@ -53,38 +65,53 @@ def gen_proto_field_def(index      : int,
     proto_fields = []
     proto_defs = []
 
-    proto_type_mapping = {**proto_primitive_type_mapping,
-                          **proto_dataclass_type_mapping,
-                          **proto_remoteclass_type_mapping}
+    if type_origin in proto_primitive_type_mapping:
+        proto_type = proto_primitive_type_mapping[type_origin]
+        proto_fields.append(f"{indent_str(depth)}{repeated_str}{proto_type} {param_name} = {index + 1};")
+        index += 1
 
-    if type_origin in proto_type_mapping:
-        proto_type = proto_type_mapping[type_origin]
+    elif is_subclass(type_origin, proto_dataclass_type_mapping):
+        # TODO: move subtype handling to `compile_dataclass()`?
+        proto_types = subclasses(type_origin, proto_dataclass_type_mapping)
+        if not allow_subclass or len(proto_types) == 0:
+            proto_type = proto_dataclass_type_mapping[type_origin]
+            proto_fields.append(f"{indent_str(depth)}{repeated_str}{proto_type} {param_name} = {index + 1};")
+            index += 1
+        else:
+            msgname = f"{param_name.capitalize()}SubclassMessage"
+            child_type_hints = {f"class{i}": th for i, th in enumerate(proto_types.keys())}
+            proto_defs += gen_proto_msg_def(msgname, child_type_hints, allow_subclass=False, oneof=True)
+            proto_fields.append(f"{indent_str(depth)}{repeated_str}{msgname} {param_name} = {index + 1};")
+            index += 1
+
+    elif type_origin in proto_remoteclass_type_mapping:
+        proto_type = proto_remoteclass_type_mapping[type_origin]
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{proto_type} {param_name} = {index + 1};")
         index += 1
 
     elif type_origin in (Union, UnionType):
         msgname = f"{param_name.capitalize()}UnionMessage"
         child_type_hints = {f"member{i}": th for i, th in enumerate(type_args)}
-        proto_defs += gen_proto_msg_def(msgname, child_type_hints, oneof=True)
+        proto_defs += gen_proto_msg_def(msgname, child_type_hints, allow_subclass=allow_subclass, oneof=True)
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{msgname} {param_name} = {index + 1};")
         index += 1
 
     elif type_origin in (tuple, Tuple):
         msgname = f"{param_name.capitalize()}TupleMessage"
         child_type_hints = {f"item{i}": th for i, th in enumerate(type_args)}
-        proto_defs += gen_proto_msg_def(msgname, child_type_hints)
+        proto_defs += gen_proto_msg_def(msgname, child_type_hints, allow_subclass=allow_subclass)
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{msgname} {param_name} = {index + 1};")
         index += 1
 
-    elif type_origin in (list, List):
+    elif type_origin in (list, List, Sequence):
         msgname = f"{param_name.capitalize()}ListMessage"
-        proto_defs += gen_proto_msg_def(msgname, {"elements": type_args[0]}, repeated=True)
+        proto_defs += gen_proto_msg_def(msgname, {"elements": type_args[0]}, allow_subclass=type_origin is Sequence, repeated=True)
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{msgname} {param_name} = {index + 1};")
         index += 1
 
-    elif type_origin in (dict, Dict):
+    elif type_origin in (dict, Dict, Mapping):
         msgname = f"{param_name.capitalize()}DictMessage"
-        proto_defs += gen_proto_msg_def(msgname, {"keys": type_args[0], "values": type_args[1]}, repeated=True)
+        proto_defs += gen_proto_msg_def(msgname, {"keys": type_args[0], "values": type_args[1]}, allow_subclass=type_origin is Mapping, repeated=True)
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{msgname} {param_name} = {index + 1};")
         index += 1
 
@@ -93,11 +120,12 @@ def gen_proto_field_def(index      : int,
 
     return proto_fields, proto_defs, index
 
-def gen_proto_msg_def(msgname      : str,
-                      typed_params : dict[str, TypeHint],
-                      repeated     : bool = False,
-                      oneof        : bool = False,
-                      depth        : int = 0) -> list[str]:
+def gen_proto_msg_def(msgname        : str,
+                      typed_params   : dict[str, TypeHint],
+                      allow_subclass : bool = True,
+                      repeated       : bool = False,
+                      oneof          : bool = False,
+                      depth          : int = 0) -> list[str]:
     index = 0
     proto_defs = []
     proto_inner_defs = []
@@ -109,7 +137,7 @@ def gen_proto_msg_def(msgname      : str,
 
     for param_name, type_hint in typed_params.items():
         next_depth = depth + 2 if oneof else depth + 1
-        pf, pd, index = gen_proto_field_def(index, param_name, type_hint, repeated=repeated, depth=next_depth)
+        pf, pd, index = gen_proto_field_def(index, param_name, type_hint, allow_subclass=allow_subclass, repeated=repeated, depth=next_depth)
         proto_defs += pf
         proto_inner_defs += pd
 
