@@ -22,11 +22,11 @@ R = TypeVar("R")
 proto_primitive_type_mapping = {
     str          : "string",
     int          : "int64",
-    float        : "float",
+    float        : "double",
     bool         : "bool",
     type(None)   : "bool",
     _np.integer  : "int64",
-    _np.floating : "float",
+    _np.floating : "double",
 }
 
 proto_dataclass_type_mapping: dict[Any, str] = {}
