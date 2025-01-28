@@ -951,6 +951,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                  parents      = [self],
                                  preserve_row = True)
 
+    @egrpc.method
     def sum(self) -> SensitiveInt | SensitiveFloat:
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
@@ -974,6 +975,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         else:
             raise ValueError
 
+    @egrpc.method
     def mean(self, eps: float) -> float:
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
