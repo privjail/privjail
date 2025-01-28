@@ -143,6 +143,7 @@ if __name__ == "__main__":
         main()
 
     elif mode == "server":
+        # print(pj.proto_file_content())
         pj.serve(port)
 
     elif mode == "client":

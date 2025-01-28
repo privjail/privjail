@@ -316,7 +316,7 @@ def compile_proto() -> tuple[ModuleType, ModuleType]:
         proto_file = os.path.join(tempdir, "dynamic.proto")
 
         with open(proto_file, "w") as f:
-            f.write(proto_header + proto_content)
+            f.write(proto_file_content())
 
         protoc.main(
             [
@@ -342,3 +342,7 @@ def compile_proto() -> tuple[ModuleType, ModuleType]:
         dynamic_pb2_grpc = import_dynamic_module("dynamic_pb2_grpc", "dynamic_pb2_grpc.py")
 
         return dynamic_pb2, dynamic_pb2_grpc
+
+def proto_file_content() -> str:
+    do_deferred()
+    return proto_header + proto_content
