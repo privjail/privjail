@@ -997,13 +997,26 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         return s / c
 
     def value_counts(self,
-                     normalize : bool                               = False,
-                     sort      : bool                               = True,
-                     ascending : bool                               = False,
-                     bins      : int | None                         = None,
-                     dropna    : bool                               = True,
-                     values    : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
+                     normalize : bool                     = False,
+                     sort      : bool                     = True,
+                     ascending : bool                     = False,
+                     bins      : int | None               = None,
+                     dropna    : bool                     = True,
+                     values    : list[ElementType] | None = None, # extra argument for privjail
                      ) -> SensitiveSeries[int]:
+        # TODO: make SensitiveSeries a dataclass
+        result = self._value_counts_impl(normalize, sort, ascending, bins, dropna, values)
+        return SensitiveSeries[int](data=list(result.values()), index=list(result.keys()), dtype="object")
+
+    @egrpc.method
+    def _value_counts_impl(self,
+                           normalize : bool                     = False,
+                           sort      : bool                     = True,
+                           ascending : bool                     = False,
+                           bins      : int | None               = None,
+                           dropna    : bool                     = True,
+                           values    : list[ElementType] | None = None, # extra argument for privjail
+                           ) -> dict[ElementType, SensitiveInt]:
         if normalize:
             # TODO: what is the sensitivity?
             raise NotImplementedError
@@ -1024,7 +1037,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if isinstance(values, Prisoner):
             raise DPError("`values` cannot be sensitive values.")
 
-        if not dropna and not any(_np.isnan(values)):
+        if not dropna and not any(_np.isnan(values)): # type: ignore
             # TODO: consider handling for pd.NA
             warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `values`", UserWarning)
 
@@ -1037,11 +1050,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
 
-        priv_counts = SensitiveSeries[int](index=counts.index, dtype="object")
-        for i, idx in enumerate(counts.index):
-            priv_counts.loc[idx] = SensitiveInt(counts.loc[idx], distance=distances[i], parents=[prisoner_dummy])
-
-        return priv_counts
+        return {k: SensitiveInt(counts.loc[k], distance=distances[i], parents=[prisoner_dummy])
+                for i, k in enumerate(counts.index)}
 
 class SensitiveDataFrame(_pd.DataFrame):
     """Sensitive DataFrame.
