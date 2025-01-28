@@ -492,6 +492,41 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = False)
 
     @overload
+    def sort_values(self,
+                    by        : str | list[str],
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[True],
+                    ) -> None: ...
+
+    @overload
+    def sort_values(self,
+                    by        : str | list[str],
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[False] = ...,
+                    ) -> PrivDataFrame: ...
+
+    # TODO: add test
+    @egrpc.method
+    def sort_values(self,
+                    by        : str | list[str],
+                    *,
+                    ascending : bool = True,
+                    inplace   : bool = False,
+                    ) -> PrivDataFrame | None:
+        if inplace:
+            self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
+            self._ptag = new_ptag()
+            return None
+        else:
+            return PrivDataFrame(data         = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),
+                                 domains      = self.domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = False)
+
+    @overload
     def replace(self,
                 to_replace : ElementType | None = ...,
                 value      : ElementType | None = ...,
@@ -846,6 +881,38 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                              distance     = self.distance * 2,
                              parents      = [self],
                              preserve_row = False)
+
+    @overload
+    def sort_values(self,
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[True],
+                    ) -> None: ...
+
+    @overload
+    def sort_values(self,
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[False] = ...,
+                    ) -> PrivSeries[T]: ...
+
+    # TODO: add test
+    @egrpc.method
+    def sort_values(self,
+                    *,
+                    ascending : bool = True,
+                    inplace   : bool = False,
+                    ) -> PrivSeries[T] | None:
+        if inplace:
+            self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable")
+            self._ptag = new_ptag()
+            return None
+        else:
+            return PrivSeries[T](data         = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable"),
+                                 domain       = self.domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = False)
 
     @overload
     def replace(self,
