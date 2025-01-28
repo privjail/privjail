@@ -2,6 +2,9 @@ from typing import get_type_hints, get_origin, get_args, Union, List, Tuple, Dic
 import types
 import inspect
 
+# TODO: make egrpc independent of numpy
+import numpy as _np
+
 T = TypeVar("T")
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -41,6 +44,10 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
             and all(is_type_match(k, type_args[0]) for k in obj.keys())
             and all(is_type_match(v, type_args[1]) for v in obj.values())
         )
+
+    elif type_origin in (_np.integer, _np.floating):
+        # TODO: consider type args (T in np.integer[T])
+        return isinstance(obj, (_np.integer, _np.floating))
 
     else:
         raise TypeError(f"Type {type_origin} is not supported.")

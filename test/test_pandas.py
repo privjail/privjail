@@ -426,8 +426,8 @@ def test_cut() -> None:
     assert (ppd.cut(pdf["a"], bins=[0, 3, 6])._value == pd.cut(df["a"], bins=[0, 3, 6])).all()
 
     # Should raise an error with a scalar bins
-    with pytest.raises(pj.DPError):
-        ppd.cut(pdf["a"], bins=2) # type: ignore
+    with pytest.raises(TypeError):
+        ppd.cut(pdf["a"], bins=2)
 
 def test_dataframe_groupby() -> None:
     pdf, df = load_dataframe()

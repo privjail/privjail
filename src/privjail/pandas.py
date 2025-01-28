@@ -1156,18 +1156,18 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
 
     return priv_counts
 
-def cut(x        : PrivSeries[Any],
-        bins     : list[int] | list[float],
-        *args    : Any,
-        **kwargs : Any,
+# TODO: change multifunction -> function by type checking in egrpc.function
+@egrpc.multifunction
+def cut(x              : PrivSeries[Any],
+        bins           : list[int] | list[float],
+        right          : bool                            = True,
+        labels         : list[ElementType] | bool | None = None,
+        retbins        : bool                            = False,
+        precision      : int                             = 3,
+        include_lowest : bool                            = False
+        # TODO: add more parameters
         ) -> PrivSeries[Any]:
-    if not isinstance(x, PrivSeries):
-        raise DPError("`x` must be a PrivSeries.")
-
-    if not isinstance(bins, list):
-        raise DPError("`bins` must be a list.")
-
-    ser = _pd.cut(x._value, bins, *args, **kwargs)
+    ser = _pd.cut(x._value, bins=bins, right=right, labels=labels, retbins=retbins, precision=precision, include_lowest=include_lowest) # type: ignore
 
     new_domain = CategoryDomain(categories=list(ser.dtype.categories))
 
