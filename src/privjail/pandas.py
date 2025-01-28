@@ -132,7 +132,7 @@ if TYPE_CHECKING:
     @dataclass
     class CategoryDomain(Domain):
         dtype: str = "categories"
-        categories: list[str] = field(default_factory=list)
+        categories: list[ElementType] = field(default_factory=list)
 
         def type(self) -> type:
             return str
@@ -170,7 +170,7 @@ else:
     @egrpc.dataclass
     class CategoryDomain(Domain):
         dtype: str = "categories"
-        categories: list[str] = field(default_factory=list)
+        categories: list[ElementType] = field(default_factory=list)
 
         def type(self) -> type:
             return str
