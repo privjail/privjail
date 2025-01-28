@@ -1,6 +1,7 @@
 from typing import TypeVar, Callable, Type, Any, ParamSpec
 from types import ModuleType
 from concurrent import futures
+import traceback
 import grpc # type: ignore[import-untyped]
 
 from . import names
@@ -29,18 +30,36 @@ def grpc_register_function(func: Callable[P, R], handler: HandlerType) -> None:
     proto_service_name = names.proto_function_service_name(func)
     proto_rpc_name = names.proto_function_rpc_name(func)
 
+    # for debugging
+    def wrapper(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
+        try:
+            return handler(self, proto_req, context)
+        except:
+            traceback.print_exc()
+            raise
+
     global proto_handlers
     assert proto_service_name not in proto_handlers
-    proto_handlers[proto_service_name] = {proto_rpc_name: handler}
+    # proto_handlers[proto_service_name] = {proto_rpc_name: handler}
+    proto_handlers[proto_service_name] = {proto_rpc_name: wrapper}
 
 def grpc_register_method(cls: Type[T], method: Callable[P, R], handler: HandlerType) -> None:
     proto_service_name = names.proto_remoteclass_service_name(cls)
     proto_rpc_name = names.proto_method_rpc_name(cls, method)
 
+    # for debugging
+    def wrapper(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
+        try:
+            return handler(self, proto_req, context)
+        except:
+            traceback.print_exc()
+            raise
+
     global proto_handlers
     if proto_service_name not in proto_handlers:
         proto_handlers[proto_service_name] = {}
-    proto_handlers[proto_service_name][proto_rpc_name] = handler
+    # proto_handlers[proto_service_name][proto_rpc_name] = handler
+    proto_handlers[proto_service_name][proto_rpc_name] = wrapper
 
 def init_server(port: int) -> Any:
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1),
