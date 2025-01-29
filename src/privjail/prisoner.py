@@ -1,9 +1,12 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
-from .util import DPError, integer, floating, realnum, is_integer, is_floating, is_realnum
+
+import numpy as _np
+
+from .util import integer, floating, realnum, is_integer, is_floating
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, consume_privacy_budget, consumed_privacy_budget_all, ChildrenType
 from .distance import Distance, _max as dmax
-import numpy as _np
+from . import egrpc
 
 T = TypeVar("T")
 
@@ -48,10 +51,12 @@ class Prisoner(Generic[T]):
             raise RuntimeError
 
     def __str__(self) -> str:
-        return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        # return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        return f"Prisoner()"
 
     def __repr__(self) -> str:
-        return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        # return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
+        return f"Prisoner()"
 
     def consume_privacy_budget(self, privacy_budget: float) -> None:
         consume_privacy_budget(self.provenance, privacy_budget)
@@ -60,6 +65,7 @@ class Prisoner(Generic[T]):
         assert len(self.provenance) > 0
         return self.provenance[0].root_name
 
+@egrpc.remoteclass
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
                  value         : integer,
@@ -73,94 +79,87 @@ class SensitiveInt(Prisoner[integer]):
             raise ValueError("`value` must be int for SensitveInt.")
         super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
 
-    @overload
-    def __add__(self, other: integer | SensitiveInt) -> SensitiveInt: ...
-    @overload
-    def __add__(self, other: floating | SensitiveFloat) -> SensitiveFloat: ...
+    @egrpc.multimethod
+    def __add__(self, other: integer) -> SensitiveInt:
+        return SensitiveInt(self._value + other, distance=self.distance, parents=[self])
 
-    def __add__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
-        if is_integer(other):
-            return SensitiveInt(self._value + other, distance=self.distance, parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveInt):
-            return SensitiveInt(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        elif isinstance(other, SensitiveFloat):
-            return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @__add__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
 
-    @overload
-    def __radd__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
-    @overload
-    def __radd__(self, other: floating) -> SensitiveFloat: ... # type: ignore[misc]
+    @__add__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return SensitiveInt(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
 
-    def __radd__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
-        if is_integer(other):
-            return SensitiveInt(other + self._value, distance=self.distance, parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(other + self._value, distance=self.distance, parents=[self])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @__add__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
 
-    @overload
-    def __sub__(self, other: integer | SensitiveInt) -> SensitiveInt: ...
-    @overload
-    def __sub__(self, other: floating | SensitiveFloat) -> SensitiveFloat: ...
+    @egrpc.multimethod
+    def __radd__(self, other: integer) -> SensitiveInt: # type: ignore[misc]
+        return SensitiveInt(other + self._value, distance=self.distance, parents=[self])
 
-    def __sub__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
-        if is_integer(other):
-            return SensitiveInt(self._value - other, distance=self.distance, parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(self._value - other, distance=self.distance, parents=[self])
-        elif isinstance(other, SensitiveInt):
-            return SensitiveInt(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
-        elif isinstance(other, SensitiveFloat):
-            return SensitiveFloat(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @__radd__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(other + self._value, distance=self.distance, parents=[self])
 
-    @overload
-    def __rsub__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
-    @overload
-    def __rsub__(self, other: floating) -> SensitiveFloat: ... # type: ignore[misc]
+    @__radd__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return SensitiveInt(other._value + self._value, distance=self.distance + other.distance, parents=[self, other])
 
-    def __rsub__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
-        if is_integer(other):
-            return SensitiveInt(other - self._value, distance=self.distance, parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(other - self._value, distance=self.distance, parents=[self])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @__radd__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(other._value + self._value, distance=self.distance + other.distance, parents=[self, other])
 
-    @overload
-    def __mul__(self, other: integer) -> SensitiveInt: ...
-    @overload
-    def __mul__(self, other: floating) -> SensitiveFloat: ...
+    @egrpc.multimethod
+    def __sub__(self, other: integer) -> SensitiveInt:
+        return SensitiveInt(self._value - other, distance=self.distance, parents=[self])
 
-    def __mul__(self, other: realnum) -> SensitiveInt | SensitiveFloat:
-        if is_integer(other):
-            return SensitiveInt(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
-        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
-            raise DPError("Sensitive values cannot be multiplied by each other.")
-        else:
-            raise ValueError("`other` must be a real number.")
+    @__sub__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(self._value - other, distance=self.distance, parents=[self])
 
-    @overload
-    def __rmul__(self, other: integer) -> SensitiveInt: ... # type: ignore[misc]
-    @overload
-    def __rmul__(self, other: floating) -> SensitiveFloat: ... # type: ignore[misc]
+    @__sub__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return SensitiveInt(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
 
-    def __rmul__(self, other: realnum) -> SensitiveInt | SensitiveFloat: # type: ignore[misc]
-        if is_integer(other):
-            return SensitiveInt(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
-        elif is_floating(other):
-            return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
-        else:
-            raise ValueError("`other` must be a real number.")
+    @__sub__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
 
+    @egrpc.multimethod
+    def __rsub__(self, other: integer) -> SensitiveInt: # type: ignore[misc]
+        return SensitiveInt(other - self._value, distance=self.distance, parents=[self])
+
+    @__rsub__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(other - self._value, distance=self.distance, parents=[self])
+
+    @__rsub__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return SensitiveInt(other._value - self._value, distance=self.distance + other.distance, parents=[self, other])
+
+    @__rsub__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(other._value - self._value, distance=self.distance + other.distance, parents=[self, other])
+
+    @egrpc.multimethod
+    def __mul__(self, other: integer) -> SensitiveInt:
+        return SensitiveInt(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
+
+    @__mul__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
+
+    @egrpc.multimethod
+    def __rmul__(self, other: integer) -> SensitiveInt: # type: ignore[misc]
+        return SensitiveInt(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
+
+    @__rmul__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
+
+@egrpc.remoteclass
 class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
                  value         : floating,
@@ -174,62 +173,53 @@ class SensitiveFloat(Prisoner[floating]):
             raise ValueError("`value` must be float for SensitveFloat.")
         super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
 
-    def __add__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveFloat:
-        if is_realnum(other):
-            return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
-        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
-            return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @egrpc.multimethod
+    def __add__(self, other: realnum) -> SensitiveFloat:
+        return SensitiveFloat(self._value + other, distance=self.distance, parents=[self])
 
+    @__add__.register
+    def _(self, other: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(self._value + other._value, distance=self.distance + other.distance, parents=[self, other])
+
+    @egrpc.multimethod
     def __radd__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
-        if is_realnum(other):
-            return SensitiveFloat(other + self._value, distance=self.distance, parents=[self])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+        return SensitiveFloat(other + self._value, distance=self.distance, parents=[self])
 
-    def __sub__(self, other: realnum | SensitiveInt | SensitiveFloat) -> SensitiveFloat:
-        if is_realnum(other):
-            return SensitiveFloat(self._value - other, distance=self.distance, parents=[self])
-        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
-            return SensitiveFloat(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+    @__radd__.register
+    def _(self, other: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(other._value + self._value, distance=self.distance + other.distance, parents=[self, other])
 
+    @egrpc.multimethod
+    def __sub__(self, other: realnum) -> SensitiveFloat:
+        return SensitiveFloat(self._value - other, distance=self.distance, parents=[self])
+
+    @__sub__.register
+    def _(self, other: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(self._value - other._value, distance=self.distance + other.distance, parents=[self, other])
+
+    @egrpc.multimethod
     def __rsub__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
-        if is_realnum(other):
-            return SensitiveFloat(other - self._value, distance=self.distance, parents=[self])
-        else:
-            raise ValueError("`other` must be a real number, SensitiveInt, or SensitiveFloat.")
+        return SensitiveFloat(other - self._value, distance=self.distance, parents=[self])
 
+    @__rsub__.register
+    def _(self, other: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+        return SensitiveFloat(other._value - self._value, distance=self.distance + other.distance, parents=[self, other])
+
+    @egrpc.multimethod
     def __mul__(self, other: realnum) -> SensitiveFloat:
-        if is_realnum(other):
-            return SensitiveFloat(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
-        elif isinstance(other, (SensitiveInt, SensitiveFloat)):
-            raise DPError("Sensitive values cannot be multiplied by each other.")
-        else:
-            raise ValueError("`other` must be a real number.")
+        return SensitiveFloat(self._value * other, distance=self.distance * _np.abs(other), parents=[self])
 
+    @egrpc.multimethod
     def __rmul__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
-        if is_realnum(other):
-            return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
-        else:
-            raise ValueError("`other` must be a real number.")
+        return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
 
-@overload
-def max2(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
-@overload
-def max2(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
-@overload
-def max2(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
-@overload
-def max2(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+@egrpc.multifunction
+def max2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+    return SensitiveFloat(max(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
 
-def max2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
-    if isinstance(a, SensitiveInt) and isinstance(b, SensitiveInt):
-        return SensitiveInt(max(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
-    else:
-        return SensitiveFloat(max(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
+@max2.register
+def _(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt:
+    return SensitiveInt(max(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
 
 @overload
 def _max(*args: SensitiveInt) -> SensitiveInt: ...
@@ -264,20 +254,13 @@ def _max(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 
     return result
 
-@overload
-def min2(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt: ...
-@overload
-def min2(a: SensitiveInt, b: SensitiveFloat) -> SensitiveFloat: ...
-@overload
-def min2(a: SensitiveFloat, b: SensitiveInt) -> SensitiveFloat: ...
-@overload
-def min2(a: SensitiveFloat, b: SensitiveFloat) -> SensitiveFloat: ...
+@egrpc.multifunction
+def min2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
+    return SensitiveFloat(min(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
 
-def min2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveInt | SensitiveFloat:
-    if isinstance(a, SensitiveInt) and isinstance(b, SensitiveInt):
-        return SensitiveInt(min(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
-    else:
-        return SensitiveFloat(min(float(a._value), float(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
+@min2.register
+def _(a: SensitiveInt, b: SensitiveInt) -> SensitiveInt:
+    return SensitiveInt(min(int(a._value), int(b._value)), distance=dmax(a.distance, b.distance), parents=[a, b])
 
 @overload
 def _min(*args: SensitiveInt) -> SensitiveInt: ...
@@ -312,5 +295,6 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 
     return result
 
+@egrpc.function
 def consumed_privacy_budget() -> dict[str, float]:
     return consumed_privacy_budget_all()

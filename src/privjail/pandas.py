@@ -1,20 +1,22 @@
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping
+from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping, TYPE_CHECKING
+from abc import ABC, abstractmethod
 import warnings
 import json
 import copy
+from dataclasses import dataclass, field
 
 import numpy as _np
 import pandas as _pd
-from pandas.api.types import is_list_like
-# FIXME: pandas.core.common API is not public
-from pandas.core.common import is_bool_indexer
 
-from .util import DPError, is_integer, is_floating, is_realnum, realnum
+from .util import DPError, is_realnum, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from .distance import Distance
+from . import egrpc
 
 T = TypeVar("T")
+
+ElementType = realnum | str | bool
 
 PTag = int
 
@@ -24,23 +26,6 @@ def new_ptag() -> PTag:
     global ptag_count
     ptag_count += 1
     return ptag_count
-
-@overload
-def unwrap_prisoner(x: Prisoner[T]) -> T: ...
-@overload
-def unwrap_prisoner(x: T) -> T: ...
-
-def unwrap_prisoner(x: Prisoner[T] | T) -> T:
-    if isinstance(x, Prisoner):
-        return x._value
-    else:
-        return x
-
-def is_2d_array(x: Any) -> bool:
-    return (
-        (isinstance(x, _np.ndarray) and x.ndim >= 2) or
-        (isinstance(x, list) and all(isinstance(i, list) for i in x))
-    )
 
 def normalize_column_schema(col_schema: dict[str, Any]) -> dict[str, Any]:
     if "type" not in col_schema:
@@ -102,7 +87,7 @@ def column_schema2domain(col_schema: dict[str, Any]) -> Domain:
     col_type = col_schema["type"]
 
     if col_type in ["int64", "Int64", "float64", "Float64"]:
-        return RealDomain(type=col_type, range=col_schema["range"])
+        return RealDomain(dtype=col_type, range=col_schema["range"])
 
     elif col_type == "category":
         return CategoryDomain(categories=col_schema["categories"])
@@ -113,34 +98,113 @@ def column_schema2domain(col_schema: dict[str, Any]) -> Domain:
     else:
         raise RuntimeError
 
-class Domain:
-    type: str
+# suppress mypy errors
+if TYPE_CHECKING:
+    @dataclass
+    class Domain(ABC):
+        dtype: str
 
-    def __init__(self, type: str):
-        self.type = type
+        @abstractmethod
+        def type(self) -> type:
+            pass
 
-class BoolDomain(Domain):
-    def __init__(self) -> None:
-        super().__init__(type="bool")
+    @dataclass
+    class BoolDomain(Domain):
+        dtype: str = "bool"
 
-class RealDomain(Domain):
-    range: tuple[realnum | None, realnum | None]
+        def type(self) -> type:
+            return bool
 
-    def __init__(self, type: str, range: tuple[realnum | None, realnum | None]):
-        self.range = range
-        super().__init__(type=type)
+    @dataclass
+    class RealDomain(Domain):
+        range: tuple[realnum | None, realnum | None]
 
-class StrDomain(Domain):
-    def __init__(self) -> None:
-        super().__init__(type="string")
+        def type(self) -> Any:
+            return int if self.dtype in ("int64", "Int64") else float
 
-class CategoryDomain(Domain):
-    categories: list[str]
+    @dataclass
+    class StrDomain(Domain):
+        dtype: str = "string"
 
-    def __init__(self, categories: list[str]):
-        self.categories = categories
-        super().__init__(type="categories")
+        def type(self) -> type:
+            return str
 
+    @dataclass
+    class CategoryDomain(Domain):
+        dtype: str = "categories"
+        categories: list[ElementType] = field(default_factory=list)
+
+        def type(self) -> type:
+            return str
+
+    @dataclass
+    class PrivDataFrameGroupBy:
+        # TODO: groups are ordered?
+        groups: Mapping[ElementType, PrivDataFrame]
+
+        def __len__(self) -> int:
+            return len(self.groups)
+
+        def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+            return iter(self.groups.items())
+
+        def get_group(self, key: Any) -> PrivDataFrame:
+            return self.groups[key]
+
+else:
+    @egrpc.dataclass
+    class Domain(ABC):
+        dtype: str
+
+        @abstractmethod
+        def type(self) -> type:
+            pass
+
+    @egrpc.dataclass
+    class BoolDomain(Domain):
+        dtype: str = "bool"
+
+        def type(self) -> type:
+            return bool
+
+    @egrpc.dataclass
+    class RealDomain(Domain):
+        range: tuple[realnum | None, realnum | None]
+
+        def type(self) -> Any:
+            return int if self.dtype in ("int64", "Int64") else float
+
+    @egrpc.dataclass
+    class StrDomain(Domain):
+        dtype: str = "string"
+
+        def type(self) -> type:
+            return str
+
+    @egrpc.dataclass
+    class CategoryDomain(Domain):
+        dtype: str = "categories"
+        categories: list[ElementType] = field(default_factory=list)
+
+        def type(self) -> type:
+            assert len(self.categories) > 0
+            return type(self.categories[0]) # TODO: how about other elements?
+
+    @egrpc.dataclass
+    class PrivDataFrameGroupBy:
+        # TODO: groups are ordered?
+        groups: Mapping[ElementType, PrivDataFrame]
+
+        def __len__(self) -> int:
+            return len(self.groups)
+
+        def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+            return iter(self.groups.items())
+
+        def get_group(self, key: Any) -> PrivDataFrame:
+            return self.groups[key]
+
+@egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
     """Private DataFrame.
 
@@ -187,233 +251,304 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
-    @overload
-    def __getitem__(self, key: PrivDataFrame | PrivSeries[bool] | list[str]) -> PrivDataFrame: ...
-    @overload
-    def __getitem__(self, key: str) -> PrivSeries[Any]: ...
+    @egrpc.multimethod
+    def __getitem__(self, key: str) -> PrivSeries[ElementType]:
+        # TODO: consider duplicated column names
+        value_type = self.domains[key].type()
+        # TODO: how to pass `value_type` from server to client via egrpc?
+        return PrivSeries[value_type](data         = self._value.__getitem__(key), # type: ignore[valid-type]
+                                      domain       = self.domains[key],
+                                      distance     = self.distance,
+                                      parents      = [self],
+                                      preserve_row = True)
 
-    def __getitem__(self, key: PrivDataFrame | PrivSeries[bool] | list[str] | str) -> PrivDataFrame | PrivSeries[Any]:
-        if isinstance(key, slice):
-            raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
+    @__getitem__.register
+    def _(self, key: list[str]) -> PrivDataFrame:
+        new_domains = {c: d for c, d in self.domains.items() if c in key}
+        return PrivDataFrame(data         = self._value.__getitem__(key),
+                             domains      = new_domains,
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-        if isinstance(key, Prisoner) and not is_bool_indexer(key._value):
-            raise DPError("df[key] is not allowed for sensitive keys other than boolean vectors.")
+    @__getitem__.register
+    def _(self, key: PrivSeries[bool]) -> PrivDataFrame:
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if not isinstance(key, Prisoner) and is_bool_indexer(key):
-            raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
+        return PrivDataFrame(data         = self._value.__getitem__(key._value),
+                             domains      = self.domains,
+                             distance     = self.distance,
+                             parents      = [self, key],
+                             preserve_row = False)
 
-        if isinstance(key, str):
-            # TODO: consider duplicated column names
-            return PrivSeries[Any](data=self._value.__getitem__(key), domain=self.domains[key], distance=self.distance, parents=[self], preserve_row=True)
+    @egrpc.multimethod
+    def __setitem__(self, key: str, value: ElementType) -> None:
+        # TODO: consider domain transform
+        self._value[key] = value
 
-        elif isinstance(key, list) and all(isinstance(x, str) for x in key):
-            new_domains = {c: d for c, d in self.domains.items() if c in key}
-            return PrivDataFrame(data=self._value.__getitem__(key), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
+    @__setitem__.register
+    def _(self, key: str, value: PrivSeries[Any]) -> None:
+        new_domains = dict()
+        for col, domain in self.domains.items():
+            if col == key:
+                new_domains[col] = value.domain
+            else:
+                new_domains[col] = domain
+        self._domains = new_domains
 
-        elif isinstance(key, Prisoner) and is_bool_indexer(key._value):
-            if self._ptag != key._ptag:
-                raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
+        self._value[key] = value._value
 
-            return PrivDataFrame(data=self._value.__getitem__(key._value), domains=self.domains, distance=self.distance, parents=[self, key], preserve_row=False)
+    @__setitem__.register
+    def _(self, key: list[str], value: ElementType) -> None:
+        # TODO: consider domain transform
+        self._value[key] = value
 
-        else:
-            raise ValueError
+    @__setitem__.register
+    def _(self, key: list[str], value: PrivDataFrame) -> None:
+        # TODO: consider domain transform
+        self._value[key] = value._value
 
-    def __setitem__(self, key: PrivDataFrame | PrivSeries[bool] | list[str] | str, value: Any) -> None:
-        if isinstance(key, slice):
-            raise DPError("df[slice] cannot be accepted because len(df) can be leaked depending on len(slice).")
+    @__setitem__.register
+    def _(self, key: PrivSeries[bool], value: ElementType) -> None:
+        # TODO: consider domain transform
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if isinstance(key, Prisoner) and not is_bool_indexer(key._value):
-            raise DPError("df[key] is not allowed for sensitive keys other than boolean vectors.")
+        self._value[key._value] = value
 
-        if not isinstance(key, Prisoner) and is_bool_indexer(key):
-            raise DPError("df[bool_vec] cannot be accepted because len(df) can be leaked depending on len(bool_vec).")
+    @__setitem__.register
+    def _(self, key: PrivSeries[bool], value: list[ElementType]) -> None:
+        # TODO: consider domain transform
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if isinstance(value, Prisoner) and not isinstance(value, (PrivDataFrame, PrivSeries)):
-            raise DPError("Sensitive values (other than PrivDataFrame and PrivSeries) cannot be assigned to dataframe.")
+        self._value[key._value] = value
 
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and isinstance(value, PrivSeries):
-            raise DPError("Private Series cannot be assigned to filtered rows because the series is treated as columns here.")
+    @__setitem__.register
+    def _(self, key: PrivSeries[bool], value: PrivDataFrame) -> None:
+        # TODO: consider domain transform
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
 
-        if is_2d_array(value):
-            raise DPError("2D array cannot be assigned because len(df) can be leaked.")
+        self._value[key._value] = value._value
 
-        if not isinstance(key, Prisoner) and not is_bool_indexer(key) and \
-                not isinstance(value, Prisoner) and is_list_like(value) and not isinstance(value, (_pd.DataFrame, _pd.Series)):
-            raise DPError("List-like values (other than DataFrame and Series) cannot be assigned because len(df) can be leaked.")
+    @egrpc.multimethod
+    def __eq__(self, other: PrivDataFrame) -> PrivDataFrame:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-        if isinstance(key, Prisoner) and is_bool_indexer(key._value) and self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
+        return PrivDataFrame(data         = self._value == other._value,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self, other],
+                             preserve_row = True)
 
-        # TODO: consider domain transform for keys other than str
-        if isinstance(key, str) and isinstance(value, PrivSeries):
-            new_domains = dict()
-            for col, domain in self.domains.items():
-                if col == key:
-                    new_domains[col] = value.domain
-                else:
-                    new_domains[col] = domain
-            self._domains = new_domains
+    @__eq__.register
+    def _(self, other: ElementType) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value == other,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-        self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
+    @egrpc.multimethod
+    def __ne__(self, other: PrivDataFrame) -> PrivDataFrame:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-    def __eq__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
-        new_domains = {c: BoolDomain() for c in self.domains}
+        return PrivDataFrame(data         = self._value != other._value,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self, other],
+                             preserve_row = True)
 
-        if isinstance(other, PrivDataFrame):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive dataframes for comparison can be different.")
+    @__ne__.register
+    def _(self, other: ElementType) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value != other,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-            return PrivDataFrame(data=self._value == other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
+    @egrpc.multimethod
+    def __lt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
+        return PrivDataFrame(data         = self._value < other._value,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self, other],
+                             preserve_row = True)
 
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+    @__lt__.register
+    def _(self, other: ElementType) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value < other,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-        else:
-            return PrivDataFrame(data=self._value == other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
+    @egrpc.multimethod
+    def __le__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-    def __ne__(self, other: Any) -> PrivDataFrame: # type: ignore[override]
-        new_domains = {c: BoolDomain() for c in self.domains}
+        return PrivDataFrame(data         = self._value <= other._value,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self, other],
+                             preserve_row = True)
 
-        if isinstance(other, PrivDataFrame):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive dataframes for comparison can be different.")
+    @__le__.register
+    def _(self, other: ElementType) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value <= other,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-            return PrivDataFrame(data=self._value != other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
+    @egrpc.multimethod
+    def __gt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
+        return PrivDataFrame(data         = self._value > other._value,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self, other],
+                             preserve_row = True)
 
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
+    @__gt__.register
+    def _(self, other: ElementType) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value > other,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-        else:
-            return PrivDataFrame(data=self._value != other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
+    @egrpc.multimethod
+    def __ge__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive dataframes for comparison can be different.")
 
-    def __lt__(self, other: Any) -> PrivDataFrame:
-        new_domains = {c: BoolDomain() for c in self.domains}
+        return PrivDataFrame(data         = self._value >= other._value,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self, other],
+                             preserve_row = True)
 
-        if isinstance(other, PrivDataFrame):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive dataframes for comparison can be different.")
-            return PrivDataFrame(data=self._value < other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
+    @__ge__.register
+    def _(self, other: ElementType) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value >= other,
+                             domains      = {c: BoolDomain() for c in self.domains},
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = True)
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
-
-        else:
-            return PrivDataFrame(data=self._value < other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
-
-    def __le__(self, other: Any) -> PrivDataFrame:
-        new_domains = {c: BoolDomain() for c in self.domains}
-
-        if isinstance(other, PrivDataFrame):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive dataframes for comparison can be different.")
-
-            return PrivDataFrame(data=self._value <= other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
-
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
-
-        else:
-            return PrivDataFrame(data=self._value <= other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
-
-    def __gt__(self, other: Any) -> PrivDataFrame:
-        new_domains = {c: BoolDomain() for c in self.domains}
-
-        if isinstance(other, PrivDataFrame):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive dataframes for comparison can be different.")
-
-            return PrivDataFrame(data=self._value > other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
-
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
-
-        else:
-            return PrivDataFrame(data=self._value > other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
-
-    def __ge__(self, other: Any) -> PrivDataFrame:
-        new_domains = {c: BoolDomain() for c in self.domains}
-
-        if isinstance(other, PrivDataFrame):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive dataframes for comparison can be different.")
-
-            return PrivDataFrame(data=self._value >= other._value, domains=new_domains, distance=self.distance, parents=[self, other], preserve_row=True)
-
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against dataframe because len(df) can be leaked.")
-
-        else:
-            return PrivDataFrame(data=self._value >= other, domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
-
-    @property
+    @egrpc.property
     def shape(self) -> tuple[SensitiveInt, int]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         ncols = self._value.shape[1]
         return (nrows, ncols)
 
-    @property
+    @egrpc.property
     def size(self) -> SensitiveInt:
         return SensitiveInt(value=self._value.size, distance=self.distance * len(self._value.columns), parents=[self])
 
+    # TODO: define privjail's own Index[T] type
     @property
     def columns(self) -> _pd.Index[str]:
-        return self._value.columns
+        return _pd.Index(self._get_columns())
 
-    @columns.setter
-    def columns(self, value: _pd.Index[str]) -> None:
-        self._value.columns = value
+    @egrpc.method
+    def _get_columns(self) -> list[str]:
+        return list(self._value.columns)
 
     @property
     def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
 
-    @property
+    @egrpc.property
     def domains(self) -> Mapping[str, Domain]:
         return self._domains
 
+    # TODO: add test
+    @egrpc.method
+    def head(self, n: int = 5) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value.head(n),
+                             domains      = self.domains,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
+    # TODO: add test
+    @egrpc.method
+    def tail(self, n: int = 5) -> PrivDataFrame:
+        return PrivDataFrame(data         = self._value.tail(n),
+                             domains      = self.domains,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
+    @overload
+    def sort_values(self,
+                    by        : str | list[str],
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[True],
+                    ) -> None: ...
+
+    @overload
+    def sort_values(self,
+                    by        : str | list[str],
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[False] = ...,
+                    ) -> PrivDataFrame: ...
+
+    # TODO: add test
+    @egrpc.method
+    def sort_values(self,
+                    by        : str | list[str],
+                    *,
+                    ascending : bool = True,
+                    inplace   : bool = False,
+                    ) -> PrivDataFrame | None:
+        if inplace:
+            self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
+            self._ptag = new_ptag()
+            return None
+        else:
+            return PrivDataFrame(data         = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),
+                                 domains      = self.domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = False)
+
     @overload
     def replace(self,
-                to_replace : Any = ...,
-                value      : Any = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
                 inplace    : Literal[True],
-                **kwargs   : Any,
                 ) -> None: ...
 
     @overload
     def replace(self,
-                to_replace : Any  = ...,
-                value      : Any  = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
-                inplace    : bool = ...,
-                **kwargs   : Any,
+                inplace    : Literal[False] = ...,
                 ) -> PrivDataFrame: ...
 
+    @egrpc.method
     def replace(self,
-                to_replace : Any  = None,
-                value      : Any  = None,
+                to_replace : ElementType | None = None,
+                value      : ElementType | None = None,
                 *,
                 inplace    : bool = False,
-                **kwargs   : Any,
                 ) -> PrivDataFrame | None:
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
             # TODO: consider string and category dtype
@@ -421,9 +556,9 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
         new_domains = dict()
         for col, domain in self.domains.items():
-            if domain.type == "int64" and _np.isnan(value):
+            if domain.dtype == "int64" and _np.isnan(value):
                 new_domain = copy.copy(domain)
-                new_domain.type = "Int64"
+                new_domain.dtype = "Int64"
                 new_domains[col] = new_domain
 
             elif isinstance(domain, RealDomain):
@@ -443,62 +578,69 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                 new_domains[col] = domain
 
         if inplace:
-            self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
+            self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivDataFrame(data         = self._value.replace(to_replace, value, inplace=inplace), # type: ignore[arg-type]
+                                 domains      = new_domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     @overload
     def dropna(self,
                *,
                inplace      : Literal[True],
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> None: ...
 
     @overload
     def dropna(self,
                *,
-               inplace      : bool = ...,
+               inplace      : Literal[False] = ...,
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> PrivDataFrame: ...
 
+    @egrpc.method
     def dropna(self,
                *,
                inplace      : bool = False,
                ignore_index : bool = False,
-               **kwargs : Any,
                ) -> PrivDataFrame | None:
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
         new_domains = dict()
         for col, domain in self.domains.items():
-            if domain.type == "Int64":
+            if domain.dtype == "Int64":
                 new_domain = copy.copy(domain)
-                new_domain.type = "int64"
+                new_domain.dtype = "int64"
                 new_domains[col] = new_domain
             else:
                 new_domains[col] = domain
 
         if inplace:
-            self._value.dropna(inplace=inplace, **kwargs)
+            self._value.dropna(inplace=inplace)
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data=self._value.dropna(inplace=inplace, **kwargs), domains=new_domains, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivDataFrame(data         = self._value.dropna(inplace=inplace),
+                                 domains      = new_domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
+    @egrpc.method
     def groupby(self,
                 by         : str, # TODO: support more
-                level      : Any                                = None,
-                as_index   : bool                               = True,
-                sort       : bool                               = True,
-                group_keys : bool                               = True,
-                observed   : bool                               = True,
-                dropna     : bool                               = True,
-                keys       : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
+                level      : int | None                   = None, # TODO: support multiindex?
+                as_index   : bool                         = True,
+                sort       : bool                         = True,
+                group_keys : bool                         = True,
+                observed   : bool                         = True,
+                dropna     : bool                         = True,
+                keys       : Sequence[ElementType] | None = None, # extra argument for privjail
                 ) -> PrivDataFrameGroupBy:
         key_domain = self.domains[by]
         if isinstance(key_domain, CategoryDomain):
@@ -516,7 +658,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # include empty groups for absent `keys` and sort by `keys`
         columns = self._value.columns
         dtypes = self._value.dtypes
-        groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys}
+        groups = {key: groups.get(key, _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})) for key in keys} # type: ignore
 
         # create new child distance variables to express exclusiveness
         distances = self.distance.create_exclusive_distances(len(groups))
@@ -528,24 +670,11 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # TODO: update childrens' category domain that is chosen for the groupby key
         priv_groups = {key: PrivDataFrame(df, domains=self.domains, distance=d, parents=[prisoner_dummy], preserve_row=False) for (key, df), d in zip(groups.items(), distances)}
 
-        return PrivDataFrameGroupBy(priv_groups)
-
-class PrivDataFrameGroupBy:
-    def __init__(self, groups: Mapping[Any, PrivDataFrame]):
-        # TODO: groups are ordered?
-        self.groups = groups
-
-    def __len__(self) -> int:
-        return len(self.groups)
-
-    def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
-        return iter(self.groups.items())
-
-    def get_group(self, key: Any) -> PrivDataFrame:
-        return self.groups[key]
+        return PrivDataFrameGroupBy(priv_groups) # type: ignore[arg-type]
 
 # to avoid TypeError: type 'Series' is not subscriptable
 # class PrivSeries(Prisoner[_pd.Series[T]]):
+@egrpc.remoteclass
 class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
 
@@ -581,156 +710,150 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             self._ptag = new_ptag()
 
         data = _pd.Series(data, index, **kwargs)
-        if preserve_row:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
-        else:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
+        super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(ser) is not supported. Use ser.shape[0] or ser.size instead.")
 
+    @egrpc.multimethod
     def __getitem__(self, key: PrivSeries[bool]) -> PrivSeries[T]:
-        if isinstance(key, slice):
-            raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
-
-        if not isinstance(key, Prisoner):
-            raise DPError("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
-
-        if not is_bool_indexer(key._value):
-            raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
-
         if self._ptag != key._ptag:
             raise DPError("ser[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
-        return PrivSeries[T](data=self._value.__getitem__(unwrap_prisoner(key)), domain=self.domain, distance=self.distance, parents=[self], preserve_row=False)
+        return PrivSeries[T](data         = self._value.__getitem__(key._value),
+                             domain       = self.domain,
+                             distance     = self.distance,
+                             parents      = [self],
+                             preserve_row = False)
 
-    def __setitem__(self, key: Any, value: Any) -> None:
-        if isinstance(key, slice):
-            raise DPError("ser[slice] cannot be accepted because len(ser) can be leaked depending on len(slice).")
+    @egrpc.multimethod
+    def __setitem__(self, key: PrivSeries[bool], value: ElementType) -> None:
+        if self._ptag != key._ptag:
+            raise DPError("df[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
 
-        if not isinstance(key, Prisoner):
-            raise DPError("ser[bool_vec] cannot be accepted because len(ser) can be leaked depending on len(bool_vec).")
+        self._value[key._value] = value
 
-        if not is_bool_indexer(key._value):
-            raise DPError("ser[key] is not allowed for sensitive keys other than boolean vectors.")
+    @egrpc.multimethod
+    def __eq__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-        if isinstance(value, Prisoner) and not isinstance(value, (PrivDataFrame, PrivSeries)):
-            raise DPError("Sensitive values (other than PrivDataFrame and PrivSeries) cannot be assigned to dataframe.")
+        return PrivSeries[bool](data         = self._value == other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-        if isinstance(value, PrivSeries):
-            raise DPError("Private Series cannot be assigned to filtered rows because the series is treated as columns here.")
+    @__eq__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value == other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
-        if is_2d_array(value):
-            raise DPError("2D array cannot be assigned because len(df) can be leaked.")
+    @egrpc.multimethod
+    def __ne__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-        if isinstance(key, PrivSeries) and is_bool_indexer(key._value) and self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when len(df) and len(bool_vec) can be different.")
+        return PrivSeries[bool](data         = self._value != other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-        self._value[unwrap_prisoner(key)] = unwrap_prisoner(value)
+    @__ne__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value != other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
-    def __eq__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
+    @egrpc.multimethod
+    def __lt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-            return PrivSeries[bool](data=self._value == other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
+        return PrivSeries[bool](data         = self._value < other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
+    @__lt__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value < other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+    @egrpc.multimethod
+    def __le__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-        else:
-            return PrivSeries[bool](data=self._value == other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
+        return PrivSeries[bool](data         = self._value <= other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-    def __ne__(self, other: Any) -> PrivSeries[bool]: # type: ignore[override]
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
+    @__le__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value <= other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
-            return PrivSeries[bool](data=self._value != other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
+    @egrpc.multimethod
+    def __gt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
+        return PrivSeries[bool](data         = self._value > other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
+    @__gt__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value > other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
-        else:
-            return PrivSeries[bool](data=self._value != other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
+    @egrpc.multimethod
+    def __ge__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
 
-    def __lt__(self, other: Any) -> PrivSeries[bool]:
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
+        return PrivSeries[bool](data         = self._value >= other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
 
-            return PrivSeries[bool](data=self._value < other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
+    @__ge__.register
+    def _(self, other: ElementType) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value >= other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
 
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
-
-        else:
-            return PrivSeries[bool](data=self._value < other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
-
-    def __le__(self, other: Any) -> PrivSeries[bool]:
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
-
-            return PrivSeries[bool](data=self._value <= other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
-
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
-
-        else:
-            return PrivSeries[bool](data=self._value <= other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
-
-    def __gt__(self, other: Any) -> PrivSeries[bool]:
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
-
-            return PrivSeries[bool](data=self._value > other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
-
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
-
-        else:
-            return PrivSeries[bool](data=self._value > other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
-
-    def __ge__(self, other: Any) -> PrivSeries[bool]:
-        if isinstance(other, PrivSeries):
-            if self._ptag != other._ptag:
-                raise DPError("Length of sensitive series for comparison can be different.")
-
-            return PrivSeries[bool](data=self._value >= other._value, domain=BoolDomain(), distance=self.distance, parents=[self, other], preserve_row=True)
-
-        elif isinstance(other, Prisoner):
-            raise DPError("Sensitive values cannot be used for comparison.")
-
-        elif is_list_like(other):
-            raise DPError("List-like values cannot be compared against series because len(ser) can be leaked.")
-
-        else:
-            return PrivSeries[bool](data=self._value >= other, domain=BoolDomain(), distance=self.distance, parents=[self], preserve_row=True)
-
-    @property
+    @egrpc.property
     def shape(self) -> tuple[SensitiveInt]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         return (nrows,)
 
-    @property
+    @egrpc.property
     def size(self) -> SensitiveInt:
         return SensitiveInt(value=self._value.size, distance=self.distance, parents=[self])
 
@@ -738,42 +861,90 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     def dtypes(self) -> Any:
         return self._value.dtypes
 
-    @property
+    @egrpc.property
     def domain(self) -> Domain:
         return self._domain
 
+    # TODO: add test
+    @egrpc.method
+    def head(self, n: int = 5) -> PrivSeries[T]:
+        return PrivSeries[T](data         = self._value.head(n),
+                             domain       = self.domain,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
+    # TODO: add test
+    @egrpc.method
+    def tail(self, n: int = 5) -> PrivSeries[T]:
+        return PrivSeries[T](data         = self._value.tail(n),
+                             domain       = self.domain,
+                             distance     = self.distance * 2,
+                             parents      = [self],
+                             preserve_row = False)
+
+    @overload
+    def sort_values(self,
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[True],
+                    ) -> None: ...
+
+    @overload
+    def sort_values(self,
+                    *,
+                    ascending : bool = ...,
+                    inplace   : Literal[False] = ...,
+                    ) -> PrivSeries[T]: ...
+
+    # TODO: add test
+    @egrpc.method
+    def sort_values(self,
+                    *,
+                    ascending : bool = True,
+                    inplace   : bool = False,
+                    ) -> PrivSeries[T] | None:
+        if inplace:
+            self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable")
+            self._ptag = new_ptag()
+            return None
+        else:
+            return PrivSeries[T](data         = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable"),
+                                 domain       = self.domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = False)
+
     @overload
     def replace(self,
-                to_replace : Any = ...,
-                value      : Any = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
                 inplace    : Literal[True],
-                **kwargs   : Any,
                 ) -> None: ...
 
     @overload
     def replace(self,
-                to_replace : Any  = ...,
-                value      : Any  = ...,
+                to_replace : ElementType | None = ...,
+                value      : ElementType | None = ...,
                 *,
-                inplace    : bool = ...,
-                **kwargs   : Any,
+                inplace    : Literal[False] = ...,
                 ) -> PrivSeries[T]: ...
 
+    @egrpc.method
     def replace(self,
-                to_replace : Any  = None,
-                value      : Any  = None,
+                to_replace : ElementType | None = None,
+                value      : ElementType | None = None,
                 *,
                 inplace    : bool = False,
-                **kwargs   : Any,
                 ) -> PrivSeries[T] | None:
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
             # TODO: consider string and category dtype
             raise NotImplementedError
 
-        if self.domain.type == "int64" and _np.isnan(value):
+        if self.domain.dtype == "int64" and _np.isnan(value):
             new_domain = copy.copy(self.domain)
-            new_domain.type = "Int64"
+            new_domain.dtype = "Int64"
 
         elif isinstance(self.domain, RealDomain):
             a, b = self.domain.range
@@ -791,49 +962,55 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
             new_domain = self.domain
 
         if inplace:
-            self._value.replace(to_replace, value, inplace=inplace, **kwargs) # type: ignore[arg-type]
+            self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.replace(to_replace, value, inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivSeries[T](data         = self._value.replace(to_replace, value, inplace=inplace), # type: ignore[arg-type]
+                                 domain       = new_domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     @overload
     def dropna(self,
                *,
                inplace      : Literal[True],
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> None: ...
 
     @overload
     def dropna(self,
                *,
-               inplace      : bool = ...,
+               inplace      : Literal[False] = ...,
                ignore_index : bool = ...,
-               **kwargs     : Any,
                ) -> PrivSeries[T]: ...
 
+    @egrpc.method
     def dropna(self,
                *,
                inplace      : bool = False,
                ignore_index : bool = False,
-               **kwargs : Any,
                ) -> PrivSeries[T] | None:
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
-        if self.domain.type == "Int64":
+        if self.domain.dtype == "Int64":
             new_domain = copy.copy(self.domain)
-            new_domain.type = "int64"
+            new_domain.dtype = "int64"
         else:
             new_domain = self.domain
 
         if inplace:
-            self._value.dropna(inplace=inplace, **kwargs)
+            self._value.dropna(inplace=inplace)
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.dropna(inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True)
+            return PrivSeries[T](data         = self._value.dropna(inplace=inplace),
+                                 domain       = new_domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
     @overload
     def clip(self,
@@ -841,7 +1018,6 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              upper    : realnum | None = None,
              *,
              inplace  : Literal[True],
-             **kwargs : Any,
              ) -> None: ...
 
     @overload
@@ -849,16 +1025,15 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
              lower    : realnum | None = None,
              upper    : realnum | None = None,
              *,
-             inplace  : bool = ...,
-             **kwargs : Any,
+             inplace  : Literal[False] = ...,
              ) -> PrivSeries[T]: ...
 
+    @egrpc.method
     def clip(self,
              lower    : realnum | None = None,
              upper    : realnum | None = None,
              *,
              inplace  : bool = False,
-             **kwargs : Any,
              ) -> PrivSeries[T] | None:
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
@@ -870,12 +1045,17 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         new_domain.range = (new_a, new_b)
 
         if inplace:
-            self._value.clip(lower, upper, inplace=inplace, **kwargs) # type: ignore[arg-type]
+            self._value.clip(lower, upper, inplace=inplace) # type: ignore[arg-type]
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data=self._value.clip(lower, upper, inplace=inplace, **kwargs), domain=new_domain, distance=self.distance, parents=[self], preserve_row=True) # type: ignore[arg-type]
+            return PrivSeries[T](data         = self._value.clip(lower, upper, inplace=inplace), # type: ignore[arg-type]
+                                 domain       = new_domain,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
 
+    @egrpc.method
     def sum(self) -> SensitiveInt | SensitiveFloat:
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
@@ -892,13 +1072,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         s = self._value.sum()
 
-        if self.domain.type in ["int64", "Int64"]:
+        if self.domain.dtype in ["int64", "Int64"]:
             return SensitiveInt(s, new_distance, parents=[self])
-        elif self.domain.type in ["float64", "Float64"]:
+        elif self.domain.dtype in ["float64", "Float64"]:
             return SensitiveFloat(s, new_distance, parents=[self])
         else:
             raise ValueError
 
+    @egrpc.method
     def mean(self, eps: float) -> float:
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
@@ -922,13 +1103,26 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         return s / c
 
     def value_counts(self,
-                     normalize : bool                               = False,
-                     sort      : bool                               = True,
-                     ascending : bool                               = False,
-                     bins      : int | None                         = None,
-                     dropna    : bool                               = True,
-                     values    : list[Any] | _pd.Series[Any] | None = None, # extra argument for privjail
+                     normalize : bool                     = False,
+                     sort      : bool                     = True,
+                     ascending : bool                     = False,
+                     bins      : int | None               = None,
+                     dropna    : bool                     = True,
+                     values    : list[ElementType] | None = None, # extra argument for privjail
                      ) -> SensitiveSeries[int]:
+        # TODO: make SensitiveSeries a dataclass
+        result = self._value_counts_impl(normalize, sort, ascending, bins, dropna, values)
+        return SensitiveSeries[int](data=list(result.values()), index=list(result.keys()), dtype="object")
+
+    @egrpc.method
+    def _value_counts_impl(self,
+                           normalize : bool                     = False,
+                           sort      : bool                     = True,
+                           ascending : bool                     = False,
+                           bins      : int | None               = None,
+                           dropna    : bool                     = True,
+                           values    : list[ElementType] | None = None, # extra argument for privjail
+                           ) -> dict[ElementType, SensitiveInt]:
         if normalize:
             # TODO: what is the sensitivity?
             raise NotImplementedError
@@ -949,7 +1143,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if isinstance(values, Prisoner):
             raise DPError("`values` cannot be sensitive values.")
 
-        if not dropna and not any(_np.isnan(values)):
+        if not dropna and not any(_np.isnan(values)): # type: ignore
             # TODO: consider handling for pd.NA
             warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `values`", UserWarning)
 
@@ -962,11 +1156,8 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
 
-        priv_counts = SensitiveSeries[int](index=counts.index, dtype="object")
-        for i, idx in enumerate(counts.index):
-            priv_counts.loc[idx] = SensitiveInt(counts.loc[idx], distance=distances[i], parents=[prisoner_dummy])
-
-        return priv_counts
+        return {k: SensitiveInt(counts.loc[k], distance=distances[i], parents=[prisoner_dummy])
+                for i, k in enumerate(counts.index)}
 
 class SensitiveDataFrame(_pd.DataFrame):
     """Sensitive DataFrame.
@@ -995,6 +1186,7 @@ class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
         # TODO: args?
         return smin(self)
 
+@egrpc.function
 def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
     # TODO: more vaildation for the input data
     df = _pd.read_csv(filepath)
@@ -1100,19 +1292,19 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
 
     return priv_counts
 
-def cut(x        : PrivSeries[Any],
-        bins     : list[int] | list[float],
-        *args    : Any,
-        **kwargs : Any,
+# TODO: change multifunction -> function by type checking in egrpc.function
+@egrpc.multifunction
+def cut(x              : PrivSeries[Any],
+        bins           : list[int] | list[float],
+        right          : bool                            = True,
+        labels         : list[ElementType] | bool | None = None,
+        retbins        : bool                            = False,
+        precision      : int                             = 3,
+        include_lowest : bool                            = False
+        # TODO: add more parameters
         ) -> PrivSeries[Any]:
-    if not isinstance(x, PrivSeries):
-        raise DPError("`x` must be a PrivSeries.")
+    ser = _pd.cut(x._value, bins=bins, right=right, labels=labels, retbins=retbins, precision=precision, include_lowest=include_lowest) # type: ignore
 
-    if not isinstance(bins, list):
-        raise DPError("`bins` must be a list.")
-
-    ser = _pd.cut(x._value, bins, *args, **kwargs)
-
-    new_domain = CategoryDomain(list(ser.dtype.categories))
+    new_domain = CategoryDomain(categories=list(ser.dtype.categories))
 
     return PrivSeries[Any](ser, domain=new_domain, distance=x.distance, parents=[x], preserve_row=True)

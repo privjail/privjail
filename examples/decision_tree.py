@@ -1,3 +1,4 @@
+import sys
 import privjail as pj
 from privjail import pandas as ppd
 import numpy as np
@@ -53,7 +54,7 @@ def train(max_depth=5, n_bins=20, eps=1.0):
     original_domains = df_train.domains.copy()
 
     for attr, domain in df_train.domains.items():
-        if domain.type == "int64":
+        if domain.dtype == "int64":
             vmin, vmax = domain.range
             df_train[attr] = make_bins(df_train[attr], vmin, vmax, n_bins)
 
@@ -84,7 +85,7 @@ def test(dtree):
     n_bins = dtree["n_bins"]
 
     for attr, domain in dtree["domains"].items():
-        if domain.type == "int64":
+        if domain.dtype == "int64":
             vmin, vmax = domain.range
             df_test[attr] = make_bins(df_test[attr], vmin, vmax, n_bins)
 
@@ -112,14 +113,42 @@ def tree_stats(dtree, depth=1):
 
     return node_count, leaf_count, max_depth
 
-dtree = train()
+def main():
+    dtree = train()
 
-print(pj.consumed_privacy_budget())
+    print(pj.consumed_privacy_budget())
 
-# import pprint
-# pprint.pprint(dtree)
+    # import pprint
+    # pprint.pprint(dtree)
 
-node_count, leaf_count, depth = tree_stats(dtree["tree"])
-print(f"node count: {node_count}, leaf count: {leaf_count}, depth: {depth}")
+    node_count, leaf_count, depth = tree_stats(dtree["tree"])
+    print(f"node count: {node_count}, leaf count: {leaf_count}, depth: {depth}")
 
-test(dtree)
+    test(dtree)
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        mode = "local"
+    else:
+        mode = sys.argv[1]
+
+    if mode in ("server", "client"):
+        if len(sys.argv) < 4:
+            raise ValueError(f"Usage: {sys.argv[0]} {mode} <host> <port>")
+
+        host = sys.argv[2]
+        port = int(sys.argv[3])
+
+    if mode == "local":
+        main()
+
+    elif mode == "server":
+        # print(pj.proto_file_content())
+        pj.serve(port)
+
+    elif mode == "client":
+        pj.connect(host, port)
+        main()
+
+    else:
+        raise ValueError(f"Usage: {sys.argv[0]} [local|server|client] [host] [port]")
