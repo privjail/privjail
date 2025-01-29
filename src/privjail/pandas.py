@@ -187,7 +187,8 @@ else:
         categories: list[ElementType] = field(default_factory=list)
 
         def type(self) -> type:
-            return str
+            assert len(self.categories) > 0
+            return type(self.categories[0]) # TODO: how about other elements?
 
     @egrpc.dataclass
     class PrivDataFrameGroupBy:
