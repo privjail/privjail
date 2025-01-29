@@ -12,8 +12,8 @@ def init() -> None:
 def serve(port: int) -> None:
     init()
     server = init_server(port)
-    print(f"Server started on port {port} (pid = {os.getpid()}).")
     server.start()
+    print(f"Server started on port {port} (pid = {os.getpid()}).")
     server.wait_for_termination()
 
 def connect(hostname: str, port: int) -> None:
