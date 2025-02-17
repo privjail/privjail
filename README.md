@@ -1,5 +1,7 @@
 # PrivJail
 
+Privacy Jail
+
 ## Getting Started
 
 To install PrivJail:
