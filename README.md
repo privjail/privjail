@@ -1,12 +1,16 @@
 # PrivJail
 
-Privacy Jail
+PrivJail (Privacy Jail) enforces differential privacy in Python.
+
+**Warning: This project is in development and not recommended for production use.**
+
+Security and stability are not guaranteed, and breaking changes may occur. Use at your own risk.
 
 ## Getting Started
 
 To install PrivJail:
 ```sh
-pip install .
+pip install privjail
 ```
 
 To run a decision tree example:
