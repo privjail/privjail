@@ -1,6 +1,6 @@
 [project]
 name = "privjail"
-version = "0.0.1"
+version = "0.0.2"
 description = "Enforcing differential privacy in Python"
 readme = "README.md"
 requires-python = ">=3.11"
