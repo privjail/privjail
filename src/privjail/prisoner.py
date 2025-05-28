@@ -65,12 +65,10 @@ class Prisoner(Generic[T]):
             raise RuntimeError
 
     def __str__(self) -> str:
-        # return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
-        return f"Prisoner()"
+        return "<***>"
 
     def __repr__(self) -> str:
-        # return f"Prisoner({type(self._value)}, distance={self.distance.max()})"
-        return f"Prisoner()"
+        return "<***>"
 
     def consume_privacy_budget(self, privacy_budget: float) -> None:
         consume_privacy_budget(self.provenance, privacy_budget)
@@ -92,6 +90,12 @@ class SensitiveInt(Prisoner[integer]):
         if not is_integer(value):
             raise ValueError("`value` must be int for SensitveInt.")
         super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
+
+    def __str__(self) -> str:
+        return "<*** (int)>"
+
+    def __repr__(self) -> str:
+        return "<*** (int)>"
 
     @egrpc.multimethod
     def __add__(self, other: integer) -> SensitiveInt:
@@ -186,6 +190,12 @@ class SensitiveFloat(Prisoner[floating]):
         if not is_floating(value):
             raise ValueError("`value` must be float for SensitveFloat.")
         super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
+
+    def __str__(self) -> str:
+        return "<*** (float)>"
+
+    def __repr__(self) -> str:
+        return "<*** (float)>"
 
     @egrpc.multimethod
     def __add__(self, other: realnum) -> SensitiveFloat:

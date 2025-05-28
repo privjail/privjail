@@ -261,6 +261,24 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         else:
             super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
 
+    def _get_dummy_df(self, n_rows: int = 3) -> _pd.DataFrame:
+        index = list(range(n_rows)) + ['...']
+        columns = self.columns
+        dummy_data = [['***' for _ in columns] for _ in range(n_rows)] + [['...' for _ in columns]]
+        return _pd.DataFrame(dummy_data, index=index, columns=columns)
+
+    def __str__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_df().__str__()
+
+    def __repr__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_df().__repr__()
+
+    def _repr_html_(self) -> Any:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_df()._repr_html_() # type: ignore
+
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
@@ -480,6 +498,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     def _get_columns(self) -> list[str]:
         return list(self._value.columns)
 
+    # FIXME
     @property
     def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
@@ -702,7 +721,6 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                  data         : Any,
                  domain       : Domain,
                  distance     : Distance,
-                 index        : Any                     = None,
                  *,
                  parents      : Sequence[Prisoner[Any]] = [],
                  root_name    : str | None              = None,
@@ -723,8 +741,22 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         else:
             self._ptag = new_ptag()
 
-        data = _pd.Series(data, index, **kwargs)
+        data = _pd.Series(data, **kwargs)
         super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
+
+    def _get_dummy_ser(self, n_rows: int = 3) -> _pd.Series[str]:
+        index = list(range(n_rows)) + ['...']
+        dummy_data = ['***' for _ in range(n_rows)] + ['...']
+        # TODO: dtype becomes 'object'
+        return _pd.Series(dummy_data, index=index, name=self.name)
+
+    def __str__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_ser().__str__().replace("dtype: object", f"dtype: {self.domain.dtype}")
+
+    def __repr__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_ser().__repr__().replace("dtype: object", f"dtype: {self.domain.dtype}")
 
     def __len__(self) -> int:
         # We cannot return Prisoner() here because len() must be an integer value
@@ -871,9 +903,14 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     def size(self) -> SensitiveInt:
         return SensitiveInt(value=self._value.size, distance=self.distance, parents=[self])
 
+    # FIXME
     @property
-    def dtypes(self) -> Any:
-        return self._value.dtypes
+    def dtype(self) -> Any:
+        return self._value.dtype
+
+    @egrpc.property
+    def name(self) -> str | None:
+        return str(self._value.name) if self._value.name is not None else None
 
     @egrpc.property
     def domain(self) -> Domain:
