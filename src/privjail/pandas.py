@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 import numpy as _np
 import pandas as _pd
 
-from .util import DPError, is_realnum, realnum
+from .util import DPError, is_realnum, realnum, floating
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from .distance import Distance
 from . import egrpc
@@ -1217,7 +1217,13 @@ class SensitiveDataFrame(_pd.DataFrame):
     The numbers of rows and columns are not sensitive.
     This is typically created by counting queries like `pandas.crosstab()` and `pandas.pivot_table()`.
     """
-    pass
+    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+        if mech == "laplace":
+            from .mechanism import laplace_mechanism
+            result: float = laplace_mechanism(self, eps)
+            return result
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
 # to avoid TypeError: type 'Series' is not subscriptable
 # class SensitiveSeries(_pd.Series[T]):
@@ -1236,6 +1242,14 @@ class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
     def min(self, *args: Any, **kwargs: Any) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
         return smin(self)
+
+    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+        if mech == "laplace":
+            from .mechanism import laplace_mechanism
+            result: float = laplace_mechanism(self, eps)
+            return result
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
 @egrpc.function
 def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
