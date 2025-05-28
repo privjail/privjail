@@ -177,6 +177,14 @@ class SensitiveInt(Prisoner[integer]):
     def _(self, other: floating) -> SensitiveFloat:
         return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
 
+    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+        if mech == "laplace":
+            from .mechanism import laplace_mechanism
+            result: float = laplace_mechanism(self, eps)
+            return result
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
+
 @egrpc.remoteclass
 class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
@@ -236,6 +244,14 @@ class SensitiveFloat(Prisoner[floating]):
     @egrpc.multimethod
     def __rmul__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
         return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
+
+    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+        if mech == "laplace":
+            from .mechanism import laplace_mechanism
+            result: float = laplace_mechanism(self, eps)
+            return result
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
 @egrpc.multifunction
 def max2(a: SensitiveInt | SensitiveFloat, b: SensitiveInt | SensitiveFloat) -> SensitiveFloat:
