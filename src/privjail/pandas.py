@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 import warnings
 import json
 import copy
+import itertools
 from dataclasses import dataclass, field
 
 import numpy as _np
@@ -1280,22 +1281,50 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
 
     return PrivDataFrame(data=df, domains=domains, distance=Distance(1), root_name=filepath)
 
-def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
-             columns      : PrivSeries[Any] | list[PrivSeries[Any]],
-             values       : PrivSeries[Any] | None                          = None,
-             rownames     : list[str] | None                                = None,
-             colnames     : list[str] | None                                = None,
-             rowvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for privjail
-             colvalues    : list[Any] | _pd.Series[Any] | None              = None, # extra argument for privjail
+def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
+             columns      : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
+             values       : PrivSeries[ElementType] | None = None,
+             rownames     : list[str] | None               = None,
+             colnames     : list[str] | None               = None,
+             rowvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
+             colvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
              *,
-             aggfunc      : Any                                             = None,
-             margins      : bool                                            = False,
-             margins_name : str                                             = "All",
-             dropna       : bool                                            = True,
-             normalize    : bool | Literal["all", "index", "columns", 0, 1] = False,
+             aggfunc      : None                           = None,
+             margins      : bool                           = False,
+             margins_name : str                            = "All",
+             dropna       : bool                           = True,
+             normalize    : bool | str | int               = False, # TODO: support Literal["all", "index", "columns", 0, 1] in egrpc
              ) -> SensitiveDataFrame:
+    result = _crosstab_impl(index, columns, values, rownames, colnames, rowvalues, colvalues,
+                            aggfunc=aggfunc, margins=margins, margins_name=margins_name,
+                            dropna=dropna, normalize=normalize)
+
+    rowvalues, colvalues, data = result
+    priv_counts = SensitiveDataFrame(index=rowvalues, columns=colvalues)
+
+    for i, (idx, col) in enumerate(itertools.product(rowvalues, colvalues)):
+        priv_counts.loc[idx, col] = data[i] # type: ignore
+
+    return priv_counts
+
+@egrpc.function
+def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
+                   columns      : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
+                   values       : PrivSeries[ElementType] | None = None,
+                   rownames     : list[str] | None               = None,
+                   colnames     : list[str] | None               = None,
+                   rowvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
+                   colvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
+                   *,
+                   aggfunc      : None                           = None,
+                   margins      : bool                           = False,
+                   margins_name : str                            = "All",
+                   dropna       : bool                           = True,
+                   normalize    : bool | str | int               = False, # TODO: support Literal["all", "index", "columns", 0, 1] in egrpc
+                   ) -> tuple[list[ElementType], list[ElementType], list[SensitiveInt]]:
     if normalize is not False:
         # TODO: what is the sensitivity?
+        print(normalize)
         raise NotImplementedError
 
     if values is not None or aggfunc is not None:
@@ -1306,56 +1335,43 @@ def crosstab(index        : PrivSeries[Any] | list[PrivSeries[Any]],
         # Sensitivity must be managed separately for value counts and margins
         raise DPError("`margins=True` is not supported. Please manually calculate margins after adding noise.")
 
-    if rowvalues is None or colvalues is None:
-        # TODO: track the value domain to automatically determine the output dimension
-        raise DPError("Please provide the `rowvalues`/`colvalues` arguments to prevent privacy leakage.")
+    if isinstance(index.domain, CategoryDomain):
+        rowvalues = index.domain.categories
 
-    if not dropna and (not any(_np.isnan(rowvalues)) or not any(_np.isnan(colvalues))):
-        # TODO: consider handling for pd.NA
-        warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
+    if rowvalues is None:
+        raise DPError("Please specify `rowvalues` to prevent privacy leakage.")
 
-    if isinstance(index, list):
-        if len(index) == 0:
-            raise ValueError("Empty list is passed to `index`.")
+    if isinstance(columns.domain, CategoryDomain):
+        colvalues = columns.domain.categories
 
-        # TODO: support list of series (need to accept multiindex for rowvalues/colvalues)
-        raise NotImplementedError
-    else:
-        index = [index]
+    if colvalues is None:
+        raise DPError("Please specify `colvalues` to prevent privacy leakage.")
 
-    if isinstance(columns, list):
-        if len(columns) == 0:
-            raise ValueError("Empty list is passed to `columns`.")
+    # if not dropna and (not any(_np.isnan(rowvalues)) or not any(_np.isnan(colvalues))):
+    #     # TODO: consider handling for pd.NA
+    #     warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
 
-        # TODO: support list of series (need to accept multiindex for rowvalues/colvalues)
-        raise NotImplementedError
-    else:
-        columns = [columns]
-
-    if not all(index[0]._ptag == x._ptag for x in index + columns):
-        # TODO: reconsider whether this should be disallowed, as length difference does not cause an error
+    if index._ptag != columns._ptag:
         raise DPError("Series in `index` and `columns` must have the same length.")
 
-    counts = _pd.crosstab([x._value for x in index], [x._value for x in columns],
+    counts = _pd.crosstab(index._value, columns._value,
                           values=None, rownames=rownames, colnames=colnames,
                           aggfunc=None, margins=False, margins_name=margins_name,
                           dropna=dropna, normalize=False)
 
     # Select only the specified values and fill non-existent counts with 0
-    counts = counts.reindex(rowvalues, axis="index").reindex(colvalues, axis="columns").fillna(0).astype(int)
+    counts = counts.reindex(list(rowvalues), axis="index") \
+                   .reindex(list(colvalues), axis="columns") \
+                   .fillna(0).astype(int)
 
-    distances = index[0].distance.create_exclusive_distances(counts.size)
+    distances = index.distance.create_exclusive_distances(counts.size)
 
-    prisoner_dummy = Prisoner(0, index[0].distance, parents=index + columns, children_type="exclusive")
+    prisoner_dummy = Prisoner(0, index.distance, parents=[index, columns], children_type="exclusive")
 
-    priv_counts = SensitiveDataFrame(index=counts.index, columns=counts.columns)
-    i = 0
-    for idx in counts.index:
-        for col in counts.columns:
-            priv_counts.loc[idx, col] = SensitiveInt(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
-            i += 1
+    data = [SensitiveInt(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
+            for i, (idx, col) in enumerate(itertools.product(rowvalues, colvalues))]
 
-    return priv_counts
+    return list(rowvalues), list(colvalues), data
 
 # TODO: change multifunction -> function by type checking in egrpc.function
 @egrpc.multifunction

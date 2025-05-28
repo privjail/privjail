@@ -231,6 +231,7 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
     elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
         for i, th in enumerate(type_args):
+            # TODO: consider what to do when obj matches multiple candidates
             if is_type_match(obj, th):
                 set_proto_field(child_proto_msg, f"member{i}", th, obj, allow_subclass=allow_subclass, on_server=on_server)
                 return

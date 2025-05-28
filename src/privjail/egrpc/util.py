@@ -30,6 +30,46 @@ TypeHint = Any
 def my_get_origin(type_hint: Any) -> Any:
     return get_origin(type_hint)
 
+def is_subtype(type_hint1: TypeHint, type_hint2: TypeHint) -> bool:
+    type_origin1 = my_get_origin(type_hint1)
+    type_origin2 = my_get_origin(type_hint2)
+    type_args1 = get_args(type_hint1)
+    type_args2 = get_args(type_hint2)
+
+    if type_origin1 is None and type_origin2 is None:
+        try:
+            return issubclass(type_hint1, type_hint2)
+        except TypeError:
+            return type_hint1 is type_hint2
+
+    elif type_origin1 in (Union, UnionType) and type_origin2 in (Union, UnionType):
+        return all(any(is_subtype(th1, th2) for th2 in type_args2) for th1 in type_args1)
+
+    elif type_origin2 in (Union, UnionType):
+        return any(is_subtype(type_hint1, th2) for th2 in type_args2)
+
+    elif type_origin1 in (Union, UnionType):
+        return all(is_subtype(th1, type_hint2) for th1 in type_args1)
+
+    elif type_origin1 is _np.integer and type_origin2 is None:
+        return type_hint2 in (int, float)
+
+    elif type_origin1 is _np.floating and type_origin2 is None:
+        return type_hint2 is float
+
+    elif type_origin1 is None and type_origin2 in (_np.integer, _np.floating):
+        return False
+
+    elif type_origin1 == type_origin2:
+        # TODO: seriously consider covariant, contravariant, Sequence, Mapping, ...
+        return (
+            len(type_args1) != len(type_args2)
+            and all(is_subtype(th1, th2) for th1, th2 in zip(type_args1, type_args2))
+        )
+
+    else:
+        return False
+
 def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
     type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
@@ -65,7 +105,10 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
         return isinstance(obj, (_np.integer, _np.floating))
 
     else:
-        raise TypeError(f"Type {type_origin} is not supported.")
+        return (
+            hasattr(obj, "__orig_class__")
+            and all(is_subtype(th1, th2) for th1, th2 in zip(get_args(obj.__orig_class__), type_args))
+        )
 
 def get_function_typed_params(func: Callable[P, R]) -> dict[str, TypeHint]:
     type_hints = get_type_hints(func)
