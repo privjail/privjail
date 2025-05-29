@@ -155,8 +155,8 @@ if TYPE_CHECKING:
     @dataclass
     class PrivDataFrameGroupBy:
         # TODO: groups are ordered?
-        groups    : Mapping[ElementType, PrivDataFrame]
-        key_names : list[str]
+        groups     : Mapping[ElementType, PrivDataFrame]
+        by_columns : list[str]
 
         def __len__(self) -> int:
             return len(self.groups)
@@ -164,15 +164,27 @@ if TYPE_CHECKING:
         def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
             return iter(self.groups.items())
 
+        def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
+            if isinstance(key, str):
+                keys = [key]
+            elif isinstance(key, list):
+                keys = key
+            else:
+                raise TypeError
+
+            # TODO: column order?
+            new_groups = {k: df[self.by_columns + keys] for k, df in self.groups.items()}
+            return PrivDataFrameGroupBy(new_groups, self.by_columns)
+
         def get_group(self, key: Any) -> PrivDataFrame:
             return self.groups[key]
 
         def sum(self) -> SensitiveDataFrame:
-            data = [df.drop(self.key_names, axis=1).sum() for key, df in self.groups.items()]
+            data = [df.drop(self.by_columns, axis=1).sum() for key, df in self.groups.items()]
             return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
 
         def mean(self, eps: float) -> _pd.DataFrame:
-            data = [df.drop(self.key_names, axis=1).mean(eps=eps) for key, df in self.groups.items()]
+            data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
             return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
 
 else:
@@ -217,8 +229,8 @@ else:
     @egrpc.dataclass
     class PrivDataFrameGroupBy:
         # TODO: groups are ordered?
-        groups    : Mapping[ElementType, PrivDataFrame]
-        key_names : list[str]
+        groups     : Mapping[ElementType, PrivDataFrame]
+        by_columns : list[str]
 
         def __len__(self) -> int:
             return len(self.groups)
@@ -226,16 +238,28 @@ else:
         def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
             return iter(self.groups.items())
 
+        def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
+            if isinstance(key, str):
+                keys = [key]
+            elif isinstance(key, list):
+                keys = key
+            else:
+                raise TypeError
+
+            # TODO: column order?
+            new_groups = {k: df[self.by_columns + keys] for k, df in self.groups.items()}
+            return PrivDataFrameGroupBy(new_groups, self.by_columns)
+
         def get_group(self, key: Any) -> PrivDataFrame:
             return self.groups[key]
 
         def sum(self) -> SensitiveDataFrame:
-            data = [df.drop(self.key_names, axis=1).sum() for key, df in self.groups.items()]
-            return SensitiveDataFrame(data, index=self.groups.keys())
+            data = [df.drop(self.by_columns, axis=1).sum() for key, df in self.groups.items()]
+            return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
 
         def mean(self, eps: float) -> _pd.DataFrame:
-            data = [df.drop(self.key_names, axis=1).mean(eps=eps) for key, df in self.groups.items()]
-            return _pd.DataFrame(data, index=self.groups.keys())
+            data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
+            return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
 
 @egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
