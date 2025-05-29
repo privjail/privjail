@@ -40,11 +40,13 @@ def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) ->
 
 @laplace_mechanism.register(remote=False) # type: ignore
 def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
-    return prisoner.map(lambda x: laplace_mechanism(x, eps))
+    total_distance = prisoner.max_distance()
+    return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
 
 @laplace_mechanism.register(remote=False) # type: ignore
 def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
-    return prisoner.map(lambda x: laplace_mechanism(x, eps))
+    total_distance = prisoner.max_distance()
+    return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
 
 # TODO: add test
 @overload

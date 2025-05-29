@@ -481,6 +481,10 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = True)
 
     @egrpc.property
+    def max_distance(self) -> realnum:
+        return self.distance.max()
+
+    @egrpc.property
     def shape(self) -> tuple[SensitiveInt, int]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
         ncols = self._value.shape[1]
@@ -706,6 +710,18 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
         return PrivDataFrameGroupBy(priv_groups) # type: ignore[arg-type]
 
+    def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
+        data = [self[col].sum() for col in self.columns]
+        if all(domain.dtype in ("int64", "Int64") for domain in self.domains.values()):
+            return SensitiveSeries[int](data, index=self.columns)
+        else:
+            return SensitiveSeries[float](data, index=self.columns)
+
+    def mean(self, eps: float) -> _pd.Series[float]:
+        eps_each = eps / len(self.columns)
+        data = [self[col].mean(eps=eps_each) for col in self.columns]
+        return _pd.Series(data, index=self.columns) # type: ignore[no-any-return]
+
 # to avoid TypeError: type 'Series' is not subscriptable
 # class PrivSeries(Prisoner[_pd.Series[T]]):
 @egrpc.remoteclass
@@ -894,6 +910,10 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                 distance     = self.distance,
                                 parents      = [self],
                                 preserve_row = True)
+
+    @egrpc.property
+    def max_distance(self) -> realnum:
+        return self.distance.max()
 
     @egrpc.property
     def shape(self) -> tuple[SensitiveInt]:
@@ -1211,6 +1231,10 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         return {k: SensitiveInt(counts.loc[k], distance=distances[i], parents=[prisoner_dummy])
                 for i, k in enumerate(counts.index)}
 
+@egrpc.function
+def total_max_distance(prisoners: list[SensitiveInt | SensitiveFloat]) -> realnum:
+    return sum([x.distance for x in prisoners], start=Distance(0)).max()
+
 class SensitiveDataFrame(_pd.DataFrame):
     """Sensitive DataFrame.
 
@@ -1218,6 +1242,9 @@ class SensitiveDataFrame(_pd.DataFrame):
     The numbers of rows and columns are not sensitive.
     This is typically created by counting queries like `pandas.crosstab()` and `pandas.pivot_table()`.
     """
+    def max_distance(self) -> realnum:
+        return total_max_distance(list(self.values.flatten()))
+
     def reveal(self, eps: floating, mech: str = "laplace") -> float:
         if mech == "laplace":
             from .mechanism import laplace_mechanism
@@ -1235,6 +1262,8 @@ class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
     The numbers of values are not sensitive.
     This is typically created by counting queries like `PrivSeries.value_counts()`.
     """
+    def max_distance(self) -> realnum:
+        return total_max_distance(list(self.values))
 
     def max(self, *args: Any, **kwargs: Any) -> SensitiveInt | SensitiveFloat:
         # TODO: args?

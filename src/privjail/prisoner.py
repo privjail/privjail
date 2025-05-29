@@ -97,6 +97,10 @@ class SensitiveInt(Prisoner[integer]):
     def __repr__(self) -> str:
         return "<*** (int)>"
 
+    @egrpc.property
+    def max_distance(self) -> realnum:
+        return self.distance.max()
+
     @egrpc.multimethod
     def __add__(self, other: integer) -> SensitiveInt:
         return SensitiveInt(self._value + other, distance=self.distance, parents=[self])
@@ -204,6 +208,10 @@ class SensitiveFloat(Prisoner[floating]):
 
     def __repr__(self) -> str:
         return "<*** (float)>"
+
+    @egrpc.property
+    def max_distance(self) -> realnum:
+        return self.distance.max()
 
     @egrpc.multimethod
     def __add__(self, other: realnum) -> SensitiveFloat:
