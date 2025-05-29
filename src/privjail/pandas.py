@@ -155,7 +155,8 @@ if TYPE_CHECKING:
     @dataclass
     class PrivDataFrameGroupBy:
         # TODO: groups are ordered?
-        groups: Mapping[ElementType, PrivDataFrame]
+        groups    : Mapping[ElementType, PrivDataFrame]
+        key_names : list[str]
 
         def __len__(self) -> int:
             return len(self.groups)
@@ -165,6 +166,14 @@ if TYPE_CHECKING:
 
         def get_group(self, key: Any) -> PrivDataFrame:
             return self.groups[key]
+
+        def sum(self) -> SensitiveDataFrame:
+            data = [df.drop(self.key_names, axis=1).sum() for key, df in self.groups.items()]
+            return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
+
+        def mean(self, eps: float) -> _pd.DataFrame:
+            data = [df.drop(self.key_names, axis=1).mean(eps=eps) for key, df in self.groups.items()]
+            return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
 
 else:
     @egrpc.dataclass
@@ -208,7 +217,8 @@ else:
     @egrpc.dataclass
     class PrivDataFrameGroupBy:
         # TODO: groups are ordered?
-        groups: Mapping[ElementType, PrivDataFrame]
+        groups    : Mapping[ElementType, PrivDataFrame]
+        key_names : list[str]
 
         def __len__(self) -> int:
             return len(self.groups)
@@ -218,6 +228,14 @@ else:
 
         def get_group(self, key: Any) -> PrivDataFrame:
             return self.groups[key]
+
+        def sum(self) -> SensitiveDataFrame:
+            data = [df.drop(self.key_names, axis=1).sum() for key, df in self.groups.items()]
+            return SensitiveDataFrame(data, index=self.groups.keys())
+
+        def mean(self, eps: float) -> _pd.DataFrame:
+            data = [df.drop(self.key_names, axis=1).mean(eps=eps) for key, df in self.groups.items()]
+            return _pd.DataFrame(data, index=self.groups.keys())
 
 @egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):
@@ -531,6 +549,59 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                              preserve_row = False)
 
     @overload
+    def drop(self,
+             labels  : str | list[str] | None = ...,
+             *,
+             axis    : int | str              = ...,
+             index   : str | list[str] | None = ...,
+             columns : str | list[str] | None = ...,
+             level   : int | None             = ...,
+             inplace : Literal[True],
+             ) -> None: ...
+
+    @overload
+    def drop(self,
+             labels  : str | list[str] | None = ...,
+             *,
+             axis    : int | str              = ...,
+             index   : str | list[str] | None = ...,
+             columns : str | list[str] | None = ...,
+             level   : int | None             = ...,
+             inplace : Literal[False]         = ...,
+             ) -> PrivDataFrame: ...
+
+    @egrpc.method
+    def drop(self,
+             labels  : str | list[str] | None = None,
+             *,
+             axis    : int | str              = 0, # 0, 1, "index", "columns"
+             index   : str | list[str] | None = None,
+             columns : str | list[str] | None = None,
+             level   : int | None             = None,
+             inplace : bool                   = False,
+             ) -> PrivDataFrame | None:
+        if axis not in (1, "columns") or index is not None:
+            raise DPError("Rows cannot be dropped")
+
+        if isinstance(labels, str):
+            new_domains = {k: v for k, v in self.domains.items() if k != labels}
+        elif isinstance(labels, list):
+            new_domains = {k: v for k, v in self.domains.items() if k not in labels}
+        else:
+            raise TypeError
+
+        if inplace:
+            self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace) # type: ignore
+            self._domains = new_domains
+            return None
+        else:
+            return PrivDataFrame(data         = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace), # type: ignore
+                                 domains      = new_domains,
+                                 distance     = self.distance,
+                                 parents      = [self],
+                                 preserve_row = True)
+
+    @overload
     def sort_values(self,
                     by        : str | list[str],
                     *,
@@ -708,7 +779,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         # TODO: update childrens' category domain that is chosen for the groupby key
         priv_groups = {key: PrivDataFrame(df, domains=self.domains, distance=d, parents=[prisoner_dummy], preserve_row=False) for (key, df), d in zip(groups.items(), distances)}
 
-        return PrivDataFrameGroupBy(priv_groups) # type: ignore[arg-type]
+        return PrivDataFrameGroupBy(priv_groups, [by]) # type: ignore[arg-type]
 
     def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
         data = [self[col].sum() for col in self.columns]
