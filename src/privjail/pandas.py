@@ -1006,6 +1006,128 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                                 parents      = [self],
                                 preserve_row = True)
 
+    @egrpc.multimethod
+    def __and__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
+
+        return PrivSeries[bool](data         = self._value & other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
+
+    @__and__.register
+    def _(self, other: bool) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value & other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
+    @egrpc.multimethod
+    def __rand__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
+
+        return PrivSeries[bool](data         = other._value & self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
+
+    @__rand__.register
+    def _(self, other: bool) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = other & self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
+    @egrpc.multimethod
+    def __or__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
+
+        return PrivSeries[bool](data         = self._value | other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
+
+    @__or__.register
+    def _(self, other: bool) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value | other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
+    @egrpc.multimethod
+    def __ror__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
+
+        return PrivSeries[bool](data         = other._value | self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
+
+    @__ror__.register
+    def _(self, other: bool) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = other | self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
+    @egrpc.multimethod
+    def __xor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
+
+        return PrivSeries[bool](data         = self._value ^ other._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
+
+    @__xor__.register
+    def _(self, other: bool) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = self._value ^ other,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
+    @egrpc.multimethod
+    def __rxor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
+        if self._ptag != other._ptag:
+            raise DPError("Length of sensitive series for comparison can be different.")
+
+        return PrivSeries[bool](data         = other._value ^ self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self, other],
+                                preserve_row = True)
+
+    @__rxor__.register
+    def _(self, other: bool) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = other ^ self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
+    @egrpc.method
+    def __invert__(self) -> PrivSeries[bool]:
+        return PrivSeries[bool](data         = ~self._value,
+                                domain       = BoolDomain(),
+                                distance     = self.distance,
+                                parents      = [self],
+                                preserve_row = True)
+
     @egrpc.property
     def max_distance(self) -> realnum:
         return self.distance.max()
