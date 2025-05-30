@@ -30,8 +30,8 @@ def noisy_count(df, eps):
     return max(0, pj.laplace_mechanism(df.shape[0], eps=eps))
 
 def best_split(df, attributes, target_attr, eps):
-    gains = {attr: calc_gain(df, attr, target_attr) for attr in attributes}
-    return pj.exponential_mechanism(gains, eps)
+    gains = [calc_gain(df, attr, target_attr) for attr in attributes]
+    return attributes[pj.argmax(gains, eps)]
 
 def build_decision_tree(df, attributes, target_attr, max_depth, eps):
     t = max([len(df.domains[attr].categories) for attr in attributes])

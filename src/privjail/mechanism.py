@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, TypeVar, overload
+from typing import TypeVar, Sequence
 
 import numpy as _np
 import pandas as _pd
@@ -48,23 +48,8 @@ def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
     total_distance = prisoner.max_distance()
     return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
 
-# TODO: add test
-@overload
-def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat], eps: float) -> int: ...
-@overload
-def exponential_mechanism(scores: dict[T, SensitiveInt | SensitiveFloat], eps: float) -> T: ...
-
-def exponential_mechanism(scores: list[SensitiveInt | SensitiveFloat] | dict[Any, SensitiveInt | SensitiveFloat], eps: float) -> Any:
-    if isinstance(scores, dict):
-        idx = _exponential_mechanism_impl(list(scores.values()), eps)
-        return list(scores.keys())[idx]
-    elif isinstance(scores, list):
-        return _exponential_mechanism_impl(scores, eps)
-    else:
-        raise ValueError("scores must be a list or dict.")
-
 @egrpc.function
-def _exponential_mechanism_impl(scores: list[SensitiveInt | SensitiveFloat], eps: float) -> int:
+def exponential_mechanism(scores: Sequence[SensitiveInt | SensitiveFloat], eps: floating) -> int:
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
 
@@ -78,7 +63,7 @@ def _exponential_mechanism_impl(scores: list[SensitiveInt | SensitiveFloat], eps
 
     # create a dummy prisoner to propagate budget consumption to all prisoners
     prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
-    prisoner_dummy.consume_privacy_budget(eps)
+    prisoner_dummy.consume_privacy_budget(float(eps))
 
     exponents = [eps * s._value / sensitivity / 2 for s in scores]
     # to prevent too small or large values (-> 0 or inf)
@@ -86,3 +71,16 @@ def _exponential_mechanism_impl(scores: list[SensitiveInt | SensitiveFloat], eps
     p = [_np.exp(x - M) for x in exponents]
     p /= sum(p)
     return _np.random.choice(len(scores), p=p)
+
+def argmax(args: Sequence[SensitiveInt | SensitiveFloat], eps: floating, mech: str = "exponential") -> int:
+    if mech == "exponential":
+        return exponential_mechanism(args, eps)
+    else:
+        raise ValueError(f"Unknown DP mechanism: '{mech}'")
+
+def argmin(args: Sequence[SensitiveInt | SensitiveFloat], eps: floating, mech: str = "exponential") -> int:
+    args_negative = [-x for x in args]
+    if mech == "exponential":
+        return exponential_mechanism(args_negative, eps)
+    else:
+        raise ValueError(f"Unknown DP mechanism: '{mech}'")
