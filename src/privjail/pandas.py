@@ -13,13 +13,13 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping, TYPE_CHECKING
+from typing import overload, TypeVar, Any, Literal, Iterator, Generic, Sequence, Mapping
 from abc import ABC, abstractmethod
 import warnings
 import json
 import copy
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import field
 
 import numpy as _np
 import pandas as _pd
@@ -113,153 +113,78 @@ def column_schema2domain(col_schema: dict[str, Any]) -> Domain:
     else:
         raise RuntimeError
 
-# suppress mypy errors
-if TYPE_CHECKING:
-    @dataclass
-    class Domain(ABC):
-        dtype: str
+@egrpc.dataclass
+class Domain(ABC):
+    dtype: str
 
-        @abstractmethod
-        def type(self) -> type:
-            pass
+    @abstractmethod
+    def type(self) -> type:
+        pass
 
-    @dataclass
-    class BoolDomain(Domain):
-        dtype: str = "bool"
+@egrpc.dataclass
+class BoolDomain(Domain):
+    dtype: str = "bool"
 
-        def type(self) -> type:
-            return bool
+    def type(self) -> type:
+        return bool
 
-    @dataclass
-    class RealDomain(Domain):
-        range: tuple[realnum | None, realnum | None]
+@egrpc.dataclass
+class RealDomain(Domain):
+    range: tuple[realnum | None, realnum | None]
 
-        def type(self) -> Any:
-            return int if self.dtype in ("int64", "Int64") else float
+    def type(self) -> Any:
+        return int if self.dtype in ("int64", "Int64") else float
 
-    @dataclass
-    class StrDomain(Domain):
-        dtype: str = "string"
+@egrpc.dataclass
+class StrDomain(Domain):
+    dtype: str = "string"
 
-        def type(self) -> type:
-            return str
+    def type(self) -> type:
+        return str
 
-    @dataclass
-    class CategoryDomain(Domain):
-        dtype: str = "categories"
-        categories: list[ElementType] = field(default_factory=list)
+@egrpc.dataclass
+class CategoryDomain(Domain):
+    dtype: str = "categories"
+    categories: list[ElementType] = field(default_factory=list)
 
-        def type(self) -> type:
-            return str
+    def type(self) -> type:
+        assert len(self.categories) > 0
+        return type(self.categories[0]) # TODO: how about other elements?
 
-    @dataclass
-    class PrivDataFrameGroupBy:
-        # TODO: groups are ordered?
-        groups     : Mapping[ElementType, PrivDataFrame]
-        by_columns : list[str]
+@egrpc.dataclass
+class PrivDataFrameGroupBy:
+    # TODO: groups are ordered?
+    groups     : Mapping[ElementType, PrivDataFrame]
+    by_columns : list[str]
 
-        def __len__(self) -> int:
-            return len(self.groups)
+    def __len__(self) -> int:
+        return len(self.groups)
 
-        def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
-            return iter(self.groups.items())
+    def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+        return iter(self.groups.items())
 
-        def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
-            if isinstance(key, str):
-                keys = [key]
-            elif isinstance(key, list):
-                keys = key
-            else:
-                raise TypeError
+    def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
+        if isinstance(key, str):
+            keys = [key]
+        elif isinstance(key, list):
+            keys = key
+        else:
+            raise TypeError
 
-            # TODO: column order?
-            new_groups = {k: df[self.by_columns + keys] for k, df in self.groups.items()}
-            return PrivDataFrameGroupBy(new_groups, self.by_columns)
+        # TODO: column order?
+        new_groups = {k: df[self.by_columns + keys] for k, df in self.groups.items()}
+        return PrivDataFrameGroupBy(new_groups, self.by_columns)
 
-        def get_group(self, key: Any) -> PrivDataFrame:
-            return self.groups[key]
+    def get_group(self, key: Any) -> PrivDataFrame:
+        return self.groups[key]
 
-        def sum(self) -> SensitiveDataFrame:
-            data = [df.drop(self.by_columns, axis=1).sum() for key, df in self.groups.items()]
-            return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
+    def sum(self) -> SensitiveDataFrame:
+        data = [df.drop(self.by_columns, axis=1).sum() for key, df in self.groups.items()]
+        return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
 
-        def mean(self, eps: float) -> _pd.DataFrame:
-            data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
-            return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
-
-else:
-    @egrpc.dataclass
-    class Domain(ABC):
-        dtype: str
-
-        @abstractmethod
-        def type(self) -> type:
-            pass
-
-    @egrpc.dataclass
-    class BoolDomain(Domain):
-        dtype: str = "bool"
-
-        def type(self) -> type:
-            return bool
-
-    @egrpc.dataclass
-    class RealDomain(Domain):
-        range: tuple[realnum | None, realnum | None]
-
-        def type(self) -> Any:
-            return int if self.dtype in ("int64", "Int64") else float
-
-    @egrpc.dataclass
-    class StrDomain(Domain):
-        dtype: str = "string"
-
-        def type(self) -> type:
-            return str
-
-    @egrpc.dataclass
-    class CategoryDomain(Domain):
-        dtype: str = "categories"
-        categories: list[ElementType] = field(default_factory=list)
-
-        def type(self) -> type:
-            assert len(self.categories) > 0
-            return type(self.categories[0]) # TODO: how about other elements?
-
-    @egrpc.dataclass
-    class PrivDataFrameGroupBy:
-        # TODO: groups are ordered?
-        groups     : Mapping[ElementType, PrivDataFrame]
-        by_columns : list[str]
-
-        def __len__(self) -> int:
-            return len(self.groups)
-
-        def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
-            return iter(self.groups.items())
-
-        def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
-            if isinstance(key, str):
-                keys = [key]
-            elif isinstance(key, list):
-                keys = key
-            else:
-                raise TypeError
-
-            # TODO: column order?
-            new_groups = {k: df[self.by_columns + keys] for k, df in self.groups.items()}
-            return PrivDataFrameGroupBy(new_groups, self.by_columns)
-
-        def get_group(self, key: Any) -> PrivDataFrame:
-            return self.groups[key]
-
-        def sum(self) -> SensitiveDataFrame:
-            data = [df.drop(self.by_columns, axis=1).sum() for key, df in self.groups.items()]
-            return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
-
-        def mean(self, eps: float) -> _pd.DataFrame:
-            data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
-            return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
+    def mean(self, eps: float) -> _pd.DataFrame:
+        data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
+        return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
 
 @egrpc.remoteclass
 class PrivDataFrame(Prisoner[_pd.DataFrame]):

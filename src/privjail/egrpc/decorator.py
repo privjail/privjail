@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar, Callable, Type, Any, cast, ParamSpec, NoReturn, TYPE_CHECKING
+from typing import TypeVar, Callable, Type, Any, cast, ParamSpec, NoReturn, dataclass_transform, TYPE_CHECKING
 import functools
 import dataclasses
 
@@ -84,6 +84,7 @@ class multifunction_decorator:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.md(*args, **kwargs)
 
+@dataclass_transform()
 def dataclass_decorator(cls: Type[T]) -> Type[T]:
     datacls = dataclasses.dataclass(cls)
     compile_dataclass(datacls)
