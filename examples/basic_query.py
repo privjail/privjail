@@ -23,17 +23,29 @@ def main():
 
     print()
     print("Income stats of younger age groups:")
-    print(pj.laplace_mechanism(df.sort_values("age").head(n)["income"].value_counts(sort=False), eps=1.0))
+    print(df.sort_values("age").head(n)["income"].value_counts(sort=False).reveal(eps=1.0))
 
     print()
     print("Income stats of older age groups:")
-    print(pj.laplace_mechanism(df.sort_values("age").tail(n)["income"].value_counts(sort=False), eps=1.0))
+    print(df.sort_values("age").tail(n)["income"].value_counts(sort=False).reveal(eps=1.0))
 
     print()
     print("Average age by income:")
     for income, df_ in df.groupby("income"):
         mean_age = df_["age"].mean(eps=1.0)
         print(f"{income}: {mean_age}")
+
+    print()
+    print("Average age and hours-per-week by income:")
+    print(df.groupby("income")[["age", "hours-per-week"]].mean(eps=1.0))
+
+    print()
+    print("Crosstab between gender and income")
+    print(ppd.crosstab(df["gender"], df["income"]).reveal(eps=1.0))
+
+    print()
+    print("Sum of capital-gain and capital-loss of PhDs aged under 40")
+    print(df[(df["education"] == "Doctorate") & (df["age"] < 40)][["capital-gain", "capital-loss"]].sum().reveal(eps=1.0))
 
     print()
     print("Consumed Privacy Budget:")
