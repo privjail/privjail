@@ -21,9 +21,9 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError
-from ..prisoner import Prisoner, SensitiveInt
+from ..prisoner import SensitiveInt
 from ..distance import Distance
-from .util import ElementType
+from .util import ElementType, PrivPandasExclusiveDummy, assert_ptag
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
@@ -129,8 +129,7 @@ def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Seque
     #     # TODO: consider handling for pd.NA
     #     warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
 
-    if index._ptag != columns._ptag:
-        raise DPError("Series in `index` and `columns` must have the same length.")
+    assert_ptag(index, columns)
 
     counts = _pd.crosstab(index._value, columns._value,
                           values=None, rownames=rownames, colnames=colnames,
@@ -144,7 +143,7 @@ def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Seque
 
     distances = index.distance.create_exclusive_distances(counts.size)
 
-    prisoner_dummy = Prisoner(0, index.distance, parents=[index, columns], children_type="exclusive")
+    prisoner_dummy = PrivPandasExclusiveDummy(parents=[index, columns])
 
     data = [SensitiveInt(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
             for i, (idx, col) in enumerate(itertools.product(rowvalues, colvalues))]

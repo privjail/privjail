@@ -21,9 +21,9 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError, is_realnum, realnum, floating
-from ..prisoner import Prisoner, SensitiveInt
+from ..prisoner import SensitiveInt
 from ..distance import Distance
-from .util import ElementType, PTag, new_ptag, total_max_distance
+from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
 from .series import PrivSeries, SensitiveSeries
 
@@ -33,47 +33,30 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 @egrpc.remoteclass
-class PrivDataFrame(Prisoner[_pd.DataFrame]):
+class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     """Private DataFrame.
 
     Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of rows is treated as a sensitive value.
     """
-    _ptag    : PTag
     _domains : Mapping[str, Domain]
 
     def __init__(self,
                  data         : Any,
                  domains      : Mapping[str, Domain],
                  distance     : Distance,
-                 index        : Any                     = None,
-                 columns      : Any                     = None,
-                 dtype        : Any                     = None,
-                 copy         : bool                    = False,
+                 index        : Any                           = None,
+                 columns      : Any                           = None,
+                 dtype        : Any                           = None,
+                 copy         : bool                          = False,
                  *,
-                 parents      : Sequence[Prisoner[Any]] = [],
-                 root_name    : str | None              = None,
-                 preserve_row : bool | None             = None,
+                 parents      : Sequence[PrivPandasBase[Any]] = [],
+                 root_name    : str | None                    = None,
+                 preserve_row : bool | None                   = None,
                  ):
-        if len(parents) == 0:
-            preserve_row = False
-        elif preserve_row is None:
-            raise ValueError("preserve_row is required when parents are specified.")
-
         self._domains = domains
-
-        if preserve_row:
-            parent_tags = [p._ptag for p in parents if isinstance(p, (PrivDataFrame, PrivSeries))]
-            assert len(parent_tags) > 0 and all([parent_tags[0] == pt for pt in parent_tags])
-            self._ptag = parent_tags[0]
-        else:
-            self._ptag = new_ptag()
-
-        data = _pd.DataFrame(data, index, columns, dtype, copy)
-        if preserve_row:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
-        else:
-            super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
+        df = _pd.DataFrame(data, index, columns, dtype, copy)
+        super().__init__(value=df, distance=distance, parents=parents, root_name=root_name, preserve_row=preserve_row)
 
     def _get_dummy_df(self, n_rows: int = 3) -> _pd.DataFrame:
         index = list(range(n_rows)) + ['...']
@@ -119,9 +102,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @__getitem__.register
     def _(self, key: PrivSeries[bool]) -> PrivDataFrame:
-        if self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
-
+        assert_ptag(self, key)
         return PrivDataFrame(data         = self._value.__getitem__(key._value),
                              domains      = self.domains,
                              distance     = self.distance,
@@ -158,32 +139,24 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: ElementType) -> None:
         # TODO: consider domain transform
-        if self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
-
+        assert_ptag(self, key)
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: list[ElementType]) -> None:
         # TODO: consider domain transform
-        if self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
-
+        assert_ptag(self, key)
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: PrivDataFrame) -> None:
         # TODO: consider domain transform
-        if self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when df and bool_vec are not row-preserved.")
-
+        assert_ptag(self, key)
         self._value[key._value] = value._value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivDataFrame) -> PrivDataFrame:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive dataframes for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivDataFrame(data         = self._value == other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -200,9 +173,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __ne__(self, other: PrivDataFrame) -> PrivDataFrame:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive dataframes for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivDataFrame(data         = self._value != other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -219,9 +190,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __lt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive dataframes for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivDataFrame(data         = self._value < other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -238,9 +207,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __le__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive dataframes for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivDataFrame(data         = self._value <= other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -257,9 +224,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __gt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive dataframes for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivDataFrame(data         = self._value > other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -276,9 +241,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __ge__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive dataframes for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivDataFrame(data         = self._value >= other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -422,7 +385,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
                     ) -> PrivDataFrame | None:
         if inplace:
             self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
-            self._ptag = new_ptag()
+            self.renew_ptag()
             return None
         else:
             return PrivDataFrame(data         = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),
@@ -583,7 +546,7 @@ class PrivDataFrame(Prisoner[_pd.DataFrame]):
         distances = self.distance.create_exclusive_distances(len(groups))
 
         # create a dummy prisoner to track exclusive provenance
-        prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
+        prisoner_dummy = PrivPandasExclusiveDummy(parents=[self])
 
         # wrap each group by PrivDataFrame
         # TODO: update childrens' category domain that is chosen for the groupby key

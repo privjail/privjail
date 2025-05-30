@@ -21,53 +21,37 @@ import numpy as _np
 import pandas as _pd
 
 from ..util import DPError, is_realnum, realnum, floating
-from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
+from ..prisoner import SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from ..distance import Distance
 from .. import egrpc
-from .util import ElementType, PTag, new_ptag, total_max_distance
+from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
 
 T = TypeVar("T")
 
 # to avoid TypeError: type 'Series' is not subscriptable
-# class PrivSeries(Prisoner[_pd.Series[T]]):
+# class PrivSeries(PrivPandasBase[_pd.Series[T]]):
 @egrpc.remoteclass
-class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
+class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-arg]
     """Private Series.
 
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of values is treated as a sensitive value.
     """
     _domain : Domain
-    _ptag   : PTag
 
     def __init__(self,
                  data         : Any,
                  domain       : Domain,
                  distance     : Distance,
                  *,
-                 parents      : Sequence[Prisoner[Any]] = [],
-                 root_name    : str | None              = None,
-                 preserve_row : bool | None             = None,
-                 **kwargs    : Any,
+                 parents      : Sequence[PrivPandasBase[Any]] = [],
+                 root_name    : str | None                    = None,
+                 preserve_row : bool | None                   = None,
                  ):
-        if len(parents) == 0:
-            preserve_row = False
-        elif preserve_row is None:
-            raise ValueError("preserve_row is required when parents are specified.")
-
         self._domain = domain
-
-        if preserve_row:
-            from .dataframe import PrivDataFrame
-            parent_tags = [p._ptag for p in parents if isinstance(p, (PrivDataFrame, PrivSeries))]
-            assert len(parent_tags) > 0 and all([parent_tags[0] == pt for pt in parent_tags])
-            self._ptag = parent_tags[0]
-        else:
-            self._ptag = new_ptag()
-
-        data = _pd.Series(data, **kwargs)
-        super().__init__(value=data, distance=distance, parents=parents, root_name=root_name)
+        ser = _pd.Series(data)
+        super().__init__(value=ser, distance=distance, parents=parents, root_name=root_name, preserve_row=preserve_row)
 
     def _get_dummy_ser(self, n_rows: int = 3) -> _pd.Series[str]:
         index = list(range(n_rows)) + ['...']
@@ -89,9 +73,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __getitem__(self, key: PrivSeries[bool]) -> PrivSeries[T]:
-        if self._ptag != key._ptag:
-            raise DPError("ser[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
-
+        assert_ptag(self, key)
         return PrivSeries[T](data         = self._value.__getitem__(key._value),
                              domain       = self.domain,
                              distance     = self.distance,
@@ -100,16 +82,12 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __setitem__(self, key: PrivSeries[bool], value: ElementType) -> None:
-        if self._ptag != key._ptag:
-            raise DPError("df[bool_vec] cannot be accepted when ser and bool_vec are not row-preserved.")
-
+        assert_ptag(self, key)
         self._value[key._value] = value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value == other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -126,9 +104,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __ne__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value != other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -145,9 +121,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __lt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value < other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -164,9 +138,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __le__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value <= other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -183,9 +155,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __gt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value > other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -202,9 +172,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __ge__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value >= other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -221,9 +189,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __and__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value & other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -240,9 +206,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __rand__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = other._value & self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -259,9 +223,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __or__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value | other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -278,9 +240,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __ror__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = other._value | self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -297,9 +257,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __xor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = self._value ^ other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -316,9 +274,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
     @egrpc.multimethod
     def __rxor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
-        if self._ptag != other._ptag:
-            raise DPError("Length of sensitive series for comparison can be different.")
-
+        assert_ptag(self, other)
         return PrivSeries[bool](data         = other._value ^ self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -408,7 +364,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
                     ) -> PrivSeries[T] | None:
         if inplace:
             self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable")
-            self._ptag = new_ptag()
+            self.renew_ptag()
             return None
         else:
             return PrivSeries[T](data         = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable"),
@@ -642,9 +598,6 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
         if values is None:
             raise DPError("Please provide the `values` argument to prevent privacy leakage.")
 
-        if isinstance(values, Prisoner):
-            raise DPError("`values` cannot be sensitive values.")
-
         if not dropna and not any(_np.isnan(values)): # type: ignore
             # TODO: consider handling for pd.NA
             warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `values`", UserWarning)
@@ -656,7 +609,7 @@ class PrivSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
 
         distances = self.distance.create_exclusive_distances(counts.size)
 
-        prisoner_dummy = Prisoner(0, self.distance, parents=[self], children_type="exclusive")
+        prisoner_dummy = PrivPandasExclusiveDummy(parents=[self])
 
         return {k: SensitiveInt(counts.loc[k], distance=distances[i], parents=[prisoner_dummy])
                 for i, k in enumerate(counts.index)}

@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+from typing import Any, TypeVar, Generic, Sequence
+
 from .. import egrpc
-from ..util import realnum
+from ..util import DPError, realnum
+from ..provenance import ChildrenType
 from ..distance import Distance
-from ..prisoner import SensitiveInt, SensitiveFloat
+from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
+
+T = TypeVar("T")
 
 ElementType = realnum | str | bool
 
@@ -27,6 +33,43 @@ def new_ptag() -> PTag:
     global ptag_count
     ptag_count += 1
     return ptag_count
+
+class PrivPandasBase(Generic[T], Prisoner[T]):
+    _ptag : PTag
+
+    def __init__(self,
+                 value         : Any,
+                 distance      : Distance,
+                 parents       : Sequence[PrivPandasBase[Any]],
+                 root_name     : str | None,
+                 preserve_row  : bool | None,
+                 children_type : ChildrenType = "inclusive",
+                 ):
+        if len(parents) == 0:
+            preserve_row = False
+        elif preserve_row is None:
+            raise ValueError("preserve_row is required when parents are specified.")
+
+        if preserve_row:
+            assert_ptag(*parents)
+            self._ptag = parents[0]._ptag
+        else:
+            self._ptag = new_ptag()
+
+        super().__init__(value=value, distance=distance, parents=parents, root_name=root_name, children_type=children_type)
+
+    def renew_ptag(self) -> None:
+        self._ptag = new_ptag()
+
+def assert_ptag(*prisoners: PrivPandasBase[Any]) -> None:
+    if len(prisoners) > 0 and not all(prisoners[0]._ptag == p._ptag for p in prisoners):
+        raise DPError("Row tags do not match")
+
+class PrivPandasExclusiveDummy(PrivPandasBase[None]):
+    def __init__(self, parents: Sequence[PrivPandasBase[Any]]):
+        assert len(parents) > 0
+        super().__init__(value=None, distance=parents[0].distance, parents=parents,
+                         root_name=None, preserve_row=False, children_type="exclusive")
 
 @egrpc.function
 def total_max_distance(prisoners: list[SensitiveInt | SensitiveFloat]) -> realnum:
