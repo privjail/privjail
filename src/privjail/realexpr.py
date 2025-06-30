@@ -22,26 +22,26 @@ Expr = Any
 
 class Constraint(NamedTuple):
     # Constraint: d1 + d2 + ... + dn <= de
-    lhs: frozenset[Var] # distance variables {d1, d2, ..., dn}
-    rhs: Expr           # distance expression de
+    lhs: frozenset[Var] # variables {d1, d2, ..., dn}
+    rhs: Expr           # expression de
 
 def free_dvars(constraint: Constraint) -> frozenset[Var]:
     return constraint.lhs | (constraint.rhs.free_symbols if not is_realnum(constraint.rhs) else set())
 
-class Distance:
+class RealExpr:
     def __init__(self, expr: Expr, constraints: set[Constraint] | None = None):
         self.expr        = expr
         self.constraints = constraints if constraints is not None else set()
 
-    def __add__(self, other: realnum | Distance) -> Distance:
-        if isinstance(other, Distance):
-            return Distance(self.expr + other.expr, self.constraints | other.constraints)
+    def __add__(self, other: realnum | RealExpr) -> RealExpr:
+        if isinstance(other, RealExpr):
+            return RealExpr(self.expr + other.expr, self.constraints | other.constraints)
         else:
-            return Distance(self.expr + other, self.constraints)
+            return RealExpr(self.expr + other, self.constraints)
 
-    def __mul__(self, other: realnum) -> Distance:
-        # TODO: disallow distance * distance
-        return Distance(self.expr * other, self.constraints)
+    def __mul__(self, other: realnum) -> RealExpr:
+        # TODO: disallow RealExpr * RealExpr
+        return RealExpr(self.expr * other, self.constraints)
 
     def max(self) -> realnum:
         if is_realnum(self.expr):
@@ -49,7 +49,7 @@ class Distance:
 
         self._cleanup()
 
-        # aggregate a subexpression (d1 + d2 + ... + dn) to a single distance variable
+        # aggregate a subexpression (d1 + d2 + ... + dn) to a single variable
         # if they do not appear in other constraints or expressions
         sp_constraints = []
         dvars = self.expr.free_symbols
@@ -83,12 +83,12 @@ class Distance:
     def is_zero(self) -> bool:
         return self.expr == 0 # type: ignore[no-any-return]
 
-    def create_exclusive_distances(self, n_children: int) -> list[Distance]:
-        # Create new child distance variables to express exclusiveness
+    def create_exclusive_children(self, n_children: int) -> list[RealExpr]:
+        # Create new child variables to express exclusiveness
         # d1 + d2 + ... + dn <= d_current
-        dvars = [new_distance_var() for i in range(n_children)]
+        dvars = [new_var() for i in range(n_children)]
         constraints = self.constraints | {Constraint(frozenset(dvars), self.expr)}
-        return [Distance(dvar, constraints) for dvar in dvars]
+        return [RealExpr(dvar, constraints) for dvar in dvars]
 
     def _cleanup(self) -> None:
         # simplify the expression by substituting d1 + d2 + ... + dn in self.expr
@@ -108,19 +108,19 @@ class Distance:
             dvars = {d for c in constraints for d in free_dvars(c)}
         self.constraints = constraints
 
-distance_var_count = 0
+var_count = 0
 
-def new_distance_var() -> Var:
-    global distance_var_count
-    distance_var_count += 1
-    return _sp.Symbol(f"d{distance_var_count}")
+def new_var() -> Var:
+    global var_count
+    var_count += 1
+    return _sp.Symbol(f"d{var_count}")
 
-def _max(a: Distance, b: Distance) -> Distance:
+def _max(a: RealExpr, b: RealExpr) -> RealExpr:
     expr = _sp.Max(a.expr, b.expr)
     if expr.has(_sp.Max):
         # sympy.solvers.solveset.NonlinearError happens at lpmax() if Max() is included in the expression,
         # so we remove Max() here. However, the below is a loose approximation for the max operator.
         # TODO: improve handling for Max()
-        return Distance(a.expr + b.expr, a.constraints | b.constraints)
+        return RealExpr(a.expr + b.expr, a.constraints | b.constraints)
     else:
-        return Distance(expr, a.constraints | b.constraints)
+        return RealExpr(expr, a.constraints | b.constraints)

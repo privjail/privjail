@@ -22,7 +22,7 @@ import pandas as _pd
 
 from ..util import DPError, is_realnum, realnum, floating
 from ..prisoner import SensitiveInt, SensitiveFloat, _max as smax, _min as smin
-from ..distance import Distance
+from ..realexpr import RealExpr
 from .. import egrpc
 from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
@@ -45,7 +45,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     def __init__(self,
                  data          : Any,
                  domain        : Domain,
-                 distance      : Distance,
+                 distance      : RealExpr,
                  is_user_key   : bool                          = False,
                  user_max_freq : int | None                    = None,
                  *,
@@ -69,7 +69,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
         if self._is_uldp():
             raise DPError("This operation is not permitted for user Series.")
 
-    def _eldp_distance(self) -> Distance:
+    def _eldp_distance(self) -> RealExpr:
         if self._is_eldp():
             return self.distance
         else:
@@ -696,7 +696,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
         # Select only the specified values and fill non-existent counts with 0
         counts = counts.reindex(values).fillna(0).astype(int)
 
-        distances = self.distance.create_exclusive_distances(counts.size)
+        distances = self.distance.create_exclusive_children(counts.size)
 
         prisoner_dummy = PrivPandasExclusiveDummy(parents=[self])
 

@@ -30,7 +30,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": ppd.RealDomain(dtype="int64", range=(None, None)),
         "b": ppd.RealDomain(dtype="int64", range=(None, None)),
     }
-    pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
+    pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
@@ -125,7 +125,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(TypeError): pdf["a"] >  [0, 1, 2, 3, 4]
     with pytest.raises(TypeError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be compared against a private dataframe
     with pytest.raises(TypeError): pdf == x
@@ -196,7 +196,7 @@ def test_priv_dataframe_getitem() -> None:
     with pytest.raises(pj.DPError):
         pdf["a"][pdf_["a"] > 3]
 
-    x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be used as a column name
     with pytest.raises(TypeError):
@@ -257,7 +257,7 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    x = pj.Prisoner(value=0, distance=pj.Distance(1), root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
 
     # A sensitive value should not be assigned to a single-column view
     with pytest.raises(TypeError):

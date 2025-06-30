@@ -18,7 +18,7 @@ import privjail as pj
 
 def new_sensitive_int(value: int) -> pj.SensitiveInt:
     # TODO: how to handle multimethod function types?
-    return pj.SensitiveInt(value, distance=pj.Distance(1), root_name=str(uuid.uuid4())) + 0 # type: ignore[no-any-return]
+    return pj.SensitiveInt(value, distance=pj.RealExpr(1), root_name=str(uuid.uuid4())) + 0 # type: ignore[no-any-return]
 
 def test_sensitive_real_number() -> None:
     x = new_sensitive_int(12)

@@ -19,19 +19,19 @@ import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating
 from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, consume_privacy_budget, consumed_privacy_budget_all, ChildrenType
-from .distance import Distance, _max as dmax
+from .realexpr import RealExpr, _max as dmax
 from . import egrpc
 
 T = TypeVar("T")
 
 class Prisoner(Generic[T]):
     _value     : T
-    distance   : Distance
+    distance   : RealExpr
     provenance : list[ProvenanceEntity]
 
     def __init__(self,
                  value         : T,
-                 distance      : Distance,
+                 distance      : RealExpr,
                  *,
                  parents       : Sequence[Prisoner[Any]] = [],
                  root_name     : str | None              = None,
@@ -81,7 +81,7 @@ class Prisoner(Generic[T]):
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
                  value         : integer,
-                 distance      : Distance                = Distance(0),
+                 distance      : RealExpr                = RealExpr(0),
                  *,
                  parents       : Sequence[Prisoner[Any]] = [],
                  root_name     : str | None              = None,
@@ -197,7 +197,7 @@ class SensitiveInt(Prisoner[integer]):
 class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
                  value         : floating,
-                 distance      : Distance                = Distance(0),
+                 distance      : RealExpr                = RealExpr(0),
                  *,
                  parents       : Sequence[Prisoner[Any]] = [],
                  root_name     : str | None              = None,

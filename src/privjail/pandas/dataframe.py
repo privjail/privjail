@@ -22,7 +22,7 @@ import pandas as _pd
 from .. import egrpc
 from ..util import DPError, is_realnum, realnum, floating
 from ..prisoner import SensitiveInt
-from ..distance import Distance
+from ..realexpr import RealExpr
 from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
 from .series import PrivSeries, SensitiveSeries
@@ -46,7 +46,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     def __init__(self,
                  data          : Any,
                  domains       : Mapping[str, Domain],
-                 distance      : Distance,
+                 distance      : RealExpr,
                  user_key      : str | None                    = None,
                  user_max_freq : int | None                    = None,
                  index         : Any                           = None,
@@ -79,7 +79,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         if self._user_key is not None and self._user_key in columns:
             raise DPError("This operation is not permitted for the user key of user DataFrame.")
 
-    def _eldp_distance(self) -> Distance:
+    def _eldp_distance(self) -> RealExpr:
         if self._is_eldp():
             return self.distance
         else:
@@ -650,7 +650,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         groups = {key: grouped.get_group(key) if key in grouped.groups else gen_empty_df() for key in keys}
 
         # create new child distance variables to express exclusiveness
-        distances = self.distance.create_exclusive_distances(len(groups))
+        distances = self.distance.create_exclusive_children(len(groups))
 
         # create a dummy prisoner to track exclusive provenance
         prisoner_dummy = PrivPandasExclusiveDummy(parents=[self])

@@ -18,7 +18,7 @@ from typing import Any, TypeVar, Generic, Sequence
 from .. import egrpc
 from ..util import DPError, realnum
 from ..provenance import ChildrenType
-from ..distance import Distance
+from ..realexpr import RealExpr
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 
 T = TypeVar("T")
@@ -39,7 +39,7 @@ class PrivPandasBase(Generic[T], Prisoner[T]):
 
     def __init__(self,
                  value         : Any,
-                 distance      : Distance,
+                 distance      : RealExpr,
                  parents       : Sequence[PrivPandasBase[Any]],
                  root_name     : str | None,
                  preserve_row  : bool | None,
@@ -73,4 +73,4 @@ class PrivPandasExclusiveDummy(PrivPandasBase[None]):
 
 @egrpc.function
 def total_max_distance(prisoners: list[SensitiveInt | SensitiveFloat]) -> realnum:
-    return sum([x.distance for x in prisoners], start=Distance(0)).max()
+    return sum([x.distance for x in prisoners], start=RealExpr(0)).max()

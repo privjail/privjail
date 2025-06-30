@@ -22,7 +22,7 @@ import pandas as _pd
 from .. import egrpc
 from ..util import DPError
 from ..prisoner import SensitiveInt
-from ..distance import Distance
+from ..realexpr import RealExpr
 from .util import ElementType, PrivPandasExclusiveDummy, assert_ptag
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
@@ -57,7 +57,7 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
 
         domains[col] = column_schema2domain(col_schema)
 
-    return PrivDataFrame(data=df, domains=domains, distance=Distance(1), root_name=filepath)
+    return PrivDataFrame(data=df, domains=domains, distance=RealExpr(1), root_name=filepath)
 
 def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
              columns      : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
@@ -144,7 +144,7 @@ def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Seque
                    .reindex(list(colvalues), axis="columns") \
                    .fillna(0).astype(int)
 
-    distances = index.distance.create_exclusive_distances(counts.size)
+    distances = index.distance.create_exclusive_children(counts.size)
 
     prisoner_dummy = PrivPandasExclusiveDummy(parents=[index, columns])
 

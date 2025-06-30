@@ -17,10 +17,10 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
-distance = importlib.import_module("privjail.distance")
+realexpr = importlib.import_module("privjail.realexpr")
 
-def test_distance() -> None:
-    d = distance.Distance(1)
+def test_realexpr() -> None:
+    d = realexpr.RealExpr(1)
     assert d.max() == 1
 
     d = d * 2
@@ -29,15 +29,15 @@ def test_distance() -> None:
     d = d + 1
     assert d.max() == 3
 
-    x = distance.new_distance_var()
-    y = distance.new_distance_var()
-    z = distance.new_distance_var()
+    x = realexpr.new_var()
+    y = realexpr.new_var()
+    z = realexpr.new_var()
 
-    constraints = {distance.Constraint(frozenset({x, y, z}), 1)}
+    constraints = {realexpr.Constraint(frozenset({x, y, z}), 1)}
 
-    dx = distance.Distance(x, constraints)
-    dy = distance.Distance(y, constraints)
-    dz = distance.Distance(z, constraints)
+    dx = realexpr.RealExpr(x, constraints)
+    dy = realexpr.RealExpr(y, constraints)
+    dz = realexpr.RealExpr(z, constraints)
 
     assert dx.max() == 1
 
@@ -53,15 +53,15 @@ def test_distance() -> None:
     d = d + 1
     assert d.max() == 3
 
-    x_ = distance.new_distance_var()
-    y_ = distance.new_distance_var()
-    z_ = distance.new_distance_var()
+    x_ = realexpr.new_var()
+    y_ = realexpr.new_var()
+    z_ = realexpr.new_var()
 
-    constraints |= {distance.Constraint(frozenset({x_, y_, z_}), x)}
+    constraints |= {realexpr.Constraint(frozenset({x_, y_, z_}), x)}
 
-    dx_ = distance.Distance(x_, constraints)
-    dy_ = distance.Distance(y_, constraints)
-    dz_ = distance.Distance(z_, constraints)
+    dx_ = realexpr.RealExpr(x_, constraints)
+    dy_ = realexpr.RealExpr(y_, constraints)
+    dz_ = realexpr.RealExpr(z_, constraints)
 
     assert dx_.max() == 1
 
