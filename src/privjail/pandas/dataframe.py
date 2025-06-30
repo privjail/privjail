@@ -604,7 +604,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 dropna     : bool                         = True,
                 keys       : Sequence[ElementType] | None = None, # extra argument for privjail
                 ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
-        if self._is_uldp() and by == self._user_key:
+        # TODO: offload this check to the private server
+        if by == self.user_key:
             from .groupby import _group_by_user
             return _group_by_user(self, by, level=level, as_index=as_index, sort=sort,
                                   group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
@@ -659,7 +660,6 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 for (key, df), d in zip(groups.items(), distances)}
 
     def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
-        self._assert_not_uldp()
         data = [self[col].sum() for col in self.columns]
         if all(domain.dtype in ("int64", "Int64") for domain in self.domains.values()):
             return SensitiveSeries[int](data, index=self.columns)
@@ -667,7 +667,6 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
             return SensitiveSeries[float](data, index=self.columns)
 
     def mean(self, eps: float) -> _pd.Series[float]:
-        self._assert_not_uldp()
         eps_each = eps / len(self.columns)
         data = [self[col].mean(eps=eps_each) for col in self.columns]
         return _pd.Series(data, index=self.columns) # type: ignore[no-any-return]
