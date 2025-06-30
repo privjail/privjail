@@ -41,14 +41,14 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     """
     _domains       : Mapping[str, Domain]
     _user_key      : str | None
-    _user_max_freq : int | None
+    _user_max_freq : RealExpr
 
     def __init__(self,
                  data          : Any,
                  domains       : Mapping[str, Domain],
                  distance      : RealExpr,
                  user_key      : str | None                    = None,
-                 user_max_freq : int | None                    = None,
+                 user_max_freq : RealExpr                      = RealExpr.INF,
                  index         : Any                           = None,
                  columns       : Any                           = None,
                  dtype         : Any                           = None,
@@ -83,8 +83,6 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         if self._is_eldp():
             return self.distance
         else:
-            if self._user_max_freq is None:
-                raise DPError("Maximum user frequency of user DataFrame is unbounded.")
             return self.distance * self._user_max_freq
 
     def _get_dummy_df(self, n_rows: int = 3) -> _pd.DataFrame:
@@ -119,7 +117,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                                       domain        = self.domains[key],
                                       distance      = self.distance if user_key_included else self._eldp_distance(),
                                       is_user_key   = user_key_included,
-                                      user_max_freq = self._user_max_freq if user_key_included else None,
+                                      user_max_freq = self._user_max_freq if user_key_included else RealExpr.INF,
                                       parents       = [self],
                                       preserve_row  = True)
 
@@ -131,7 +129,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                              domains       = new_domains,
                              distance      = self.distance if user_key_included else self._eldp_distance(),
                              user_key      = self._user_key if user_key_included else None,
-                             user_max_freq = self._user_max_freq if user_key_included else None,
+                             user_max_freq = self._user_max_freq if user_key_included else RealExpr.INF,
                              parents       = [self],
                              preserve_row  = True)
 
@@ -169,7 +167,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         elif self._user_key == key:
             # This df is no longer a user df
             self._user_key = None
-            self._user_max_freq = None
+            self._user_max_freq = RealExpr.INF
 
         self._value[key] = value._value
         # TODO: add `value` to parents?
@@ -367,7 +365,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.property
     def user_max_freq(self) -> int | None:
-        return self._user_max_freq
+        return int(self._user_max_freq.max()) if not self._user_max_freq.is_inf() else None
 
     # TODO: add test
     @egrpc.method
@@ -440,14 +438,14 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
             if not user_key_included:
                 self._distance = self._eldp_distance()
                 self._user_key = None
-                self._user_max_freq = None
+                self._user_max_freq = RealExpr.INF
             return None
         else:
             return PrivDataFrame(data          = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace), # type: ignore
                                  domains       = new_domains,
                                  distance      = self.distance if user_key_included else self._eldp_distance(),
                                  user_key      = self._user_key if user_key_included else None,
-                                 user_max_freq = self._user_max_freq if user_key_included else None,
+                                 user_max_freq = self._user_max_freq if user_key_included else RealExpr.INF,
                                  parents       = [self],
                                  preserve_row  = True)
 

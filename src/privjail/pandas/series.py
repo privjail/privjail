@@ -40,14 +40,14 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     """
     _domain        : Domain
     _is_user_key   : bool
-    _user_max_freq : int | None
+    _user_max_freq : RealExpr
 
     def __init__(self,
                  data          : Any,
                  domain        : Domain,
                  distance      : RealExpr,
                  is_user_key   : bool                          = False,
-                 user_max_freq : int | None                    = None,
+                 user_max_freq : RealExpr                      = RealExpr.INF,
                  *,
                  parents       : Sequence[PrivPandasBase[Any]] = [],
                  root_name     : str | None                    = None,
@@ -73,8 +73,6 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
         if self._is_eldp():
             return self.distance
         else:
-            if self._user_max_freq is None:
-                raise DPError("Maximum user frequency of user Series is unbounded.")
             return self.distance * self._user_max_freq
 
     def _get_dummy_ser(self, n_rows: int = 3) -> _pd.Series[str]:
@@ -393,7 +391,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @egrpc.property
     def user_max_freq(self) -> int | None:
-        return self._user_max_freq
+        return int(self._user_max_freq.max()) if not self._user_max_freq.is_inf() else None
 
     # TODO: add test
     @egrpc.method

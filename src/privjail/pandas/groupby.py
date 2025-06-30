@@ -19,6 +19,7 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError
+from ..realexpr import RealExpr, _min
 from ..prisoner import Prisoner
 from .util import ElementType
 from .dataframe import PrivDataFrame, SensitiveDataFrame
@@ -98,7 +99,7 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
                              domains       = self.df.domains,
                              distance      = self.df.distance,
                              user_key      = self.df._user_key,
-                             user_max_freq = min(n, self.df._user_max_freq) if self.df._user_max_freq is not None else n,
+                             user_max_freq = _min(RealExpr(n), self.df._user_max_freq),
                              parents       = [self.df],
                              preserve_row  = False)
 

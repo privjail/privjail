@@ -26,6 +26,9 @@ T = TypeVar("T")
 
 @egrpc.multifunction
 def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) -> float:
+    if prisoner.distance.is_inf():
+        raise DPError(f"Unbounded sensitivity")
+
     sensitivity = prisoner.distance.max()
 
     if sensitivity <= 0:
@@ -52,6 +55,9 @@ def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
 def exponential_mechanism(scores: Sequence[SensitiveInt | SensitiveFloat], eps: floating) -> int:
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
+
+    if any(v.distance.is_inf() for v in scores):
+        raise DPError(f"Unbounded sensitivity")
 
     sensitivity = max([v.distance.max() for v in scores]) # type: ignore[type-var]
 

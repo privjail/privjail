@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 from typing import Any, NamedTuple
+import math
+
 from .util import realnum, is_realnum
+
 import sympy as _sp # type: ignore[import-untyped]
 
 Var = Any
@@ -29,21 +32,35 @@ def free_dvars(constraint: Constraint) -> frozenset[Var]:
     return constraint.lhs | (constraint.rhs.free_symbols if not is_realnum(constraint.rhs) else set())
 
 class RealExpr:
-    def __init__(self, expr: Expr, constraints: set[Constraint] | None = None):
+    INF: RealExpr
+
+    def __init__(self, expr: Expr, constraints: set[Constraint] | None = None, inf: bool = False):
         self.expr        = expr
         self.constraints = constraints if constraints is not None else set()
+        self.inf         = inf
 
     def __add__(self, other: realnum | RealExpr) -> RealExpr:
+        if self.inf or _is_inf(other):
+            return RealExpr.INF
+
         if isinstance(other, RealExpr):
             return RealExpr(self.expr + other.expr, self.constraints | other.constraints)
         else:
             return RealExpr(self.expr + other, self.constraints)
 
-    def __mul__(self, other: realnum) -> RealExpr:
-        # TODO: disallow RealExpr * RealExpr
-        return RealExpr(self.expr * other, self.constraints)
+    def __mul__(self, other: realnum | RealExpr) -> RealExpr:
+        if self.inf or _is_inf(other):
+            return RealExpr.INF
+
+        if isinstance(other, RealExpr):
+            return RealExpr(self.expr * other.expr, self.constraints | other.constraints)
+        else:
+            return RealExpr(self.expr * other, self.constraints)
 
     def max(self) -> realnum:
+        if self.inf:
+            return math.inf
+
         if is_realnum(self.expr):
             return self.expr
 
@@ -81,9 +98,15 @@ class RealExpr:
         return int(y) if y.is_integer else float(y)
 
     def is_zero(self) -> bool:
-        return self.expr == 0 # type: ignore[no-any-return]
+        return not self.inf and self.expr == 0
+
+    def is_inf(self) -> bool:
+        return self.inf
 
     def create_exclusive_children(self, n_children: int) -> list[RealExpr]:
+        if self.inf:
+            raise ValueError
+
         # Create new child variables to express exclusiveness
         # d1 + d2 + ... + dn <= d_current
         dvars = [new_var() for i in range(n_children)]
@@ -108,6 +131,8 @@ class RealExpr:
             dvars = {d for c in constraints for d in free_dvars(c)}
         self.constraints = constraints
 
+RealExpr.INF = RealExpr(0, constraints=None, inf=True)
+
 var_count = 0
 
 def new_var() -> Var:
@@ -115,12 +140,34 @@ def new_var() -> Var:
     var_count += 1
     return _sp.Symbol(f"d{var_count}")
 
+def _is_inf(x: realnum | RealExpr) -> bool:
+    return (
+        (isinstance(x, RealExpr) and x.inf)
+        or x == math.inf
+    )
+
 def _max(a: RealExpr, b: RealExpr) -> RealExpr:
+    if a.is_inf() or b.is_inf():
+        return RealExpr.INF
+
     expr = _sp.Max(a.expr, b.expr)
     if expr.has(_sp.Max):
         # sympy.solvers.solveset.NonlinearError happens at lpmax() if Max() is included in the expression,
         # so we remove Max() here. However, the below is a loose approximation for the max operator.
         # TODO: improve handling for Max()
+        return RealExpr(a.expr + b.expr, a.constraints | b.constraints)
+    else:
+        return RealExpr(expr, a.constraints | b.constraints)
+
+def _min(a: RealExpr, b: RealExpr) -> RealExpr:
+    if a.is_inf():
+        return b
+
+    if b.is_inf():
+        return a
+
+    expr = _sp.Min(a.expr, b.expr)
+    if expr.has(_sp.Min):
         return RealExpr(a.expr + b.expr, a.constraints | b.constraints)
     else:
         return RealExpr(expr, a.constraints | b.constraints)
