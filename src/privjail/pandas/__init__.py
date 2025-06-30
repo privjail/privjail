@@ -15,7 +15,7 @@
 from .domain import Domain, BoolDomain, RealDomain, StrDomain, CategoryDomain
 from .series import PrivSeries, SensitiveSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
-from .groupby import PrivDataFrameGroupBy
+from .groupby import PrivDataFrameGroupBy, PrivDataFrameGroupByUser
 from .functions import read_csv, crosstab, cut
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "PrivDataFrame",
     "SensitiveDataFrame",
     "PrivDataFrameGroupBy",
+    "PrivDataFrameGroupByUser",
     "read_csv",
     "crosstab",
     "cut",

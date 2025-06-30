@@ -13,10 +13,13 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator, Mapping, Sequence
 
 import pandas as _pd
 
+from .. import egrpc
+from ..util import DPError
+from ..prisoner import Prisoner
 from .util import ElementType
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 
@@ -57,3 +60,62 @@ class PrivDataFrameGroupBy:
     def mean(self, eps: float) -> _pd.DataFrame:
         data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
         return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
+
+# @egrpc.remoteclass
+# class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy[ByT, _TT]], Generic[ByT, _TT]):
+@egrpc.remoteclass
+class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
+    df         : PrivDataFrame
+    by_columns : list[str]
+
+    def __init__(self,
+                 obj        : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
+                 df         : PrivDataFrame,
+                 by_columns : list[str],
+                 ):
+        assert df._is_uldp()
+        self.df         = df
+        self.by_columns = by_columns
+        super().__init__(value=obj, distance=df.distance, parents=[df])
+
+    def __len__(self) -> int:
+        raise DPError("This operation is not allowed for user-grouped objects.")
+
+    @egrpc.method
+    def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupByUser:
+        # TODO: column order?
+        return PrivDataFrameGroupByUser(self._value[key], self.df, self.by_columns)
+
+    def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+        raise DPError("This operation is not allowed for user-grouped objects.")
+
+    def get_group(self, key: Any) -> PrivDataFrame:
+        raise DPError("This operation is not allowed for user-grouped objects.")
+
+    @egrpc.method
+    def head(self, n: int = 5) -> PrivDataFrame:
+        return PrivDataFrame(data          = self._value.head(n=n),
+                             domains       = self.df.domains,
+                             distance      = self.df.distance,
+                             user_key      = self.df._user_key,
+                             user_max_freq = min(n, self.df._user_max_freq) if self.df._user_max_freq is not None else n,
+                             parents       = [self.df],
+                             preserve_row  = False)
+
+@egrpc.function
+def _group_by_user(df         : PrivDataFrame,
+                   by         : str, # TODO: support more
+                   level      : int | None                   = None, # TODO: support multiindex?
+                   as_index   : bool                         = True,
+                   sort       : bool                         = True,
+                   group_keys : bool                         = True,
+                   observed   : bool                         = True,
+                   dropna     : bool                         = True,
+                   keys       : Sequence[ElementType] | None = None, # extra argument for privjail
+                   ) -> PrivDataFrameGroupByUser:
+    if df.user_key != by:
+        raise DPError("Something went wrong.")
+
+    # TODO: consider extra arguments
+    grouped = df._value.groupby(by, observed=observed)
+    return PrivDataFrameGroupByUser(grouped, df, [by])

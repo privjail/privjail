@@ -38,20 +38,44 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of values is treated as a sensitive value.
     """
-    _domain : Domain
+    _domain        : Domain
+    _is_user_key   : bool
+    _user_max_freq : int | None
 
     def __init__(self,
-                 data         : Any,
-                 domain       : Domain,
-                 distance     : Distance,
+                 data          : Any,
+                 domain        : Domain,
+                 distance      : Distance,
+                 is_user_key   : bool                          = False,
+                 user_max_freq : int | None                    = None,
                  *,
-                 parents      : Sequence[PrivPandasBase[Any]] = [],
-                 root_name    : str | None                    = None,
-                 preserve_row : bool | None                   = None,
+                 parents       : Sequence[PrivPandasBase[Any]] = [],
+                 root_name     : str | None                    = None,
+                 preserve_row  : bool | None                   = None,
                  ):
         self._domain = domain
+        self._is_user_key = is_user_key
+        self._user_max_freq = user_max_freq
         ser = _pd.Series(data)
         super().__init__(value=ser, distance=distance, parents=parents, root_name=root_name, preserve_row=preserve_row)
+
+    def _is_eldp(self) -> bool:
+        return not self._is_user_key
+
+    def _is_uldp(self) -> bool:
+        return self._is_user_key
+
+    def _assert_not_uldp(self) -> None:
+        if self._is_uldp():
+            raise DPError("This operation is not permitted for user Series.")
+
+    def _eldp_distance(self) -> Distance:
+        if self._is_eldp():
+            return self.distance
+        else:
+            if self._user_max_freq is None:
+                raise DPError("Maximum user frequency of user Series is unbounded.")
+            return self.distance * self._user_max_freq
 
     def _get_dummy_ser(self, n_rows: int = 3) -> _pd.Series[str]:
         index = list(range(n_rows)) + ['...']
@@ -74,20 +98,25 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __getitem__(self, key: PrivSeries[bool]) -> PrivSeries[T]:
         assert_ptag(self, key)
-        return PrivSeries[T](data         = self._value.__getitem__(key._value),
-                             domain       = self.domain,
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = False)
+        return PrivSeries[T](data          = self._value.__getitem__(key._value),
+                             domain        = self.domain,
+                             distance      = self.distance,
+                             is_user_key   = self._is_user_key,
+                             user_max_freq = self._user_max_freq,
+                             parents       = [self],
+                             preserve_row  = False)
 
     @egrpc.multimethod
     def __setitem__(self, key: PrivSeries[bool], value: ElementType) -> None:
         assert_ptag(self, key)
+        self._assert_not_uldp()
         self._value[key._value] = value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value == other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -96,6 +125,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__eq__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value == other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -105,6 +135,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __ne__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value != other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -113,6 +145,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__ne__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value != other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -122,6 +155,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __lt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value < other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -130,6 +165,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__lt__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value < other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -139,6 +175,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __le__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value <= other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -147,6 +185,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__le__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value <= other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -156,6 +195,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __gt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value > other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -164,6 +205,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__gt__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value > other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -173,6 +215,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __ge__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value >= other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -181,6 +225,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__ge__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value >= other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -190,6 +235,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __and__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value & other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -198,6 +245,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__and__.register
     def _(self, other: bool) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value & other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -207,6 +255,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __rand__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = other._value & self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -215,6 +265,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__rand__.register
     def _(self, other: bool) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = other & self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -224,6 +275,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __or__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value | other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -232,6 +285,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__or__.register
     def _(self, other: bool) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value | other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -241,6 +295,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __ror__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = other._value | self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -249,6 +305,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__ror__.register
     def _(self, other: bool) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = other | self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -258,6 +315,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __xor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = self._value ^ other._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -266,6 +325,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__xor__.register
     def _(self, other: bool) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = self._value ^ other,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -275,6 +335,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     @egrpc.multimethod
     def __rxor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivSeries[bool](data         = other._value ^ self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -283,6 +345,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @__rxor__.register
     def _(self, other: bool) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = other ^ self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -291,6 +354,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @egrpc.method
     def __invert__(self) -> PrivSeries[bool]:
+        self._assert_not_uldp()
         return PrivSeries[bool](data         = ~self._value,
                                 domain       = BoolDomain(),
                                 distance     = self.distance,
@@ -303,12 +367,12 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @egrpc.property
     def shape(self) -> tuple[SensitiveInt]:
-        nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
+        nrows = SensitiveInt(value=self._value.shape[0], distance=self._eldp_distance(), parents=[self])
         return (nrows,)
 
     @egrpc.property
     def size(self) -> SensitiveInt:
-        return SensitiveInt(value=self._value.size, distance=self.distance, parents=[self])
+        return SensitiveInt(value=self._value.size, distance=self._eldp_distance(), parents=[self])
 
     # FIXME
     @property
@@ -323,9 +387,18 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     def domain(self) -> Domain:
         return self._domain
 
+    @egrpc.property
+    def is_user_key(self) -> bool:
+        return self._is_user_key
+
+    @egrpc.property
+    def user_max_freq(self) -> int | None:
+        return self._user_max_freq
+
     # TODO: add test
     @egrpc.method
     def head(self, n: int = 5) -> PrivSeries[T]:
+        self._assert_not_uldp()
         return PrivSeries[T](data         = self._value.head(n),
                              domain       = self.domain,
                              distance     = self.distance * 2,
@@ -335,6 +408,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     # TODO: add test
     @egrpc.method
     def tail(self, n: int = 5) -> PrivSeries[T]:
+        self._assert_not_uldp()
         return PrivSeries[T](data         = self._value.tail(n),
                              domain       = self.domain,
                              distance     = self.distance * 2,
@@ -367,11 +441,13 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
             self.renew_ptag()
             return None
         else:
-            return PrivSeries[T](data         = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable"),
-                                 domain       = self.domain,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = False)
+            return PrivSeries[T](data          = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable"),
+                                 domain        = self.domain,
+                                 distance      = self.distance,
+                                 is_user_key   = self._is_user_key,
+                                 user_max_freq = self._user_max_freq,
+                                 parents       = [self],
+                                 preserve_row  = False)
 
     @overload
     def replace(self,
@@ -396,6 +472,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
                 *,
                 inplace    : bool = False,
                 ) -> PrivSeries[T] | None:
+        self._assert_not_uldp()
+
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
             # TODO: consider string and category dtype
             raise NotImplementedError
@@ -464,11 +542,13 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data         = self._value.dropna(inplace=inplace),
-                                 domain       = new_domain,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = True)
+            return PrivSeries[T](data          = self._value.dropna(inplace=inplace),
+                                 domain        = new_domain,
+                                 distance      = self.distance,
+                                 is_user_key   = self._is_user_key,
+                                 user_max_freq = self._user_max_freq,
+                                 parents       = [self],
+                                 preserve_row  = True)
 
     @overload
     def clip(self,
@@ -493,6 +573,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
              *,
              inplace  : bool = False,
              ) -> PrivSeries[T] | None:
+        self._assert_not_uldp()
+
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
 
@@ -515,6 +597,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @egrpc.method
     def sum(self) -> SensitiveInt | SensitiveFloat:
+        self._assert_not_uldp()
+
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
 
@@ -539,6 +623,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     @egrpc.method
     def mean(self, eps: float) -> float:
+        self._assert_not_uldp()
+
         if not isinstance(self.domain, RealDomain):
             raise TypeError("Domain must be real numbers.")
 
@@ -568,6 +654,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
                      dropna    : bool                     = True,
                      values    : list[ElementType] | None = None, # extra argument for privjail
                      ) -> SensitiveSeries[int]:
+        self._assert_not_uldp()
         # TODO: make SensitiveSeries a dataclass
         result = self._value_counts_impl(normalize, sort, ascending, bins, dropna, values)
         return SensitiveSeries[int](data=list(result.values()), index=list(result.keys()), dtype="object")
@@ -581,6 +668,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
                            dropna    : bool                     = True,
                            values    : list[ElementType] | None = None, # extra argument for privjail
                            ) -> dict[ElementType, SensitiveInt]:
+        self._assert_not_uldp()
+
         if normalize:
             # TODO: what is the sensitivity?
             raise NotImplementedError

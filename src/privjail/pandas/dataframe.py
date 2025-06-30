@@ -28,7 +28,7 @@ from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
 from .series import PrivSeries, SensitiveSeries
 
 if TYPE_CHECKING:
-    from .groupby import PrivDataFrameGroupBy
+    from .groupby import PrivDataFrameGroupBy, PrivDataFrameGroupByUser
 
 T = TypeVar("T")
 
@@ -39,24 +39,53 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
     Therefore, the number of rows is treated as a sensitive value.
     """
-    _domains : Mapping[str, Domain]
+    _domains       : Mapping[str, Domain]
+    _user_key      : str | None
+    _user_max_freq : int | None
 
     def __init__(self,
-                 data         : Any,
-                 domains      : Mapping[str, Domain],
-                 distance     : Distance,
-                 index        : Any                           = None,
-                 columns      : Any                           = None,
-                 dtype        : Any                           = None,
-                 copy         : bool                          = False,
+                 data          : Any,
+                 domains       : Mapping[str, Domain],
+                 distance      : Distance,
+                 user_key      : str | None                    = None,
+                 user_max_freq : int | None                    = None,
+                 index         : Any                           = None,
+                 columns       : Any                           = None,
+                 dtype         : Any                           = None,
+                 copy          : bool                          = False,
                  *,
-                 parents      : Sequence[PrivPandasBase[Any]] = [],
-                 root_name    : str | None                    = None,
-                 preserve_row : bool | None                   = None,
+                 parents       : Sequence[PrivPandasBase[Any]] = [],
+                 root_name     : str | None                    = None,
+                 preserve_row  : bool | None                   = None,
                  ):
         self._domains = domains
+        self._user_key = user_key
+        self._user_max_freq = user_max_freq
         df = _pd.DataFrame(data, index, columns, dtype, copy)
+        assert user_key is None or user_key in df.columns
         super().__init__(value=df, distance=distance, parents=parents, root_name=root_name, preserve_row=preserve_row)
+
+    def _is_eldp(self) -> bool:
+        return self._user_key is None
+
+    def _is_uldp(self) -> bool:
+        return self._user_key is not None
+
+    def _assert_not_uldp(self) -> None:
+        if self._is_uldp():
+            raise DPError("This operation is not permitted for user DataFrame.")
+
+    def _assert_user_key_not_in(self, columns: list[str]) -> None:
+        if self._user_key is not None and self._user_key in columns:
+            raise DPError("This operation is not permitted for the user key of user DataFrame.")
+
+    def _eldp_distance(self) -> Distance:
+        if self._is_eldp():
+            return self.distance
+        else:
+            if self._user_max_freq is None:
+                raise DPError("Maximum user frequency of user DataFrame is unbounded.")
+            return self.distance * self._user_max_freq
 
     def _get_dummy_df(self, n_rows: int = 3) -> _pd.DataFrame:
         index = list(range(n_rows)) + ['...']
@@ -84,33 +113,42 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     def __getitem__(self, key: str) -> PrivSeries[ElementType]:
         # TODO: consider duplicated column names
         value_type = self.domains[key].type()
+        user_key_included = self._user_key == key
         # TODO: how to pass `value_type` from server to client via egrpc?
-        return PrivSeries[value_type](data         = self._value.__getitem__(key), # type: ignore[valid-type]
-                                      domain       = self.domains[key],
-                                      distance     = self.distance,
-                                      parents      = [self],
-                                      preserve_row = True)
+        return PrivSeries[value_type](data          = self._value.__getitem__(key), # type: ignore[valid-type]
+                                      domain        = self.domains[key],
+                                      distance      = self.distance if user_key_included else self._eldp_distance(),
+                                      is_user_key   = user_key_included,
+                                      user_max_freq = self._user_max_freq if user_key_included else None,
+                                      parents       = [self],
+                                      preserve_row  = True)
 
     @__getitem__.register
     def _(self, key: list[str]) -> PrivDataFrame:
         new_domains = {c: d for c, d in self.domains.items() if c in key}
-        return PrivDataFrame(data         = self._value.__getitem__(key),
-                             domains      = new_domains,
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        user_key_included = self._user_key in key
+        return PrivDataFrame(data          = self._value.__getitem__(key),
+                             domains       = new_domains,
+                             distance      = self.distance if user_key_included else self._eldp_distance(),
+                             user_key      = self._user_key if user_key_included else None,
+                             user_max_freq = self._user_max_freq if user_key_included else None,
+                             parents       = [self],
+                             preserve_row  = True)
 
     @__getitem__.register
     def _(self, key: PrivSeries[bool]) -> PrivDataFrame:
         assert_ptag(self, key)
-        return PrivDataFrame(data         = self._value.__getitem__(key._value),
-                             domains      = self.domains,
-                             distance     = self.distance,
-                             parents      = [self, key],
-                             preserve_row = False)
+        return PrivDataFrame(data          = self._value.__getitem__(key._value),
+                             domains       = self.domains,
+                             distance      = self.distance,
+                             user_key      = self._user_key,
+                             user_max_freq = self._user_max_freq,
+                             parents       = [self, key],
+                             preserve_row  = False)
 
     @egrpc.multimethod
     def __setitem__(self, key: str, value: ElementType) -> None:
+        self._assert_user_key_not_in([key])
         # TODO: consider domain transform
         self._value[key] = value
 
@@ -124,39 +162,58 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 new_domains[col] = domain
         self._domains = new_domains
 
+        if value._is_uldp():
+            # Even if the original df has a user key, overwrite the key with the new one
+            self._user_key = key
+            self._user_max_freq = value._user_max_freq
+        elif self._user_key == key:
+            # This df is no longer a user df
+            self._user_key = None
+            self._user_max_freq = None
+
         self._value[key] = value._value
+        # TODO: add `value` to parents?
 
     @__setitem__.register
     def _(self, key: list[str], value: ElementType) -> None:
         # TODO: consider domain transform
+        self._assert_user_key_not_in(key)
         self._value[key] = value
 
     @__setitem__.register
     def _(self, key: list[str], value: PrivDataFrame) -> None:
         # TODO: consider domain transform
+        self._assert_user_key_not_in(key)
+        value._assert_not_uldp()
         self._value[key] = value._value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: ElementType) -> None:
         # TODO: consider domain transform
         assert_ptag(self, key)
+        self._assert_not_uldp()
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: list[ElementType]) -> None:
         # TODO: consider domain transform
         assert_ptag(self, key)
+        self._assert_not_uldp()
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: PrivDataFrame) -> None:
         # TODO: consider domain transform
         assert_ptag(self, key)
+        self._assert_not_uldp()
+        value._assert_not_uldp()
         self._value[key._value] = value._value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivDataFrame) -> PrivDataFrame:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivDataFrame(data         = self._value == other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -165,6 +222,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__eq__.register
     def _(self, other: ElementType) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value == other,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -174,6 +232,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     @egrpc.multimethod
     def __ne__(self, other: PrivDataFrame) -> PrivDataFrame:
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivDataFrame(data         = self._value != other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -182,6 +242,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__ne__.register
     def _(self, other: ElementType) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value != other,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -191,6 +252,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     @egrpc.multimethod
     def __lt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivDataFrame(data         = self._value < other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -199,6 +262,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__lt__.register
     def _(self, other: ElementType) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value < other,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -208,6 +272,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     @egrpc.multimethod
     def __le__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivDataFrame(data         = self._value <= other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -216,6 +282,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__le__.register
     def _(self, other: ElementType) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value <= other,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -225,6 +292,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     @egrpc.multimethod
     def __gt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivDataFrame(data         = self._value > other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -233,6 +302,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__gt__.register
     def _(self, other: ElementType) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value > other,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -242,6 +312,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     @egrpc.multimethod
     def __ge__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
         assert_ptag(self, other)
+        self._assert_not_uldp()
+        other._assert_not_uldp()
         return PrivDataFrame(data         = self._value >= other._value,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -250,6 +322,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__ge__.register
     def _(self, other: ElementType) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value >= other,
                              domains      = {c: BoolDomain() for c in self.domains},
                              distance     = self.distance,
@@ -262,13 +335,13 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.property
     def shape(self) -> tuple[SensitiveInt, int]:
-        nrows = SensitiveInt(value=self._value.shape[0], distance=self.distance, parents=[self])
+        nrows = SensitiveInt(value=self._value.shape[0], distance=self._eldp_distance(), parents=[self])
         ncols = self._value.shape[1]
         return (nrows, ncols)
 
     @egrpc.property
     def size(self) -> SensitiveInt:
-        return SensitiveInt(value=self._value.size, distance=self.distance * len(self._value.columns), parents=[self])
+        return SensitiveInt(value=self._value.size, distance=self._eldp_distance() * len(self._value.columns), parents=[self])
 
     # TODO: define privjail's own Index[T] type
     @property
@@ -288,9 +361,18 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     def domains(self) -> Mapping[str, Domain]:
         return self._domains
 
+    @egrpc.property
+    def user_key(self) -> str | None:
+        return self._user_key
+
+    @egrpc.property
+    def user_max_freq(self) -> int | None:
+        return self._user_max_freq
+
     # TODO: add test
     @egrpc.method
     def head(self, n: int = 5) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value.head(n),
                              domains      = self.domains,
                              distance     = self.distance * 2,
@@ -300,6 +382,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     # TODO: add test
     @egrpc.method
     def tail(self, n: int = 5) -> PrivDataFrame:
+        self._assert_not_uldp()
         return PrivDataFrame(data         = self._value.tail(n),
                              domains      = self.domains,
                              distance     = self.distance * 2,
@@ -342,22 +425,31 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
             raise DPError("Rows cannot be dropped")
 
         if isinstance(labels, str):
-            new_domains = {k: v for k, v in self.domains.items() if k != labels}
+            drop_columns = [labels]
         elif isinstance(labels, list):
-            new_domains = {k: v for k, v in self.domains.items() if k not in labels}
+            drop_columns = labels
         else:
             raise TypeError
+
+        new_domains = {k: v for k, v in self.domains.items() if k not in drop_columns}
+        user_key_included = self._is_uldp() and self._user_key not in drop_columns
 
         if inplace:
             self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace) # type: ignore
             self._domains = new_domains
+            if not user_key_included:
+                self._distance = self._eldp_distance()
+                self._user_key = None
+                self._user_max_freq = None
             return None
         else:
-            return PrivDataFrame(data         = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace), # type: ignore
-                                 domains      = new_domains,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = True)
+            return PrivDataFrame(data          = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace), # type: ignore
+                                 domains       = new_domains,
+                                 distance      = self.distance if user_key_included else self._eldp_distance(),
+                                 user_key      = self._user_key if user_key_included else None,
+                                 user_max_freq = self._user_max_freq if user_key_included else None,
+                                 parents       = [self],
+                                 preserve_row  = True)
 
     @overload
     def sort_values(self,
@@ -388,11 +480,13 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
             self.renew_ptag()
             return None
         else:
-            return PrivDataFrame(data         = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),
-                                 domains      = self.domains,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = False)
+            return PrivDataFrame(data          = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),
+                                 domains       = self.domains,
+                                 distance      = self.distance,
+                                 user_key      = self._user_key,
+                                 user_max_freq = self._user_max_freq,
+                                 parents       = [self],
+                                 preserve_row  = False)
 
     @overload
     def replace(self,
@@ -417,6 +511,8 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 *,
                 inplace    : bool = False,
                 ) -> PrivDataFrame | None:
+        self._assert_not_uldp()
+
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
             # TODO: consider string and category dtype
             raise NotImplementedError
@@ -492,11 +588,13 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data         = self._value.dropna(inplace=inplace),
-                                 domains      = new_domains,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = True)
+            return PrivDataFrame(data          = self._value.dropna(inplace=inplace),
+                                 domains       = new_domains,
+                                 distance      = self.distance,
+                                 user_key      = self._user_key,
+                                 user_max_freq = self._user_max_freq,
+                                 parents       = [self],
+                                 preserve_row  = True)
 
     def groupby(self,
                 by         : str, # TODO: support more
@@ -507,12 +605,17 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 observed   : bool                         = True,
                 dropna     : bool                         = True,
                 keys       : Sequence[ElementType] | None = None, # extra argument for privjail
-                ) -> PrivDataFrameGroupBy:
-        result = self._groupby_impl(by, level=level, as_index=as_index, sort=sort,
-                                    group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
+                ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
+        if self._is_uldp() and by == self._user_key:
+            from .groupby import _group_by_user
+            return _group_by_user(self, by, level=level, as_index=as_index, sort=sort,
+                                  group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
+        else:
+            result = self._groupby_impl(by, level=level, as_index=as_index, sort=sort,
+                                        group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
 
-        from .groupby import PrivDataFrameGroupBy
-        return PrivDataFrameGroupBy(result, [by])
+            from .groupby import PrivDataFrameGroupBy
+            return PrivDataFrameGroupBy(result, [by])
 
     @egrpc.method
     def _groupby_impl(self,
@@ -525,6 +628,10 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                       dropna     : bool                         = True,
                       keys       : Sequence[ElementType] | None = None, # extra argument for privjail
                       ) -> dict[ElementType, PrivDataFrame]:
+        if self._is_uldp():
+            # TODO: implement
+            raise NotImplemented
+
         key_domain = self.domains[by]
         if isinstance(key_domain, CategoryDomain):
             keys = key_domain.categories
@@ -554,6 +661,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 for (key, df), d in zip(groups.items(), distances)}
 
     def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
+        self._assert_not_uldp()
         data = [self[col].sum() for col in self.columns]
         if all(domain.dtype in ("int64", "Int64") for domain in self.domains.values()):
             return SensitiveSeries[int](data, index=self.columns)
@@ -561,6 +669,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
             return SensitiveSeries[float](data, index=self.columns)
 
     def mean(self, eps: float) -> _pd.Series[float]:
+        self._assert_not_uldp()
         eps_each = eps / len(self.columns)
         data = [self[col].mean(eps=eps_each) for col in self.columns]
         return _pd.Series(data, index=self.columns) # type: ignore[no-any-return]

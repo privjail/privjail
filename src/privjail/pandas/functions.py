@@ -100,6 +100,9 @@ def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Seque
                    dropna       : bool                           = True,
                    normalize    : bool | str | int               = False, # TODO: support Literal["all", "index", "columns", 0, 1] in egrpc
                    ) -> tuple[list[ElementType], list[ElementType], list[SensitiveInt]]:
+    index._assert_not_uldp()
+    columns._assert_not_uldp()
+
     if normalize is not False:
         # TODO: what is the sensitivity?
         print(normalize)
@@ -161,6 +164,8 @@ def cut(x              : PrivSeries[Any],
         include_lowest : bool                            = False
         # TODO: add more parameters
         ) -> PrivSeries[Any]:
+    x._assert_not_uldp()
+
     ser = _pd.cut(x._value, bins=bins, right=right, labels=labels, retbins=retbins, precision=precision, include_lowest=include_lowest) # type: ignore
 
     new_domain = CategoryDomain(categories=list(ser.dtype.categories))
