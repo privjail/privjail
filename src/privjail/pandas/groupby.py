@@ -31,7 +31,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
     _df                       : PrivDataFrame
     _by_columns               : list[str]
     _by_keys                  : list[list[ElementType]]
-    _distances                : dict[ElementType, RealExpr] | None
+    _variable_exprs           : dict[ElementType, RealExpr] | None
     _exclusive_prisoner_dummy : PrivPandasExclusiveDummy
 
     def __init__(self,
@@ -39,25 +39,28 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                  df                       : PrivDataFrame,
                  by_columns               : list[str],
                  by_keys                  : list[list[ElementType]],
-                 distances                : dict[ElementType, RealExpr] | None = None,
+                 variable_exprs           : dict[ElementType, RealExpr] | None = None,
                  exclusive_prisoner_dummy : PrivPandasExclusiveDummy | None    = None,
                  ):
         self._df                       = df
         self._by_columns               = by_columns
         self._by_keys                  = by_keys
-        self._distances                = distances
+        self._variable_exprs           = variable_exprs
         self._exclusive_prisoner_dummy = PrivPandasExclusiveDummy(parents=[df]) if exclusive_prisoner_dummy is None else exclusive_prisoner_dummy
         super().__init__(value=obj, distance=df.distance, parents=[df])
 
-    def _get_distances(self) -> dict[ElementType, RealExpr]:
-        if self._distances is None:
-            distances = self._df.distance.create_exclusive_children(len(self))
+    def _get_variable_exprs(self) -> dict[ElementType, RealExpr]:
+        if self._variable_exprs is None:
+            if self._df._is_uldp():
+                exprs = self._df._user_max_freq.create_exclusive_children(len(self))
+            else:
+                exprs = self._df.distance.create_exclusive_children(len(self))
 
             # TODO: support groupby multiple columns
             assert len(self._by_keys) == 1
-            self._distances = {key: d for key, d in zip(self._by_keys[0], distances)}
+            self._variable_exprs = {key: d for key, d in zip(self._by_keys[0], exprs)}
 
-        return self._distances
+        return self._variable_exprs
 
     def _gen_empty_df(self) -> _pd.DataFrame:
         columns = self._df.columns
@@ -82,9 +85,14 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                   for key in self._by_keys[0]}
 
         # TODO: update childrens' category domain that is chosen for the groupby key
-        return {key: PrivDataFrame(df, domains=self._df.domains, distance=d,
-                                   parents=[self._exclusive_prisoner_dummy], preserve_row=False) \
-                for (key, df), d in zip(groups.items(), self._get_distances().values())}
+        return {key: PrivDataFrame(df,
+                                   domains       = self._df.domains,
+                                   distance      = self._df.distance if self._df._is_uldp() else e,
+                                   user_key      = self._df.user_key,
+                                   user_max_freq = e if self._df._is_uldp() else RealExpr.INF,
+                                   parents       = [self._exclusive_prisoner_dummy],
+                                   preserve_row  = False) \
+                for (key, df), e in zip(groups.items(), self._get_variable_exprs().values())}
 
     @egrpc.method
     def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
@@ -96,7 +104,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # TODO: column order?
         new_df = self._df[self._by_columns + keys]
         return PrivDataFrameGroupBy(self._value[key], new_df, self._by_columns, self._by_keys,
-                                    self._distances, self._exclusive_prisoner_dummy)
+                                    self._variable_exprs, self._exclusive_prisoner_dummy)
 
     def get_group(self, key: ElementType | tuple[ElementType, ...]) -> PrivDataFrame:
         if isinstance(key, tuple):
@@ -118,9 +126,14 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # TODO: support groupby multiple columns
         key = keys[0]
         df = self._value.get_group(key) if key in self._value.groups else self._gen_empty_df()
-        distance = self._get_distances()[key]
-        return PrivDataFrame(df, domains=self._df.domains, distance=distance,
-                             parents=[self._exclusive_prisoner_dummy], preserve_row=False)
+        expr = self._get_variable_exprs()[key]
+        return PrivDataFrame(df,
+                             domains       = self._df.domains,
+                             distance      = self._df.distance if self._df._is_uldp() else expr,
+                             user_key      = self._df.user_key,
+                             user_max_freq = expr if self._df._is_uldp() else RealExpr.INF,
+                             parents       = [self._exclusive_prisoner_dummy],
+                             preserve_row  = False)
 
     def sum(self) -> SensitiveDataFrame:
         # FIXME
