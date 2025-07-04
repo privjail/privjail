@@ -21,53 +21,128 @@ from .. import egrpc
 from ..util import DPError
 from ..realexpr import RealExpr, _min
 from ..prisoner import Prisoner
-from .util import ElementType
+from .util import ElementType, PrivPandasExclusiveDummy
+from .domain import CategoryDomain
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 
-class PrivDataFrameGroupBy:
+@egrpc.remoteclass
+class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
     # TODO: groups are ordered?
-    groups     : Mapping[ElementType, PrivDataFrame]
-    by_columns : list[str]
+    _df                       : PrivDataFrame
+    _by_columns               : list[str]
+    _by_keys                  : list[list[ElementType]]
+    _distances                : dict[ElementType, RealExpr] | None
+    _exclusive_prisoner_dummy : PrivPandasExclusiveDummy
 
-    def __init__(self, groups: Mapping[ElementType, PrivDataFrame], by_columns: list[str]):
-        self.groups     = groups
-        self.by_columns = by_columns
+    def __init__(self,
+                 obj                      : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
+                 df                       : PrivDataFrame,
+                 by_columns               : list[str],
+                 by_keys                  : list[list[ElementType]],
+                 distances                : dict[ElementType, RealExpr] | None = None,
+                 exclusive_prisoner_dummy : PrivPandasExclusiveDummy | None    = None,
+                 ):
+        self._df                       = df
+        self._by_columns               = by_columns
+        self._by_keys                  = by_keys
+        self._distances                = distances
+        self._exclusive_prisoner_dummy = PrivPandasExclusiveDummy(parents=[df]) if exclusive_prisoner_dummy is None else exclusive_prisoner_dummy
+        super().__init__(value=obj, distance=df.distance, parents=[df])
 
+    def _get_distances(self) -> dict[ElementType, RealExpr]:
+        if self._distances is None:
+            distances = self._df.distance.create_exclusive_children(len(self))
+
+            # TODO: support groupby multiple columns
+            assert len(self._by_keys) == 1
+            self._distances = {key: d for key, d in zip(self._by_keys[0], distances)}
+
+        return self._distances
+
+    def _gen_empty_df(self) -> _pd.DataFrame:
+        columns = self._df.columns
+        dtypes = self._df.dtypes
+        return _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})
+
+    @egrpc.method
     def __len__(self) -> int:
-        return len(self.groups)
+        prod = 1
+        for keys in self._by_keys:
+            prod *= len(keys)
+        return prod
 
-    def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
+    def __iter__(self) -> Iterator[tuple[ElementType, PrivDataFrame]]:
+        # TODO: support groupby multiple columns
         return iter(self.groups.items())
 
+    @egrpc.property
+    def groups(self) -> dict[ElementType, PrivDataFrame]:
+        # set empty groups for absent keys
+        groups = {key: self._value.get_group(key) if key in self._value.groups else self._gen_empty_df() \
+                  for key in self._by_keys[0]}
+
+        # TODO: update childrens' category domain that is chosen for the groupby key
+        return {key: PrivDataFrame(df, domains=self._df.domains, distance=d,
+                                   parents=[self._exclusive_prisoner_dummy], preserve_row=False) \
+                for (key, df), d in zip(groups.items(), self._get_distances().values())}
+
+    @egrpc.method
     def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
-        if isinstance(key, str):
-            keys = [key]
-        elif isinstance(key, list):
+        if isinstance(key, list):
             keys = key
         else:
-            raise TypeError
+            keys = [key]
 
         # TODO: column order?
-        new_groups = {k: df[self.by_columns + keys] for k, df in self.groups.items()}
-        return PrivDataFrameGroupBy(new_groups, self.by_columns)
+        new_df = self._df[self._by_columns + keys]
+        return PrivDataFrameGroupBy(self._value[key], new_df, self._by_columns, self._by_keys,
+                                    self._distances, self._exclusive_prisoner_dummy)
 
-    def get_group(self, key: Any) -> PrivDataFrame:
-        return self.groups[key]
+    def get_group(self, key: ElementType | tuple[ElementType, ...]) -> PrivDataFrame:
+        if isinstance(key, tuple):
+            keys = list(key)
+        else:
+            keys = [key]
+
+        return self._get_group_impl(keys)
+
+    @egrpc.method
+    def _get_group_impl(self, keys: list[ElementType]) -> PrivDataFrame:
+        if len(keys) != len(self._by_columns):
+            raise ValueError
+
+        for key, possible_keys in zip(keys, self._by_keys):
+            if key not in possible_keys:
+                raise ValueError
+
+        # TODO: support groupby multiple columns
+        key = keys[0]
+        df = self._value.get_group(key) if key in self._value.groups else self._gen_empty_df()
+        distance = self._get_distances()[key]
+        return PrivDataFrame(df, domains=self._df.domains, distance=distance,
+                             parents=[self._exclusive_prisoner_dummy], preserve_row=False)
 
     def sum(self) -> SensitiveDataFrame:
-        data = [df.drop(self.by_columns, axis=1).sum() for key, df in self.groups.items()]
+        # FIXME
+        data = [df.drop(self.by_columns, axis=1, errors="ignore").sum() for key, df in self.groups.items()]
         return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
 
     def mean(self, eps: float) -> _pd.DataFrame:
-        data = [df.drop(self.by_columns, axis=1).mean(eps=eps) for key, df in self.groups.items()]
+        # FIXME
+        data = [df.drop(self.by_columns, axis=1, errors="ignore").mean(eps=eps) for key, df in self.groups.items()]
         return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
+
+    # FIXME: non-standard API
+    @egrpc.property
+    def by_columns(self) -> list[str]:
+        return self._by_columns
 
 # @egrpc.remoteclass
 # class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy[ByT, _TT]], Generic[ByT, _TT]):
 @egrpc.remoteclass
 class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
-    df         : PrivDataFrame
-    by_columns : list[str]
+    _df         : PrivDataFrame
+    _by_columns : list[str]
 
     def __init__(self,
                  obj        : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
@@ -75,8 +150,8 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
                  by_columns : list[str],
                  ):
         assert df._is_uldp()
-        self.df         = df
-        self.by_columns = by_columns
+        self._df         = df
+        self._by_columns = by_columns
         super().__init__(value=obj, distance=df.distance, parents=[df])
 
     def __len__(self) -> int:
@@ -85,7 +160,7 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
     @egrpc.method
     def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupByUser:
         # TODO: column order?
-        return PrivDataFrameGroupByUser(self._value[key], self.df, self.by_columns)
+        return PrivDataFrameGroupByUser(self._value[key], self._df, self._by_columns)
 
     def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
         raise DPError("This operation is not allowed for user-grouped objects.")
@@ -96,27 +171,36 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
     @egrpc.method
     def head(self, n: int = 5) -> PrivDataFrame:
         return PrivDataFrame(data          = self._value.head(n=n),
-                             domains       = self.df.domains,
-                             distance      = self.df.distance,
-                             user_key      = self.df._user_key,
-                             user_max_freq = _min(RealExpr(n), self.df._user_max_freq),
-                             parents       = [self.df],
+                             domains       = self._df.domains,
+                             distance      = self._df.distance,
+                             user_key      = self._df._user_key,
+                             user_max_freq = _min(RealExpr(n), self._df._user_max_freq),
+                             parents       = [self._df],
                              preserve_row  = False)
 
 @egrpc.function
-def _group_by_user(df         : PrivDataFrame,
-                   by         : str, # TODO: support more
-                   level      : int | None                   = None, # TODO: support multiindex?
-                   as_index   : bool                         = True,
-                   sort       : bool                         = True,
-                   group_keys : bool                         = True,
-                   observed   : bool                         = True,
-                   dropna     : bool                         = True,
-                   keys       : Sequence[ElementType] | None = None, # extra argument for privjail
-                   ) -> PrivDataFrameGroupByUser:
-    if df.user_key != by:
-        raise DPError("Something went wrong.")
-
+def _do_group_by(df         : PrivDataFrame,
+                 by         : str, # TODO: support more
+                 level      : int | None                   = None, # TODO: support multiindex?
+                 as_index   : bool                         = True,
+                 sort       : bool                         = True,
+                 group_keys : bool                         = True,
+                 observed   : bool                         = True,
+                 dropna     : bool                         = True,
+                 keys       : Sequence[ElementType] | None = None, # extra argument for privjail
+                 ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
     # TODO: consider extra arguments
     grouped = df._value.groupby(by, observed=observed)
-    return PrivDataFrameGroupByUser(grouped, df, [by])
+
+    if df.user_key == by:
+        return PrivDataFrameGroupByUser(grouped, df, [by])
+
+    else:
+        key_domain = df.domains[by]
+        if isinstance(key_domain, CategoryDomain):
+            keys = key_domain.categories
+
+        if keys is None:
+            raise DPError("Please provide the `keys` argument to prevent privacy leakage for non-categorical columns.")
+
+        return PrivDataFrameGroupBy(grouped, df, [by], [list(keys)])

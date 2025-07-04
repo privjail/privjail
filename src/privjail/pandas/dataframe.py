@@ -23,7 +23,7 @@ from .. import egrpc
 from ..util import DPError, is_realnum, realnum, floating
 from ..prisoner import SensitiveInt
 from ..realexpr import RealExpr
-from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
+from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
 from .series import PrivSeries, SensitiveSeries
 
@@ -396,6 +396,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
              columns : str | list[str] | None = ...,
              level   : int | None             = ...,
              inplace : Literal[True],
+             errors  : str                    = "raise",
              ) -> None: ...
 
     @overload
@@ -407,6 +408,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
              columns : str | list[str] | None = ...,
              level   : int | None             = ...,
              inplace : Literal[False]         = ...,
+             errors  : str                    = "raise",
              ) -> PrivDataFrame: ...
 
     @egrpc.method
@@ -418,6 +420,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
              columns : str | list[str] | None = None,
              level   : int | None             = None,
              inplace : bool                   = False,
+             errors  : str                    = "raise", # "raise" | "ignore"
              ) -> PrivDataFrame | None:
         if axis not in (1, "columns") or index is not None:
             raise DPError("Rows cannot be dropped")
@@ -433,7 +436,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         user_key_included = self._is_uldp() and self._user_key not in drop_columns
 
         if inplace:
-            self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace) # type: ignore
+            self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors) # type: ignore
             self._domains = new_domains
             if not user_key_included:
                 self._distance = self._eldp_distance()
@@ -441,7 +444,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 self._user_max_freq = RealExpr.INF
             return None
         else:
-            return PrivDataFrame(data          = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace), # type: ignore
+            return PrivDataFrame(data          = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors), # type: ignore
                                  domains       = new_domains,
                                  distance      = self.distance if user_key_included else self._eldp_distance(),
                                  user_key      = self._user_key if user_key_included else None,
@@ -604,60 +607,9 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                 dropna     : bool                         = True,
                 keys       : Sequence[ElementType] | None = None, # extra argument for privjail
                 ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
-        # TODO: offload this check to the private server
-        if by == self.user_key:
-            from .groupby import _group_by_user
-            return _group_by_user(self, by, level=level, as_index=as_index, sort=sort,
-                                  group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
-        else:
-            result = self._groupby_impl(by, level=level, as_index=as_index, sort=sort,
-                                        group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
-
-            from .groupby import PrivDataFrameGroupBy
-            return PrivDataFrameGroupBy(result, [by])
-
-    @egrpc.method
-    def _groupby_impl(self,
-                      by         : str, # TODO: support more
-                      level      : int | None                   = None, # TODO: support multiindex?
-                      as_index   : bool                         = True,
-                      sort       : bool                         = True,
-                      group_keys : bool                         = True,
-                      observed   : bool                         = True,
-                      dropna     : bool                         = True,
-                      keys       : Sequence[ElementType] | None = None, # extra argument for privjail
-                      ) -> dict[ElementType, PrivDataFrame]:
-        if self._is_uldp():
-            # TODO: implement
-            raise NotImplemented
-
-        key_domain = self.domains[by]
-        if isinstance(key_domain, CategoryDomain):
-            keys = key_domain.categories
-
-        if keys is None:
-            raise DPError("Please provide the `keys` argument to prevent privacy leakage for non-categorical columns.")
-
-        # TODO: consider extra arguments
-        grouped = self._value.groupby(by, observed=observed)
-
-        # set empty groups for absent `keys`
-        columns = self._value.columns
-        dtypes = self._value.dtypes
-        def gen_empty_df() -> _pd.DataFrame:
-            return _pd.DataFrame({c: _pd.Series(dtype=d) for c, d in zip(columns, dtypes)})
-        groups = {key: grouped.get_group(key) if key in grouped.groups else gen_empty_df() for key in keys}
-
-        # create new child distance variables to express exclusiveness
-        distances = self.distance.create_exclusive_children(len(groups))
-
-        # create a dummy prisoner to track exclusive provenance
-        prisoner_dummy = PrivPandasExclusiveDummy(parents=[self])
-
-        # wrap each group by PrivDataFrame
-        # TODO: update childrens' category domain that is chosen for the groupby key
-        return {key: PrivDataFrame(df, domains=self.domains, distance=d, parents=[prisoner_dummy], preserve_row=False) \
-                for (key, df), d in zip(groups.items(), distances)}
+        from .groupby import _do_group_by
+        return _do_group_by(self, by, level=level, as_index=as_index, sort=sort,
+                            group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
 
     def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
         data = [self[col].sum() for col in self.columns]
