@@ -81,11 +81,17 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
         return any(is_type_match(obj, th) for th in type_args)
 
     elif type_origin in (tuple, Tuple):
-        return (
-            isinstance(obj, tuple)
-            and len(obj) == len(type_args)
-            and all(is_type_match(o, th) for o, th in zip(obj, type_args))
-        )
+        if len(type_args) == 2 and type_args[1] is Ellipsis:
+            return (
+                isinstance(obj, tuple)
+                and all(is_type_match(o, type_args[0]) for o in obj)
+            )
+        else:
+            return (
+                isinstance(obj, tuple)
+                and len(obj) == len(type_args)
+                and all(is_type_match(o, th) for o, th in zip(obj, type_args))
+            )
 
     elif type_origin in (list, List, Sequence):
         return (

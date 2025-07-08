@@ -111,9 +111,13 @@ def gen_proto_field_def(index          : int,
         index += 1
 
     elif type_origin in (tuple, Tuple):
-        msgname = f"{param_name.capitalize()}TupleMessage"
-        child_type_hints = {f"item{i}": th for i, th in enumerate(type_args)}
-        proto_defs += gen_proto_msg_def(msgname, child_type_hints, allow_subclass=allow_subclass)
+        if len(type_args) == 2 and type_args[1] is Ellipsis:
+            msgname = f"{param_name.capitalize()}TupleVMessage"
+            proto_defs += gen_proto_msg_def(msgname, {"items": type_args[0]}, allow_subclass=allow_subclass, repeated=True)
+        else:
+            msgname = f"{param_name.capitalize()}TupleMessage"
+            child_type_hints = {f"item{i}": th for i, th in enumerate(type_args)}
+            proto_defs += gen_proto_msg_def(msgname, child_type_hints, allow_subclass=allow_subclass)
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{msgname} {param_name} = {index + 1};")
         index += 1
 

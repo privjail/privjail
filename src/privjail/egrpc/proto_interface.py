@@ -164,11 +164,15 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
         raise ValueError(f"Parameter '{param_name}' is empty.")
 
     elif type_origin in (tuple, Tuple):
-        child_proto_msg = getattr(proto_msg, param_name)
-        objs = []
-        for i, th in enumerate(type_args):
-            objs.append(get_proto_field(child_proto_msg, f"item{i}", th, allow_subclass=allow_subclass, on_server=on_server))
-        return tuple(objs)
+        if len(type_args) == 2 and type_args[1] is Ellipsis:
+            repeated_container = getattr(proto_msg, param_name).items
+            return tuple(get_proto_repeated_field(repeated_container, param_name, type_args[0], allow_subclass=allow_subclass, on_server=on_server))
+        else:
+            child_proto_msg = getattr(proto_msg, param_name)
+            objs = []
+            for i, th in enumerate(type_args):
+                objs.append(get_proto_field(child_proto_msg, f"item{i}", th, allow_subclass=allow_subclass, on_server=on_server))
+            return tuple(objs)
 
     elif type_origin in (list, List, Sequence):
         repeated_container = getattr(proto_msg, param_name).elements
@@ -238,9 +242,13 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
         raise TypeError(f"Type '{type(obj)}' of parameter '{param_name}' does not match any of {type_hint}.")
 
     elif type_origin in (tuple, Tuple):
-        child_proto_msg = getattr(proto_msg, param_name)
-        for i, (th, o) in enumerate(zip(type_args, obj)):
-            set_proto_field(child_proto_msg, f"item{i}", th, o, allow_subclass=allow_subclass, on_server=on_server)
+        if len(type_args) == 2 and type_args[1] is Ellipsis:
+            repeated_container = getattr(proto_msg, param_name).items
+            set_proto_repeated_field(repeated_container, param_name, type_args[0], obj, allow_subclass=allow_subclass, on_server=on_server)
+        else:
+            child_proto_msg = getattr(proto_msg, param_name)
+            for i, (th, o) in enumerate(zip(type_args, obj)):
+                set_proto_field(child_proto_msg, f"item{i}", th, o, allow_subclass=allow_subclass, on_server=on_server)
 
     elif type_origin in (list, List, Sequence):
         repeated_container = getattr(proto_msg, param_name).elements

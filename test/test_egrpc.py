@@ -106,6 +106,10 @@ def func7(d: Dict[str, int]) -> dict[str, list[str]]:
 def func8(x: Optional[int] = None) -> int | None:
     return x * x if x is not None else None
 
+@egrpc.function
+def func9(x: Tuple[int, ...]) -> Tuple[float, ...]:
+    return tuple(float(n) for n in x)
+
 def test_function(server: Any) -> None:
     assert func1("Alice", 30) == "Alice: 30"
     assert func2("Bob", 60) == "Bob: 60.00"
@@ -119,6 +123,7 @@ def test_function(server: Any) -> None:
     assert func7({"a": 1, "b": 2}) == {"a": ["a"], "b": ["b", "b"]}
     assert func8(2) == 4
     assert func8() == None
+    assert func9((1, 2, 3)) == (1.0, 2.0, 3.0)
 
 @egrpc.multifunction
 def mfunc1(x: int | float, y: int | float) -> float:
