@@ -152,13 +152,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__setitem__.register
     def _(self, key: str, value: PrivSeries[Any]) -> None:
-        new_domains = dict()
-        for col, domain in self.domains.items():
-            if col == key:
-                new_domains[col] = value.domain
-            else:
-                new_domains[col] = domain
-        self._domains = new_domains
+        self._domains = dict(self.domains) | {key: value.domain}
 
         if value._is_uldp():
             # Even if the original df has a user key, overwrite the key with the new one
