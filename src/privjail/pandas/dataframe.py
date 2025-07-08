@@ -616,6 +616,25 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         data = [self[col].mean(eps=eps_each) for col in self.columns]
         return _pd.Series(data, index=self.columns) # type: ignore[no-any-return]
 
+    @egrpc.method
+    def sample(self,
+               n       : int | None = None,
+               frac    : int | None = None,
+               replace : bool       = False,
+               ) -> PrivDataFrame:
+        # TODO: consider more parameters
+        assert n is None
+        assert frac is not None
+        assert frac <= 1
+        assert not replace
+        return PrivDataFrame(data          = self._value.sample(frac=frac),
+                             domains       = self.domains,
+                             distance      = self.distance,
+                             user_key      = self._user_key,
+                             user_max_freq = self._user_max_freq,
+                             parents       = [self],
+                             preserve_row  = False)
+
 class SensitiveDataFrame(_pd.DataFrame):
     """Sensitive DataFrame.
 
