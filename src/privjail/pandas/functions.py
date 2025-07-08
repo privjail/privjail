@@ -42,6 +42,7 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
         schema = dict()
 
     domains = dict()
+    user_key = None
     for col in df.columns:
         if not isinstance(col, str):
             raise ValueError("Column name must be a string.")
@@ -51,13 +52,22 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
         else:
             col_schema = dict(type="string" if df.dtypes[col] == "object" else df.dtypes[col])
 
+        is_user_key = col_schema["user_key"] if "user_key" in col_schema else False
+        if is_user_key:
+            user_key = col
+            # TODO: handle duplicates of user keys
+
         col_schema = normalize_column_schema(col_schema)
 
         df[col] = apply_column_schema(df[col], col_schema, col)
 
         domains[col] = column_schema2domain(col_schema)
 
-    return PrivDataFrame(data=df, domains=domains, distance=RealExpr(1), root_name=filepath)
+    return PrivDataFrame(data      = df,
+                         domains   = domains,
+                         distance  = RealExpr(1),
+                         user_key  = user_key,
+                         root_name = filepath)
 
 def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
              columns      : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
