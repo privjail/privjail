@@ -1,0 +1,15 @@
+{
+    "taxi_id": {
+        "type": "int64",
+        "user_key": true
+    },
+    "timestamp": {
+        "type": "string"
+    },
+    "longitude": {
+        "type": "float64"
+    },
+    "latitude": {
+        "type": "float64"
+    }
+}

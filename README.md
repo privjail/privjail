@@ -16,7 +16,7 @@ pip install privjail
 To run a decision tree example:
 ```sh
 cd examples/
-./download_dataset.bash
+./download_dataset_adult.bash
 python decision_tree.py
 ```
 
