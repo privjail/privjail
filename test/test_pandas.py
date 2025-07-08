@@ -452,7 +452,9 @@ def test_dataframe_groupby() -> None:
 
     # Should be able to group by a single column
     keys = [1, 2, 4]
-    groups = pdf.groupby("b", keys=keys)
+    # FIXME: use public API
+    pdf._domains = dict(pdf._domains) | {"b": ppd.CategoryDomain(categories=list(keys))}
+    groups = pdf.groupby("b")
     assert len(groups) == len(keys)
 
     # Should be able to loop over groups
@@ -468,6 +470,7 @@ def test_dataframe_groupby() -> None:
 
     # Check for a group with key=2
     assert isinstance(groups.get_group(2), ppd.PrivDataFrame)
+    print(groups.get_group(2)._value)
     assert (groups.get_group(2)._value == pd.DataFrame({"a": [1], "b": [2]}, index=[0])).all().all()
     assert (groups.get_group(2).columns == pdf.columns).all()
     assert (groups.get_group(2).dtypes == pdf.dtypes).all()
@@ -547,17 +550,22 @@ def test_privacy_budget_parallel_composition() -> None:
     pj.laplace_mechanism(crosstab.loc[1, 5], eps=eps)
     assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 6
 
+    # FIXME: use public API
+    pdf._domains = dict(pdf._domains) | {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}
+    print(pdf._value)
+
     # groupby()
     s = pj.SensitiveInt(0)
-    for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
+    for key, pdf_ in pdf.groupby("b"):
         s += pdf_.shape[0]
+        print(s._value)
     assert s.distance.max() == 1
     assert s._value == len(pdf._value)
     pj.laplace_mechanism(s, eps=eps)
     assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 7
 
     s = pj.SensitiveInt(0)
-    for key, pdf_ in pdf.groupby("b", keys=[1, 2, 3, 4, 5]):
+    for key, pdf_ in pdf.groupby("b"):
         s += key * pdf_.shape[0]
     assert s.distance.max() == 5
     pj.laplace_mechanism(s, eps=eps)

@@ -592,18 +592,17 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                                  preserve_row  = True)
 
     def groupby(self,
-                by         : str, # TODO: support more
-                level      : int | None                   = None, # TODO: support multiindex?
-                as_index   : bool                         = True,
-                sort       : bool                         = True,
-                group_keys : bool                         = True,
-                observed   : bool                         = True,
-                dropna     : bool                         = True,
-                keys       : Sequence[ElementType] | None = None, # extra argument for privjail
+                by         : str | list[str],
+                level      : int | None      = None, # TODO: support multiindex?
+                as_index   : bool            = True,
+                sort       : bool            = True,
+                group_keys : bool            = True,
+                observed   : bool            = True,
+                dropna     : bool            = True,
                 ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
         from .groupby import _do_group_by
         return _do_group_by(self, by, level=level, as_index=as_index, sort=sort,
-                            group_keys=group_keys, observed=observed, dropna=dropna, keys=keys)
+                            group_keys=group_keys, observed=observed, dropna=dropna)
 
     def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
         data = [self[col].sum() for col in self.columns]
