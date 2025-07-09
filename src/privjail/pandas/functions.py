@@ -20,7 +20,7 @@ import itertools
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError
+from ..util import DPError, realnum
 from ..prisoner import SensitiveInt
 from ..realexpr import RealExpr
 from .util import ElementType, PrivPandasExclusiveDummy, assert_ptag
@@ -166,12 +166,12 @@ def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Seque
 # TODO: change multifunction -> function by type checking in egrpc.function
 @egrpc.multifunction
 def cut(x              : PrivSeries[Any],
-        bins           : list[int] | list[float],
-        right          : bool                            = True,
-        labels         : list[ElementType] | bool | None = None,
-        retbins        : bool                            = False,
-        precision      : int                             = 3,
-        include_lowest : bool                            = False
+        bins           : Sequence[realnum],
+        right          : bool                                = True,
+        labels         : Sequence[ElementType] | bool | None = None,
+        retbins        : bool                                = False,
+        precision      : int                                 = 3,
+        include_lowest : bool                                = False
         # TODO: add more parameters
         ) -> PrivSeries[Any]:
     x._assert_not_uldp()

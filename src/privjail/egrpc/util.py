@@ -106,9 +106,13 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
             and all(is_type_match(v, type_args[1]) for v in obj.values())
         )
 
-    elif type_origin in (_np.integer, _np.floating):
+    elif type_origin is _np.integer:
         # TODO: consider type args (T in np.integer[T])
-        return isinstance(obj, (_np.integer, _np.floating))
+        return isinstance(obj, _np.integer)
+
+    elif type_origin is _np.floating:
+        # TODO: consider type args (T in np.floating[T])
+        return isinstance(obj, _np.floating)
 
     else:
         return (
