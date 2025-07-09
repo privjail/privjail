@@ -71,6 +71,10 @@ def main():
 
     visualize(noisy_counts)
 
+    print()
+    print("Consumed Privacy Budget:")
+    print(pj.consumed_privacy_budget())
+
 def visualize(ser):
     df = ser.reset_index(name="count")
 
