@@ -21,10 +21,10 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError, is_realnum, realnum, floating
-from ..prisoner import SensitiveInt
+from ..prisoner import Prisoner, SensitiveInt
 from ..realexpr import RealExpr
 from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance
-from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
+from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
 
 if TYPE_CHECKING:
@@ -604,12 +604,14 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         return _do_group_by(self, by, level=level, as_index=as_index, sort=sort,
                             group_keys=group_keys, observed=observed, dropna=dropna)
 
+    @egrpc.method
     def sum(self) -> SensitiveSeries[int] | SensitiveSeries[float]:
-        data = [self[col].sum() for col in self.columns]
+        distances = [self.distance * sum_sensitivity(domain) for col, domain in self.domains.items()]
+        data = self._value.sum()
         if all(domain.dtype in ("int64", "Int64") for domain in self.domains.values()):
-            return SensitiveSeries[int](data, index=self.columns)
+            return SensitiveSeries[int](data, distance_group="val", distance_per_group=distances, parents=[self])
         else:
-            return SensitiveSeries[float](data, index=self.columns)
+            return SensitiveSeries[float](data, distance_group="val", distance_per_group=distances, parents=[self])
 
     def mean(self, eps: float) -> _pd.Series[float]:
         eps_each = eps / len(self.columns)
@@ -635,7 +637,96 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                              parents       = [self],
                              preserve_row  = False)
 
-class SensitiveDataFrame(_pd.DataFrame):
+@egrpc.remoteclass
+class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
+    _distance_group     : Literal["df", "ser"]
+    _distance_per_group : RealExpr | list[RealExpr]
+
+    def __init__(self,
+                 data               : Any,
+                 distance_group     : Literal["df", "ser"],
+                 distance_per_group : RealExpr | list[RealExpr],
+                 index              : Any                       = None,
+                 columns            : Any                       = None,
+                 *,
+                 parents            : Sequence[Prisoner[Any]]   = [],
+                 root_name          : str | None                = None,
+                 ):
+        self._distance_group = distance_group
+        self._distance_per_group = distance_per_group
+
+        df = _pd.DataFrame(data, index=index, columns=columns)
+
+        if distance_group == "df":
+            assert not isinstance(distance_per_group, list)
+            distance = distance_per_group
+        elif distance_group == "ser":
+            if isinstance(distance_per_group, list):
+                assert len(df.columns) == len(distance_per_group)
+                distance = sum(distance_per_group, start=RealExpr(0))
+            else:
+                distance = distance_per_group * len(df.columns)
+        else:
+            raise Exception
+
+        super().__init__(value=df, distance=distance, parents=parents, root_name=root_name)
+
+    def _get_dummy_df(self) -> _pd.DataFrame:
+        dummy_data = [['***' for _ in self.columns] for _ in self.index]
+        return _pd.DataFrame(dummy_data, index=self.index, columns=self.columns)
+
+    def __str__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_df().__str__()
+
+    def __repr__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_df().__repr__()
+
+    def __len__(self) -> int:
+        return self.shape[0]
+
+    @egrpc.property
+    def max_distance(self) -> realnum:
+        return self.distance.max()
+
+    # TODO: define privjail's own Index[T] type
+    @property
+    def index(self) -> _pd.Index[ElementType]: # type: ignore
+        return _pd.Index(self._get_index())
+
+    @egrpc.method
+    def _get_index(self) -> list[ElementType]:
+        return list(self._value.index)
+
+    @property
+    def columns(self) -> _pd.Index[ElementType]: # type: ignore
+        return _pd.Index(self._get_columns())
+
+    @egrpc.method
+    def _get_columns(self) -> list[ElementType]:
+        return list(self._value.columns)
+
+    @egrpc.property
+    def name(self) -> str | None:
+        return str(self._value.name) if self._value.name is not None else None
+
+    @egrpc.property
+    def shape(self) -> tuple[int, int]:
+        return self._value.shape
+
+    @egrpc.property
+    def size(self) -> int:
+        return self._value.size
+
+    def reveal(self, eps: floating, mech: str = "laplace") -> _pd.DataFrame:
+        if mech == "laplace":
+            from ..mechanism import laplace_mechanism
+            return laplace_mechanism(self, eps) # type: ignore
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
+
+class DataFrame(_pd.DataFrame):
     """Sensitive DataFrame.
 
     Each value in this dataframe object is considered a sensitive value.

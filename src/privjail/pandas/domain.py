@@ -17,10 +17,11 @@ from typing import Any
 from abc import ABC, abstractmethod
 from dataclasses import field
 
+import numpy as _np
 import pandas as _pd
 
 from .. import egrpc
-from ..util import realnum
+from ..util import DPError, realnum
 from .util import ElementType
 
 @egrpc.dataclass
@@ -60,6 +61,17 @@ class CategoryDomain(Domain):
     def type(self) -> type:
         assert len(self.categories) > 0
         return type(self.categories[0]) # TODO: how about other elements?
+
+def sum_sensitivity(domain: Domain) -> realnum:
+    if not isinstance(domain, RealDomain):
+        raise TypeError("Domain must be real numbers.")
+
+    a, b = domain.range
+
+    if a is None or b is None:
+        raise DPError("The range is unbounded. Use clip().")
+
+    return max(_np.abs(a), _np.abs(b)) # type: ignore
 
 def normalize_column_schema(col_schema: dict[str, Any]) -> dict[str, Any]:
     if "type" not in col_schema:

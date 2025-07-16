@@ -16,16 +16,17 @@ from __future__ import annotations
 from typing import overload, TypeVar, Any, Literal, Generic, Sequence
 import warnings
 import copy
+import functools
 
 import numpy as _np
 import pandas as _pd
 
 from ..util import DPError, is_realnum, realnum, floating
-from ..prisoner import SensitiveInt, SensitiveFloat, _max as smax, _min as smin
-from ..realexpr import RealExpr
+from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
+from ..realexpr import RealExpr, _max as dmax
 from .. import egrpc
 from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
-from .domain import Domain, BoolDomain, RealDomain, CategoryDomain
+from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 
 T = TypeVar("T")
 
@@ -597,18 +598,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
     def sum(self) -> SensitiveInt | SensitiveFloat:
         self._assert_not_uldp()
 
-        if not isinstance(self.domain, RealDomain):
-            raise TypeError("Domain must be real numbers.")
-
-        if None in self.domain.range:
-            raise DPError("The range is unbounded. Use clip().")
-
-        a, b = self.domain.range
-
-        if a is None or b is None:
-            raise DPError("The range is unbounded. Use clip().")
-
-        new_distance = self.distance * max(_np.abs(a), _np.abs(b))
+        new_distance = self.distance * sum_sensitivity(self.domain)
 
         s = self._value.sum()
 
@@ -619,53 +609,18 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
         else:
             raise ValueError
 
-    @egrpc.method
     def mean(self, eps: float) -> float:
-        self._assert_not_uldp()
-
-        if not isinstance(self.domain, RealDomain):
-            raise TypeError("Domain must be real numbers.")
-
-        if eps <= 0:
-            raise DPError(f"Invalid epsilon ({eps})")
-
-        a, b = self.domain.range
-
-        if a is None or b is None:
-            raise DPError("The range is unbounded. Use clip().")
-
-        sum_sensitivity = (self.distance * max(_np.abs(a), _np.abs(b))).max()
-        count_sensitivity = self.distance.max()
-
-        self.consume_privacy_budget(eps)
-
-        s = _np.random.laplace(loc=float(self._value.sum()), scale=float(sum_sensitivity) / (eps / 2))
-        c = _np.random.laplace(loc=float(self._value.shape[0]), scale=float(count_sensitivity) / (eps / 2))
-
-        return s / c
-
-    def value_counts(self,
-                     normalize : bool                     = False,
-                     sort      : bool                     = True,
-                     ascending : bool                     = False,
-                     bins      : int | None               = None,
-                     dropna    : bool                     = True,
-                     values    : list[ElementType] | None = None, # extra argument for privjail
-                     ) -> SensitiveSeries[int]:
-        self._assert_not_uldp()
-        # TODO: make SensitiveSeries a dataclass
-        result = self._value_counts_impl(normalize, sort, ascending, bins, dropna, values)
-        return SensitiveSeries[int](data=list(result.values()), index=list(result.keys()), dtype="object")
+        eps_each = eps / 2
+        return self.sum().reveal(eps_each) / self.shape[0].reveal(eps_each)
 
     @egrpc.method
-    def _value_counts_impl(self,
-                           normalize : bool                     = False,
-                           sort      : bool                     = True,
-                           ascending : bool                     = False,
-                           bins      : int | None               = None,
-                           dropna    : bool                     = True,
-                           values    : list[ElementType] | None = None, # extra argument for privjail
-                           ) -> dict[ElementType, SensitiveInt]:
+    def value_counts(self,
+                     normalize : bool       = False,
+                     sort      : bool       = True,
+                     ascending : bool       = False,
+                     bins      : int | None = None,
+                     dropna    : bool       = True,
+                     ) -> SensitiveSeries[int]:
         self._assert_not_uldp()
 
         if normalize:
@@ -681,9 +636,8 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
         if isinstance(self.domain, CategoryDomain):
             values = self.domain.categories
-
-        if values is None:
-            raise DPError("Please provide the `values` argument to prevent privacy leakage.")
+        else:
+            raise DPError("Series for value_counts() must be of a categorical type")
 
         if not dropna and not any(_np.isnan(values)): # type: ignore
             # TODO: consider handling for pd.NA
@@ -694,16 +648,132 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
         # Select only the specified values and fill non-existent counts with 0
         counts = counts.reindex(values).fillna(0).astype(int)
 
-        distances = self.distance.create_exclusive_children(counts.size)
+        return SensitiveSeries[int](data               = counts,
+                                    distance_group     = "ser",
+                                    distance_per_group = self.distance,
+                                    parents            = [self])
 
-        prisoner_dummy = PrivPandasExclusiveDummy(parents=[self])
+@egrpc.remoteclass
+class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
+    _distance_group     : Literal["ser", "val"]
+    _distance_per_group : RealExpr | list[RealExpr]
 
-        return {k: SensitiveInt(counts.loc[k], distance=distances[i], parents=[prisoner_dummy])
-                for i, k in enumerate(counts.index)}
+    def __init__(self,
+                 data               : Any,
+                 distance_group     : Literal["ser", "val"],
+                 distance_per_group : RealExpr | list[RealExpr],
+                 index              : Any                       = None,
+                 name               : str | None                = None,
+                 *,
+                 parents            : Sequence[Prisoner[Any]]   = [],
+                 root_name          : str | None                = None,
+                 ):
+        self._distance_group = distance_group
+        self._distance_per_group = distance_per_group
 
-# to avoid TypeError: type 'Series' is not subscriptable
-# class SensitiveSeries(_pd.Series[T]):
-class SensitiveSeries(Generic[T], _pd.Series): # type: ignore[type-arg]
+        ser = _pd.Series(data, index=index, name=name)
+
+        if distance_group == "ser":
+            assert not isinstance(distance_per_group, list)
+            distance = distance_per_group
+        elif distance_group == "val":
+            if isinstance(distance_per_group, list):
+                assert len(ser) == len(distance_per_group)
+                distance = sum(distance_per_group, start=RealExpr(0))
+            else:
+                distance = distance_per_group * len(ser)
+        else:
+            raise Exception
+
+        super().__init__(value=ser, distance=distance, parents=parents, root_name=root_name)
+
+    def _get_dummy_ser(self) -> _pd.Series[str]:
+        dummy_data = ['***' for _ in self.index]
+        # TODO: dtype becomes 'object'
+        return _pd.Series(dummy_data, index=self.index, name=self.name)
+
+    def __str__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            # return self._get_dummy_ser().__str__().replace("dtype: object", f"dtype: {self.domain.dtype}")
+            return self._get_dummy_ser().__str__()
+
+    def __repr__(self) -> str:
+        with _pd.option_context('display.show_dimensions', False):
+            # return self._get_dummy_ser().__repr__().replace("dtype: object", f"dtype: {self.domain.dtype}")
+            return self._get_dummy_ser().__repr__()
+
+    def __len__(self) -> int:
+        return self.shape[0]
+
+    @egrpc.property
+    def max_distance(self) -> realnum:
+        return self.distance.max()
+
+    # TODO: define privjail's own Index[T] type
+    @property
+    def index(self) -> _pd.Index[ElementType]: # type: ignore
+        return _pd.Index(self._get_index())
+
+    @egrpc.method
+    def _get_index(self) -> list[ElementType]:
+        return list(self._value.index)
+
+    @egrpc.property
+    def name(self) -> str | None:
+        return str(self._value.name) if self._value.name is not None else None
+
+    @egrpc.property
+    def shape(self) -> tuple[int]:
+        return self._value.shape
+
+    @egrpc.property
+    def size(self) -> int:
+        return self._value.size
+
+    @egrpc.method
+    def max(self) -> SensitiveInt | SensitiveFloat:
+        # TODO: args?
+        v = self._value.max()
+
+        if self._distance_group == "val" and isinstance(self._distance_per_group, list):
+            distance = functools.reduce(dmax, self._distance_per_group)
+        else:
+            assert not isinstance(self._distance_per_group, list)
+            distance = self._distance_per_group
+
+        if self._value.dtype in ["int64", "Int64"]:
+            return SensitiveInt(v, distance=distance, parents=[self])
+        elif self._value.dtype in ["float64", "Float64"]:
+            return SensitiveFloat(v, distance=distance, parents=[self])
+        else:
+            raise Exception
+
+    @egrpc.method
+    def min(self) -> SensitiveInt | SensitiveFloat:
+        # TODO: args?
+        v = self._value.min()
+
+        if self._distance_group == "val" and isinstance(self._distance_per_group, list):
+            distance = functools.reduce(dmax, self._distance_per_group)
+        else:
+            assert not isinstance(self._distance_per_group, list)
+            distance = self._distance_per_group
+
+        if self._value.dtype in ["int64", "Int64"]:
+            return SensitiveInt(v, distance=distance, parents=[self])
+        elif self._value.dtype in ["float64", "Float64"]:
+            return SensitiveFloat(v, distance=distance, parents=[self])
+        else:
+            raise Exception
+
+    def reveal(self, eps: floating, mech: str = "laplace") -> _pd.Series: # type: ignore
+        if mech == "laplace":
+            from ..mechanism import laplace_mechanism
+            return laplace_mechanism(self, eps) # type: ignore
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
+
+class Series(Generic[T], _pd.Series): # type: ignore[type-arg]
     """Sensitive Series.
 
     Each value in this series object is considered a sensitive value.

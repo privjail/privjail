@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar, Sequence
+from typing import TypeVar, Sequence, Any
+import math
 
 import numpy as _np
 import pandas as _pd
@@ -24,59 +25,108 @@ from . import egrpc
 
 T = TypeVar("T")
 
-@egrpc.multifunction
-def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) -> float:
-    if prisoner.distance.is_inf():
+def assert_sensitivity(sensitivity: realnum) -> None:
+    if sensitivity == math.inf:
         raise DPError(f"Unbounded sensitivity")
-
-    sensitivity = prisoner.distance.max()
 
     if sensitivity <= 0:
         raise DPError(f"Invalid sensitivity ({sensitivity})")
 
+def assert_eps(eps: floating) -> None:
     if eps <= 0:
         raise DPError(f"Invalid epsilon ({eps})")
 
+@egrpc.multifunction
+def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) -> float:
+    assert_eps(eps)
+
+    sensitivity = prisoner.distance.max()
+    assert_sensitivity(sensitivity)
+
+    result = float(_np.random.laplace(loc=prisoner._value, scale=sensitivity / eps))
+
     prisoner.consume_privacy_budget(float(eps))
 
-    return float(_np.random.laplace(loc=prisoner._value, scale=sensitivity / eps))
+    return result
 
-@laplace_mechanism.register(remote=False) # type: ignore
+@laplace_mechanism.register
 def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
-    total_distance = prisoner.max_distance()
-    return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
+    assert_eps(eps)
 
-@laplace_mechanism.register(remote=False) # type: ignore
+    if prisoner._distance_group == "val" and isinstance(prisoner._distance_per_group, list):
+        eps_each = eps / len(prisoner)
+        scales = []
+        for distance in prisoner._distance_per_group:
+            sensitivity = distance.max()
+            assert_sensitivity(sensitivity)
+            scales.append(float(sensitivity / eps_each))
+        data = _np.random.laplace(loc=prisoner._value, scale=scales)
+    else:
+        sensitivity = prisoner.distance.max()
+        assert_sensitivity(sensitivity)
+        data = _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
+
+    result = _pd.Series(data, index=prisoner.index, name=prisoner.name)
+
+    prisoner.consume_privacy_budget(float(eps))
+
+    return result
+
+@laplace_mechanism.register
 def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
-    total_distance = prisoner.max_distance()
-    return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
+    assert_eps(eps)
+
+    if prisoner._distance_group == "ser" and isinstance(prisoner._distance_per_group, list):
+        eps_each = eps / len(prisoner)
+        scales = []
+        for distance in prisoner._distance_per_group:
+            sensitivity = distance.max()
+            assert_sensitivity(sensitivity)
+            scales.append(float(sensitivity / eps_each))
+        data = _np.random.laplace(loc=prisoner._value, scale=scales)
+    else:
+        sensitivity = prisoner.distance.max()
+        assert_sensitivity(sensitivity)
+        data = _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
+
+    result = _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
+
+    prisoner.consume_privacy_budget(float(eps))
+
+    return result
+
+# @laplace_mechanism.register(remote=False) # type: ignore
+# def _(prisoner: Series[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
+#     total_distance = prisoner.max_distance()
+#     return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
+
+# @laplace_mechanism.register(remote=False) # type: ignore
+# def _(prisoner: DataFrame, eps: floating) -> _pd.DataFrame:
+#     total_distance = prisoner.max_distance()
+#     return prisoner.map(lambda x: laplace_mechanism(x, eps * x.max_distance / total_distance))
 
 @egrpc.function
 def exponential_mechanism(scores: Sequence[SensitiveInt | SensitiveFloat], eps: floating) -> int:
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
 
-    if any(v.distance.is_inf() for v in scores):
-        raise DPError(f"Unbounded sensitivity")
+    assert_eps(eps)
 
     sensitivity = max([v.distance.max() for v in scores]) # type: ignore[type-var]
-
-    if sensitivity <= 0:
-        raise DPError(f"Invalid sensitivity ({sensitivity})")
-
-    if eps <= 0:
-        raise DPError(f"Invalid epsilon ({eps})")
-
-    # create a dummy prisoner to propagate budget consumption to all prisoners
-    prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
-    prisoner_dummy.consume_privacy_budget(float(eps))
+    assert_sensitivity(sensitivity)
 
     exponents = [eps * s._value / sensitivity / 2 for s in scores]
     # to prevent too small or large values (-> 0 or inf)
     M: float = _np.max(exponents) # type: ignore[arg-type]
     p = [_np.exp(x - M) for x in exponents]
     p /= sum(p)
-    return _np.random.choice(len(scores), p=p)
+    result = _np.random.choice(len(scores), p=p)
+
+    # create a dummy prisoner to propagate budget consumption to all prisoners
+    prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
+    prisoner_dummy.consume_privacy_budget(float(eps))
+
+    return result
 
 def argmax(args: Sequence[SensitiveInt | SensitiveFloat], eps: floating, mech: str = "exponential") -> int:
     if mech == "exponential":

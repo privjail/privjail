@@ -24,7 +24,7 @@ from ..util import DPError
 from ..realexpr import RealExpr, _min
 from ..prisoner import Prisoner, SensitiveInt
 from .util import ElementType, PrivPandasExclusiveDummy
-from .domain import CategoryDomain
+from .domain import CategoryDomain, sum_sensitivity
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .series import SensitiveSeries
 
@@ -71,6 +71,12 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
 
         return self._variable_exprs
 
+    def _get_index(self) -> _pd.Index[Any] | _pd.MultiIndex:
+        if len(self._by_columns) == 1:
+            return _pd.Index(self._by_objs[0])
+        else:
+            return _pd.MultiIndex.from_tuples(itertools.product(*self._by_objs), names=self._by_columns)
+
     def _gen_empty_df(self) -> _pd.DataFrame:
         columns = self._df.columns
         dtypes = self._df.dtypes
@@ -84,7 +90,6 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         return prod
 
     def __iter__(self) -> Iterator[tuple[ElementType | tuple[ElementType, ...], PrivDataFrame]]:
-        # TODO: support groupby multiple columns
         return iter(self.groups.items())
 
     @egrpc.property
@@ -134,25 +139,42 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                              parents       = [self._exclusive_prisoner_dummy],
                              preserve_row  = False)
 
+    @egrpc.method
     def size(self) -> SensitiveSeries[int]:
-        counts = [df.shape[0] for o, df in self.groups.items()]
-        idx = _pd.MultiIndex.from_tuples(list(self.groups.keys()), names=self.by_columns)
-        return SensitiveSeries[int](data=counts, index=idx)
+        counts = self._value.size()
 
+        # Select only the groupby keys and fill non-existent counts with 0
+        counts = counts.reindex(self._get_index()).fillna(0).astype(int)
+
+        return SensitiveSeries[int](data               = counts,
+                                    distance_group     = "ser",
+                                    distance_per_group = self._df.distance,
+                                    parents            = [self._df])
+
+    @egrpc.method
     def sum(self) -> SensitiveDataFrame:
-        # FIXME
-        data = [df.drop(self.by_columns, axis=1, errors="ignore").sum() for o, df in self.groups.items()]
-        return SensitiveDataFrame(data, index=self.groups.keys()) # type: ignore
+        sums = self._value.sum()
+
+        # Select only the groupby keys and fill non-existent counts with 0
+        sums = sums.reindex(self._get_index()).fillna(0)
+
+        distance_per_group = [self._df.distance * sum_sensitivity(domain)
+                              for col, domain in self._df.domains.items() if col not in self._by_columns]
+
+        return SensitiveDataFrame(data               = sums,
+                                  distance_group     = "ser",
+                                  distance_per_group = distance_per_group,
+                                  parents            = [self._df])
 
     def mean(self, eps: float) -> _pd.DataFrame:
-        # FIXME
-        data = [df.drop(self.by_columns, axis=1, errors="ignore").mean(eps=eps) for o, df in self.groups.items()]
-        return _pd.DataFrame(data, index=self.groups.keys()) # type: ignore
+        df_sum = self.sum()
+        ser_size = self.size()
 
-    # FIXME: non-standard API
-    @egrpc.property
-    def by_columns(self) -> list[str]:
-        return self._by_columns
+        # TODO: consider as_index
+        n_cols = len(df_sum.columns)
+        eps_each = eps / (n_cols + 1)
+
+        return df_sum.reveal(eps_each * n_cols).div(ser_size.reveal(eps_each), axis=0)
 
 # @egrpc.remoteclass
 # class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy[ByT, _TT]], Generic[ByT, _TT]):

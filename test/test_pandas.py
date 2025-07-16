@@ -39,8 +39,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
 def assert_equal_sensitive_series(sensitive_ser: ppd.SensitiveSeries[Any], expected_ser: pd.Series[Any]) -> None:
     assert isinstance(sensitive_ser, ppd.SensitiveSeries)
     assert (sensitive_ser.index == expected_ser.index).all()
-    for idx in sensitive_ser.index:
-        assert sensitive_ser.loc[idx]._value == expected_ser.loc[idx]
+    assert (sensitive_ser._value == expected_ser).all()
 
 def assert_equal_sensitive_dataframes(sensitive_df: ppd.SensitiveDataFrame, expected_df: pd.DataFrame) -> None:
     assert isinstance(sensitive_df, ppd.SensitiveDataFrame)
@@ -359,31 +358,33 @@ def test_priv_series_value_counts() -> None:
     with pytest.raises(pj.DPError):
         pdf["b"].value_counts()
 
-    # Should return an error with `sort=True`
-    with pytest.raises(pj.DPError):
-        pdf["b"].value_counts(values=[1, 2, 3, 4, 5])
-
-    # Should return an error without specifying values
+    # Should return an error for non-categorical series
     with pytest.raises(pj.DPError):
         pdf["b"].value_counts(sort=False)
 
+    pdf._domains = dict(pdf._domains) | {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])} # FIXME: use public API
+
+    # Should return an error with `sort=True`
+    with pytest.raises(pj.DPError):
+        pdf["b"].value_counts()
+
     # Should return correct counts when all possible values are provided
-    values = [2, 3, 4]
-    counts = pdf["b"].value_counts(sort=False, values=values)
+    pdf._domains = dict(pdf._domains) | {"b": ppd.CategoryDomain(categories=[2, 3, 4])} # FIXME: use public API
+    counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({2: 1, 3: 1, 4: 3}))
-    assert counts.iloc[0].distance.max() == 1
+    assert counts[2].distance.max() == 1
 
     # Should return correct counts when only a part of possible values are provided
-    values = [3, 4]
-    counts = pdf["b"].value_counts(sort=False, values=values)
+    pdf._domains = dict(pdf._domains) | {"b": ppd.CategoryDomain(categories=[3, 4])} # FIXME: use public API
+    counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({3: 1, 4: 3}))
-    assert counts.iloc[0].distance.max() == 1
+    assert counts[3].distance.max() == 1
 
     # Should return correct counts when non-existent values are provided
-    values = [1, 3, 4, 5]
-    counts = pdf["b"].value_counts(sort=False, values=values)
+    pdf._domains = dict(pdf._domains) | {"b": ppd.CategoryDomain(categories=[1, 3, 4, 5])} # FIXME: use public API
+    counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({1: 0, 3: 1, 4: 3, 5: 0}))
-    assert counts.iloc[0].distance.max() == 1
+    assert counts[1].distance.max() == 1
 
     # Should be able to get a sensitive value from a sensitive series
     c4 = counts[4]

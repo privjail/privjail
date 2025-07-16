@@ -69,6 +69,7 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
                          user_key  = user_key,
                          root_name = filepath)
 
+@egrpc.function
 def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
              columns      : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
              values       : PrivSeries[ElementType] | None = None,
@@ -83,33 +84,6 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
              dropna       : bool                           = True,
              normalize    : bool | str | int               = False, # TODO: support Literal["all", "index", "columns", 0, 1] in egrpc
              ) -> SensitiveDataFrame:
-    result = _crosstab_impl(index, columns, values, rownames, colnames, rowvalues, colvalues,
-                            aggfunc=aggfunc, margins=margins, margins_name=margins_name,
-                            dropna=dropna, normalize=normalize)
-
-    rowvalues, colvalues, data = result
-    priv_counts = SensitiveDataFrame(index=rowvalues, columns=colvalues)
-
-    for i, (idx, col) in enumerate(itertools.product(rowvalues, colvalues)):
-        priv_counts.loc[idx, col] = data[i] # type: ignore
-
-    return priv_counts
-
-@egrpc.function
-def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
-                   columns      : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
-                   values       : PrivSeries[ElementType] | None = None,
-                   rownames     : list[str] | None               = None,
-                   colnames     : list[str] | None               = None,
-                   rowvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
-                   colvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
-                   *,
-                   aggfunc      : None                           = None,
-                   margins      : bool                           = False,
-                   margins_name : str                            = "All",
-                   dropna       : bool                           = True,
-                   normalize    : bool | str | int               = False, # TODO: support Literal["all", "index", "columns", 0, 1] in egrpc
-                   ) -> tuple[list[ElementType], list[ElementType], list[SensitiveInt]]:
     index._assert_not_uldp()
     columns._assert_not_uldp()
 
@@ -154,14 +128,7 @@ def _crosstab_impl(index        : PrivSeries[ElementType], # TODO: support Seque
                    .reindex(list(colvalues), axis="columns") \
                    .fillna(0).astype(int)
 
-    distances = index.distance.create_exclusive_children(counts.size)
-
-    prisoner_dummy = PrivPandasExclusiveDummy(parents=[index, columns])
-
-    data = [SensitiveInt(counts.loc[idx, col], distance=distances[i], parents=[prisoner_dummy]) # type: ignore
-            for i, (idx, col) in enumerate(itertools.product(rowvalues, colvalues))]
-
-    return list(rowvalues), list(colvalues), data
+    return SensitiveDataFrame(counts, distance_group="df", distance_per_group=index.distance, parents=[index, columns])
 
 # TODO: change multifunction -> function by type checking in egrpc.function
 @egrpc.multifunction
