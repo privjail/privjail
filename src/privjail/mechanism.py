@@ -20,7 +20,7 @@ import pandas as _pd
 
 from .util import DPError, floating, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
-from .pandas import SensitiveSeries, SensitiveDataFrame
+from .pandas import ElementType, SensitiveSeries, SensitiveDataFrame
 from . import egrpc
 
 T = TypeVar("T")
@@ -36,8 +36,33 @@ def assert_eps(eps: floating) -> None:
     if eps <= 0:
         raise DPError(f"Invalid epsilon ({eps})")
 
+# TODO: serialization/deserialization for numpy arrays might be slow
+@egrpc.dataclass
+class FloatSeriesBuf:
+    values : list[float]
+    index  : list[ElementType]
+    name   : ElementType | None
+
+@egrpc.dataclass
+class FloatDataFrameBuf:
+    values  : list[list[float]]
+    index   : list[ElementType]
+    columns : list[ElementType]
+
+def laplace_mechanism(prisoner: Any, eps: floating) -> float | _pd.Series | _pd.DataFrame: # type: ignore[type-arg]
+    result = laplace_mechanism_impl(prisoner, eps)
+
+    if isinstance(result, float):
+        return result
+    if isinstance(result, FloatSeriesBuf):
+        return _pd.Series(result.values, index=result.index, name=result.name)
+    elif isinstance(result, FloatDataFrameBuf):
+        return _pd.DataFrame(result.values, index=result.index, columns=result.columns)
+    else:
+        raise Exception
+
 @egrpc.multifunction
-def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) -> float:
+def laplace_mechanism_impl(prisoner: SensitiveInt | SensitiveFloat, eps: floating) -> float:
     assert_eps(eps)
 
     sensitivity = prisoner.distance.max()
@@ -49,13 +74,14 @@ def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) ->
 
     return result
 
-@laplace_mechanism.register
-def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
+@laplace_mechanism_impl.register
+def _(prisoner: SensitiveSeries[realnum], eps: floating) -> FloatSeriesBuf:
     assert_eps(eps)
 
     if prisoner._distance_group == "val":
         eps_each = eps / len(prisoner)
         scales = []
+        assert isinstance(prisoner._distance_per_val, list)
         for distance in prisoner._distance_per_val:
             sensitivity = distance.max()
             assert_sensitivity(sensitivity)
@@ -66,19 +92,18 @@ def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: 
         assert_sensitivity(sensitivity)
         data = _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
 
-    result = _pd.Series(data, index=prisoner.index, name=prisoner.name)
-
     prisoner.consume_privacy_budget(float(eps))
 
-    return result
+    return FloatSeriesBuf(data.tolist(), prisoner.index.tolist(), prisoner.name)
 
-@laplace_mechanism.register
-def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
+@laplace_mechanism_impl.register
+def _(prisoner: SensitiveDataFrame, eps: floating) -> FloatDataFrameBuf:
     assert_eps(eps)
 
     if prisoner._distance_group == "ser":
         eps_each = eps / len(prisoner)
         scales = []
+        assert isinstance(prisoner._distance_per_ser, list)
         for distance in prisoner._distance_per_ser:
             sensitivity = distance.max()
             assert_sensitivity(sensitivity)
@@ -89,11 +114,9 @@ def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
         assert_sensitivity(sensitivity)
         data = _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
 
-    result = _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
-
     prisoner.consume_privacy_budget(float(eps))
 
-    return result
+    return FloatDataFrameBuf(data.tolist(), prisoner.index.tolist(), prisoner.columns.tolist())
 
 # @laplace_mechanism.register(remote=False) # type: ignore
 # def _(prisoner: Series[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
