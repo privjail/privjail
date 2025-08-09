@@ -15,6 +15,8 @@
 from __future__ import annotations
 from typing import Any, TypeVar, Generic, Sequence
 
+import pandas as _pd
+
 from .. import egrpc
 from ..util import DPError, realnum
 from ..provenance import ChildrenType
@@ -74,3 +76,25 @@ class PrivPandasExclusiveDummy(PrivPandasBase[None]):
 @egrpc.function
 def total_max_distance(prisoners: list[SensitiveInt | SensitiveFloat]) -> realnum:
     return sum([x.distance for x in prisoners], start=RealExpr(0)).max()
+
+@egrpc.dataclass
+class Index:
+    values : list[ElementType]
+    name   : ElementType | None
+
+    def to_pandas(self) -> _pd.Index[ElementType]:
+        return _pd.Index(self.values, name=self.name)
+
+@egrpc.dataclass
+class MultiIndex:
+    values : list[tuple[ElementType, ...]]
+    names  : list[ElementType]
+
+    def to_pandas(self) -> _pd.MultiIndex[ElementType]:
+        return _pd.MultiIndex.from_tuples(self.values, names=self.names)
+
+def pack_pandas_index(index: _pd.Index) -> Index | MultiIndex:
+    if isinstance(index, _pd.MultiIndex):
+        return MultiIndex(index.tolist(), index.names)
+    else:
+        return Index(index.tolist(), index.name)

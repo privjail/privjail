@@ -20,7 +20,8 @@ import pandas as _pd
 
 from .util import DPError, floating, realnum
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
-from .pandas import ElementType, SensitiveSeries, SensitiveDataFrame
+from .pandas import SensitiveSeries, SensitiveDataFrame
+from .pandas.util import ElementType, Index, MultiIndex, pack_pandas_index
 from . import egrpc
 
 T = TypeVar("T")
@@ -40,14 +41,14 @@ def assert_eps(eps: floating) -> None:
 @egrpc.dataclass
 class FloatSeriesBuf:
     values : list[float]
-    index  : list[ElementType]
+    index  : Index | MultiIndex
     name   : ElementType | None
 
 @egrpc.dataclass
 class FloatDataFrameBuf:
     values  : list[list[float]]
-    index   : list[ElementType]
-    columns : list[ElementType]
+    index   : Index | MultiIndex
+    columns : Index | MultiIndex
 
 def laplace_mechanism(prisoner: Any, eps: floating) -> float | _pd.Series | _pd.DataFrame: # type: ignore[type-arg]
     result = laplace_mechanism_impl(prisoner, eps)
@@ -55,9 +56,9 @@ def laplace_mechanism(prisoner: Any, eps: floating) -> float | _pd.Series | _pd.
     if isinstance(result, float):
         return result
     if isinstance(result, FloatSeriesBuf):
-        return _pd.Series(result.values, index=result.index, name=result.name)
+        return _pd.Series(result.values, index=result.index.to_pandas(), name=result.name)
     elif isinstance(result, FloatDataFrameBuf):
-        return _pd.DataFrame(result.values, index=result.index, columns=result.columns)
+        return _pd.DataFrame(result.values, index=result.index.to_pandas(), columns=result.columns.to_pandas())
     else:
         raise Exception
 
@@ -94,7 +95,7 @@ def _(prisoner: SensitiveSeries[realnum], eps: floating) -> FloatSeriesBuf:
 
     prisoner.consume_privacy_budget(float(eps))
 
-    return FloatSeriesBuf(data.tolist(), prisoner.index.tolist(), prisoner.name)
+    return FloatSeriesBuf(data.tolist(), pack_pandas_index(prisoner.index), prisoner.name)
 
 @laplace_mechanism_impl.register
 def _(prisoner: SensitiveDataFrame, eps: floating) -> FloatDataFrameBuf:
@@ -116,7 +117,7 @@ def _(prisoner: SensitiveDataFrame, eps: floating) -> FloatDataFrameBuf:
 
     prisoner.consume_privacy_budget(float(eps))
 
-    return FloatDataFrameBuf(data.tolist(), prisoner.index.tolist(), prisoner.columns.tolist())
+    return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
 
 # @laplace_mechanism.register(remote=False) # type: ignore
 # def _(prisoner: Series[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]

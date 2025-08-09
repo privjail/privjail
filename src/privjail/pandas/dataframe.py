@@ -23,7 +23,7 @@ from .. import egrpc
 from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floating
 from ..prisoner import Prisoner, SensitiveInt
 from ..realexpr import RealExpr
-from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance
+from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance, Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
 
@@ -751,19 +751,19 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     # TODO: define privjail's own Index[T] type
     @property
     def index(self) -> _pd.Index[ElementType]: # type: ignore
-        return _pd.Index(self._get_index())
+        return self._get_index().to_pandas()
 
     @egrpc.method
-    def _get_index(self) -> list[ElementType]:
-        return list(self._value.index)
+    def _get_index(self) -> Index | MultiIndex:
+        return pack_pandas_index(self._value.index)
 
     @property
     def columns(self) -> _pd.Index[ElementType]: # type: ignore
-        return _pd.Index(self._get_columns())
+        return self._get_columns().to_pandas()
 
     @egrpc.method
-    def _get_columns(self) -> list[ElementType]:
-        return list(self._value.columns)
+    def _get_columns(self) -> Index | MultiIndex:
+        return pack_pandas_index(self._value.columns)
 
     @egrpc.property
     def name(self) -> str | None:

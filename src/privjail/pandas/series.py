@@ -25,7 +25,7 @@ from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floati
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from ..realexpr import RealExpr, _max as dmax
 from .. import egrpc
-from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance
+from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance, Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 
 T = TypeVar("T")
@@ -754,14 +754,13 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     def max_distance(self) -> realnum:
         return self.distance.max()
 
-    # TODO: define privjail's own Index[T] type
     @property
     def index(self) -> _pd.Index[ElementType]: # type: ignore
-        return _pd.Index(self._get_index())
+        return self._get_index().to_pandas()
 
     @egrpc.method
-    def _get_index(self) -> list[ElementType]:
-        return list(self._value.index)
+    def _get_index(self) -> Index | MultiIndex:
+        return pack_pandas_index(self._value.index)
 
     @egrpc.property
     def name(self) -> str | None:
