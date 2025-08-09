@@ -146,9 +146,11 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # Select only the groupby keys and fill non-existent counts with 0
         counts = counts.reindex(self._get_index()).fillna(0).astype(int)
 
+        distance = self._df.distance * self._df.user_max_freq if self._df._is_uldp() else self._df.distance
+
         return SensitiveSeries[int](data           = counts,
                                     distance_group = "ser",
-                                    distance       = self._df.distance,
+                                    distance       = distance,
                                     parents        = [self._df])
 
     @egrpc.method
@@ -158,7 +160,9 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # Select only the groupby keys and fill non-existent counts with 0
         sums = sums.reindex(self._get_index()).fillna(0)
 
-        distance_per_ser = [self._df.distance * sum_sensitivity(domain)
+        distance = self._df.distance * self._df.user_max_freq if self._df._is_uldp() else self._df.distance
+
+        distance_per_ser = [distance * sum_sensitivity(domain)
                             for col, domain in self._df.domains.items() if col not in self._by_columns]
 
         return SensitiveDataFrame(data             = sums,

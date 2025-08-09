@@ -26,9 +26,9 @@ from bokeh.palettes import Magma256
 LAT_MIN, LAT_MAX = 39.7, 40.2
 LON_MIN, LON_MAX = 116.2, 116.7
 
-G = 0.04
+# G = 0.04
 # G = 0.01
-# G = 0.004
+G = 0.004
 # G = 0.001
 
 M = 4
