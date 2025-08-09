@@ -21,11 +21,11 @@ import functools
 import numpy as _np
 import pandas as _pd
 
-from ..util import DPError, is_realnum, realnum, floating
+from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floating
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from ..realexpr import RealExpr, _max as dmax
 from .. import egrpc
-from .util import ElementType, PrivPandasBase, PrivPandasExclusiveDummy, assert_ptag, total_max_distance
+from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 
 T = TypeVar("T")
@@ -648,44 +648,77 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
         # Select only the specified values and fill non-existent counts with 0
         counts = counts.reindex(values).fillna(0).astype(int)
 
-        return SensitiveSeries[int](data               = counts,
-                                    distance_group     = "ser",
-                                    distance_per_group = self.distance,
-                                    parents            = [self])
+        return SensitiveSeries[int](data           = counts,
+                                    distance_group = "ser",
+                                    distance       = self.distance,
+                                    parents        = [self])
 
 @egrpc.remoteclass
 class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
-    _distance_group     : Literal["ser", "val"]
-    _distance_per_group : RealExpr | list[RealExpr]
+    _distance_group   : Literal["ser", "val"]
+    _distance_per_val : list[RealExpr] | None
+    _distributed_ser  : _pd.Series[SensitiveInt | SensitiveFloat] | None # type: ignore
 
     def __init__(self,
-                 data               : Any,
-                 distance_group     : Literal["ser", "val"],
-                 distance_per_group : RealExpr | list[RealExpr],
-                 index              : Any                       = None,
-                 name               : str | None                = None,
+                 data             : Any,
+                 distance_group   : Literal["ser", "val"],
+                 distance         : RealExpr | None         = None,
+                 distance_per_val : list[RealExpr] | None   = None,
+                 index            : Any                     = None,
+                 name             : str | None              = None,
                  *,
-                 parents            : Sequence[Prisoner[Any]]   = [],
-                 root_name          : str | None                = None,
+                 parents          : Sequence[Prisoner[Any]] = [],
+                 root_name        : str | None              = None,
+                 distributed_ser  : _pd.Series | None       = None,
                  ):
         self._distance_group = distance_group
-        self._distance_per_group = distance_per_group
+        self._distance_per_val = distance_per_val
+        self._distributed_ser = distributed_ser
 
         ser = _pd.Series(data, index=index, name=name)
 
         if distance_group == "ser":
-            assert not isinstance(distance_per_group, list)
-            distance = distance_per_group
+            assert distance is not None
         elif distance_group == "val":
-            if isinstance(distance_per_group, list):
-                assert len(ser) == len(distance_per_group)
-                distance = sum(distance_per_group, start=RealExpr(0))
-            else:
-                distance = distance_per_group * len(ser)
+            assert distance_per_val is not None
+            assert len(ser) == len(distance_per_val)
+            distance = sum(distance_per_val, start=RealExpr(0))
         else:
             raise Exception
 
         super().__init__(value=ser, distance=distance, parents=parents, root_name=root_name)
+
+    def _distance_of(self, key: ElementType) -> RealExpr:
+        assert self._distance_per_val is not None
+        idx = self.index.get_loc(key)
+        assert isinstance(idx, int)
+        return self._distance_per_val[idx]
+
+    def _wrap_sensitive_value(self, value: ElementType, distance: RealExpr, parents: Sequence[Prisoner[Any]]) -> SensitiveInt | SensitiveFloat:
+        if self._value.dtype in ["int64", "Int64"]:
+            assert is_integer(value)
+            return SensitiveInt(value, distance=distance, parents=parents)
+        elif self._value.dtype in ["float64", "Float64"]:
+            assert is_floating(value)
+            return SensitiveFloat(value, distance=distance, parents=parents)
+        else:
+            raise Exception
+
+    def _get_distributed_ser(self) -> _pd.Series[SensitiveInt | SensitiveFloat]: # type: ignore
+        assert self._distance_group == "ser"
+
+        if self._distributed_ser is None:
+            prisoner_dummy = Prisoner(value=None, distance=self.distance, parents=[self], children_type="exclusive")
+
+            if self._distance_per_val is None:
+                self._distance_per_val = self.distance.create_exclusive_children(len(self))
+
+            data = [self._wrap_sensitive_value(v, distance=d, parents=[prisoner_dummy])
+                    for v, d in zip(self._value, self._distance_per_val)]
+
+            self._distributed_ser = _pd.Series(data, index=self.index, name=self.name)
+
+        return self._distributed_ser
 
     def _get_dummy_ser(self) -> _pd.Series[str]:
         dummy_data = ['***' for _ in self.index]
@@ -704,6 +737,18 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
 
     def __len__(self) -> int:
         return self.shape[0]
+
+    def __iter__(self) -> Iterator[SensitiveInt | SensitiveFloat]:
+        return iter([self[idx] for idx in self.index])
+
+    @egrpc.multimethod
+    def __getitem__(self, key: ElementType) -> SensitiveInt | SensitiveFloat:
+        if self._distance_group == "ser":
+            return copy.copy(self._get_distributed_ser().loc[key]) # type: ignore
+        elif self._distance_group == "val":
+            return self._wrap_sensitive_value(self._value[key], distance=self._distance_of(key), parents=[self]) # type: ignore
+        else:
+            raise Exception
 
     @egrpc.property
     def max_distance(self) -> realnum:
@@ -733,38 +778,22 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     @egrpc.method
     def max(self) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
-        v = self._value.max()
-
-        if self._distance_group == "val" and isinstance(self._distance_per_group, list):
-            distance = functools.reduce(dmax, self._distance_per_group)
+        if self._distance_group == "val":
+            distance = functools.reduce(dmax, self._distance_per_val)
         else:
-            assert not isinstance(self._distance_per_group, list)
-            distance = self._distance_per_group
+            distance = self.distance
 
-        if self._value.dtype in ["int64", "Int64"]:
-            return SensitiveInt(v, distance=distance, parents=[self])
-        elif self._value.dtype in ["float64", "Float64"]:
-            return SensitiveFloat(v, distance=distance, parents=[self])
-        else:
-            raise Exception
+        return self._wrap_sensitive_value(self._value.max(), distance=distance, parents=[self])
 
     @egrpc.method
     def min(self) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
-        v = self._value.min()
-
-        if self._distance_group == "val" and isinstance(self._distance_per_group, list):
-            distance = functools.reduce(dmax, self._distance_per_group)
+        if self._distance_group == "val":
+            distance = functools.reduce(dmax, self._distance_per_val)
         else:
-            assert not isinstance(self._distance_per_group, list)
-            distance = self._distance_per_group
+            distance = self.distance
 
-        if self._value.dtype in ["int64", "Int64"]:
-            return SensitiveInt(v, distance=distance, parents=[self])
-        elif self._value.dtype in ["float64", "Float64"]:
-            return SensitiveFloat(v, distance=distance, parents=[self])
-        else:
-            raise Exception
+        return self._wrap_sensitive_value(self._value.min(), distance=distance, parents=[self])
 
     def reveal(self, eps: floating, mech: str = "laplace") -> _pd.Series: # type: ignore
         if mech == "laplace":

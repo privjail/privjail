@@ -20,7 +20,7 @@ import numpy as _np
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError, is_realnum, realnum, floating
+from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floating
 from ..prisoner import Prisoner, SensitiveInt
 from ..realexpr import RealExpr
 from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance
@@ -609,9 +609,9 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         distances = [self.distance * sum_sensitivity(domain) for col, domain in self.domains.items()]
         data = self._value.sum()
         if all(domain.dtype in ("int64", "Int64") for domain in self.domains.values()):
-            return SensitiveSeries[int](data, distance_group="val", distance_per_group=distances, parents=[self])
+            return SensitiveSeries[int](data, distance_group="val", distance_per_val=distances, parents=[self])
         else:
-            return SensitiveSeries[float](data, distance_group="val", distance_per_group=distances, parents=[self])
+            return SensitiveSeries[float](data, distance_group="val", distance_per_val=distances, parents=[self])
 
     def mean(self, eps: float) -> _pd.Series[float]:
         eps_each = eps / len(self.columns)
@@ -639,37 +639,73 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
 @egrpc.remoteclass
 class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
-    _distance_group     : Literal["df", "ser"]
-    _distance_per_group : RealExpr | list[RealExpr]
+    _distance_group   : Literal["df", "ser"]
+    _distance_per_ser : RealExpr | list[RealExpr]
+    _distributed_df   : _pd.DataFrame | None
 
     def __init__(self,
-                 data               : Any,
-                 distance_group     : Literal["df", "ser"],
-                 distance_per_group : RealExpr | list[RealExpr],
-                 index              : Any                       = None,
-                 columns            : Any                       = None,
+                 data             : Any,
+                 distance_group   : Literal["df", "ser"],
+                 distance         : RealExpr | None         = None,
+                 distance_per_ser : list[RealExpr] | None   = None,
+                 index            : Any                     = None,
+                 columns          : Any                     = None,
                  *,
-                 parents            : Sequence[Prisoner[Any]]   = [],
-                 root_name          : str | None                = None,
+                 parents          : Sequence[Prisoner[Any]] = [],
+                 root_name        : str | None              = None,
+                 distributed_df   : _pd.DataFrame | None    = None,
                  ):
         self._distance_group = distance_group
-        self._distance_per_group = distance_per_group
+        self._distance_per_ser = distance_per_ser
+        self._distributed_df = distributed_df
 
         df = _pd.DataFrame(data, index=index, columns=columns)
 
         if distance_group == "df":
-            assert not isinstance(distance_per_group, list)
-            distance = distance_per_group
+            assert distance is not None
         elif distance_group == "ser":
-            if isinstance(distance_per_group, list):
-                assert len(df.columns) == len(distance_per_group)
-                distance = sum(distance_per_group, start=RealExpr(0))
-            else:
-                distance = distance_per_group * len(df.columns)
+            assert distance_per_ser is not None
+            assert len(df.columns) == len(distance_per_ser)
+            distance = sum(distance_per_ser, start=RealExpr(0))
         else:
             raise Exception
 
         super().__init__(value=df, distance=distance, parents=parents, root_name=root_name)
+
+    def _distance_of(self, key: ElementType) -> RealExpr:
+        assert self._distance_per_ser is not None
+        icol = self.columns.get_loc(key)
+        assert isinstance(icol, int)
+        return self._distance_per_ser[icol]
+
+    def _wrap_sensitive_value(self, value: ElementType, column: ElementType, distance: RealExpr, parents: Sequence[Prisoner[Any]]) -> SensitiveInt | SensitiveFloat:
+        if self._value.dtypes[column] in ["int64", "Int64"]:
+            assert is_integer(value)
+            return SensitiveInt(value, distance=distance, parents=parents)
+        elif self._value.dtypes[column] in ["float64", "Float64"]:
+            assert is_floating(value)
+            return SensitiveFloat(value, distance=distance, parents=parents)
+        else:
+            raise Exception
+
+    def _get_distributed_df(self) -> _pd.DataFrame:
+        assert self._distance_group == "df"
+
+        if self._distributed_df is None:
+            prisoner_dummy = Prisoner(value=None, distance=self.distance, parents=[self], children_type="exclusive")
+
+            if self._distance_per_ser is None:
+                self._distance_per_ser = self.distance.create_exclusive_children(len(self.columns))
+
+            ddf = _pd.DataFrame(index=self.index, columns=self.columns)
+
+            for col, dc in zip(self.columns, self._distance_per_ser):
+                for idx, d in zip(self.index, dc.create_exclusive_children(len(self.index))):
+                    ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[prisoner_dummy])
+
+            self._distributed_df = ddf
+
+        return self._distributed_df
 
     def _get_dummy_df(self) -> _pd.DataFrame:
         dummy_data = [['***' for _ in self.columns] for _ in self.index]
@@ -685,6 +721,28 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
 
     def __len__(self) -> int:
         return self.shape[0]
+
+    @egrpc.multimethod
+    def __getitem__(self, key: ElementType) -> SensitiveSeries:
+        if self._distance_group == "df":
+            ddf = self._get_distributed_df()
+            return SensitiveSeries(self._value[key],
+                                   distance_group   = "ser",
+                                   distance         = self._distance_of(key),
+                                   distance_per_val = [v.distance for v in ddf[key]],
+                                   index            = self.index,
+                                   name             = key,
+                                   parents          = [self],
+                                   distributed_ser  = ddf[key])
+        elif self._distance_group == "ser":
+            return SensitiveSeries(self._value[key],
+                                   distance_group   = "ser",
+                                   distance         = self._distance_of(key),
+                                   index            = self.index,
+                                   name             = key,
+                                   parents          = [self])
+        else:
+            raise Exception
 
     @egrpc.property
     def max_distance(self) -> realnum:

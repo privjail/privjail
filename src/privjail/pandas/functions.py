@@ -75,8 +75,6 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
              values       : PrivSeries[ElementType] | None = None,
              rownames     : list[str] | None               = None,
              colnames     : list[str] | None               = None,
-             rowvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
-             colvalues    : Sequence[ElementType] | None   = None, # extra argument for privjail
              *,
              aggfunc      : None                           = None,
              margins      : bool                           = False,
@@ -102,15 +100,13 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
 
     if isinstance(index.domain, CategoryDomain):
         rowvalues = index.domain.categories
-
-    if rowvalues is None:
-        raise DPError("Please specify `rowvalues` to prevent privacy leakage.")
+    else:
+        raise DPError("Series for crosstab() must be of a categorical type")
 
     if isinstance(columns.domain, CategoryDomain):
         colvalues = columns.domain.categories
-
-    if colvalues is None:
-        raise DPError("Please specify `colvalues` to prevent privacy leakage.")
+    else:
+        raise DPError("Series for crosstab() must be of a categorical type")
 
     # if not dropna and (not any(_np.isnan(rowvalues)) or not any(_np.isnan(colvalues))):
     #     # TODO: consider handling for pd.NA
@@ -127,8 +123,9 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
     counts = counts.reindex(list(rowvalues), axis="index") \
                    .reindex(list(colvalues), axis="columns") \
                    .fillna(0).astype(int)
+    print(counts)
 
-    return SensitiveDataFrame(counts, distance_group="df", distance_per_group=index.distance, parents=[index, columns])
+    return SensitiveDataFrame(counts, distance_group="df", distance=index.distance, parents=[index, columns])
 
 # TODO: change multifunction -> function by type checking in egrpc.function
 @egrpc.multifunction

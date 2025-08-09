@@ -53,10 +53,10 @@ def laplace_mechanism(prisoner: SensitiveInt | SensitiveFloat, eps: floating) ->
 def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: ignore[type-arg]
     assert_eps(eps)
 
-    if prisoner._distance_group == "val" and isinstance(prisoner._distance_per_group, list):
+    if prisoner._distance_group == "val":
         eps_each = eps / len(prisoner)
         scales = []
-        for distance in prisoner._distance_per_group:
+        for distance in prisoner._distance_per_val:
             sensitivity = distance.max()
             assert_sensitivity(sensitivity)
             scales.append(float(sensitivity / eps_each))
@@ -76,10 +76,10 @@ def _(prisoner: SensitiveSeries[realnum], eps: floating) -> _pd.Series: # type: 
 def _(prisoner: SensitiveDataFrame, eps: floating) -> _pd.DataFrame:
     assert_eps(eps)
 
-    if prisoner._distance_group == "ser" and isinstance(prisoner._distance_per_group, list):
+    if prisoner._distance_group == "ser":
         eps_each = eps / len(prisoner)
         scales = []
-        for distance in prisoner._distance_per_group:
+        for distance in prisoner._distance_per_ser:
             sensitivity = distance.max()
             assert_sensitivity(sensitivity)
             scales.append(float(sensitivity / eps_each))
