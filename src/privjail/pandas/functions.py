@@ -123,7 +123,6 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
     counts = counts.reindex(list(rowvalues), axis="index") \
                    .reindex(list(colvalues), axis="columns") \
                    .fillna(0).astype(int)
-    print(counts)
 
     return SensitiveDataFrame(counts, distance_group="df", distance=index.distance, parents=[index, columns])
 

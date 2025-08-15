@@ -719,6 +719,10 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         with _pd.option_context('display.show_dimensions', False):
             return self._get_dummy_df().__repr__()
 
+    def _repr_html_(self) -> Any:
+        with _pd.option_context('display.show_dimensions', False):
+            return self._get_dummy_df()._repr_html_() # type: ignore
+
     def __len__(self) -> int:
         return self.shape[0]
 
