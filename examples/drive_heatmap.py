@@ -73,7 +73,7 @@ def main():
 
     print()
     print("Consumed Privacy Budget:")
-    print(pj.consumed_privacy_budget())
+    print(pj.budgets_spent())
 
 def visualize(ser):
     df = ser.reset_index(name="count")

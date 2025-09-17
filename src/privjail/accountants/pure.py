@@ -17,7 +17,13 @@ from typing import Any
 
 from .util import Accountant, ParallelAccountant
 
+PureBudgetType = float
+
 class PureAccountant(Accountant[float]):
+    @staticmethod
+    def family_name() -> str:
+        return "pure"
+
     @staticmethod
     def propagate(budget_spent: float, next_budget_spent: float, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureParallelAccountant):
@@ -46,6 +52,10 @@ class PureAccountant(Accountant[float]):
         return PureParallelAccountant
 
 class PureParallelAccountant(ParallelAccountant[float]):
+    @staticmethod
+    def family_name() -> str:
+        return "pure"
+
     @staticmethod
     def propagate(budget_spent: float, next_budget_spent: float, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureAccountant):

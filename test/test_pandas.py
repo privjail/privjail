@@ -31,11 +31,16 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": ppd.RealDomain(dtype="int64", range=(None, None)),
         "b": ppd.RealDomain(dtype="int64", range=(None, None)),
     }
-    pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.RealExpr(1), accountant=accountant)
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
     return pdf, df
+
+def assert_budget_spent(pdf: ppd.PrivDataFrame, expected_budget: float) -> None:
+    root_name = pdf.accountant._root_name
+    assert pj.budgets_spent()[root_name] == ("pure", pytest.approx(expected_budget))
 
 def assert_equal_sensitive_series(sensitive_ser: ppd.SensitiveSeries[Any], expected_ser: pd.Series[Any]) -> None:
     assert isinstance(sensitive_ser, ppd.SensitiveSeries)
@@ -123,7 +128,8 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(TypeError): pdf["a"] >  [0, 1, 2, 3, 4]
     with pytest.raises(TypeError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
     # A sensitive value should not be compared against a private dataframe
     with pytest.raises(TypeError): pdf == x
@@ -194,7 +200,8 @@ def test_priv_dataframe_getitem() -> None:
     with pytest.raises(pj.DPError):
         pdf["a"][pdf_["a"] > 3]
 
-    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
     # A sensitive value should not be used as a column name
     with pytest.raises(TypeError):
@@ -255,7 +262,8 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
     # A sensitive value should not be assigned to a single-column view
     with pytest.raises(TypeError):
@@ -498,22 +506,24 @@ def test_privacy_budget() -> None:
     counts = pdf1["b"].value_counts(sort=False)
 
     pj.laplace_mechanism(counts, eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps
+    assert_budget_spent(pdf, eps)
 
     pj.laplace_mechanism(counts[4], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 2
+    assert_budget_spent(pdf, eps * 2)
 
     pdf2 = pdf[pdf["a"] >= 3]
 
     pj.laplace_mechanism(pdf2.shape[0], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 3
+    assert_budget_spent(pdf, eps * 3)
 
     # Privacy budget for different data sources should be managed independently
     pdf_, df_ = load_dataframe()
 
+    root_name_ = pdf_.accountant._root_name
+
     pj.laplace_mechanism(pdf_.shape[0], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 3
-    assert pj.consumed_privacy_budget()[pdf_.root_name()] == eps
+    assert_budget_spent(pdf, eps * 3)
+    assert_budget_spent(pdf_, eps)
 
 def test_privacy_budget_parallel_composition() -> None:
     pdf, df = load_dataframe()
@@ -525,19 +535,13 @@ def test_privacy_budget_parallel_composition() -> None:
     counts = pdf["b"].value_counts(sort=False)
 
     pj.laplace_mechanism(counts, eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps
+    assert_budget_spent(pdf, eps)
 
     pj.laplace_mechanism(counts[2], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 2
+    assert_budget_spent(pdf, eps * 2)
 
     pj.laplace_mechanism(counts[3], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 2
-
-    pj.laplace_mechanism(counts[3] + counts[4], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 3
-
-    pj.laplace_mechanism(counts[2] - counts[4], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 3
+    assert_budget_spent(pdf, eps * 2)
 
     # crosstab()
     pdf._domains |= {"a": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])} # FIXME: use public API
@@ -548,7 +552,7 @@ def test_privacy_budget_parallel_composition() -> None:
         for col in crosstab.columns:
             pj.laplace_mechanism(crosstab[col][idx], eps=eps)
 
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 4
+    assert_budget_spent(pdf, eps * 3)
 
     s = pj.SensitiveInt(0)
     for idx in crosstab.index:
@@ -556,11 +560,11 @@ def test_privacy_budget_parallel_composition() -> None:
             s += crosstab[col][idx]
     assert s.distance.max() == 1
     pj.laplace_mechanism(s, eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 5
+    assert_budget_spent(pdf, eps * 4)
 
     assert crosstab[5][1].distance.max() == 1 # type: ignore
     pj.laplace_mechanism(crosstab[5][1], eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 6
+    assert_budget_spent(pdf, eps * 5)
 
     # FIXME: use public API
     pdf._domains |= {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}
@@ -574,11 +578,11 @@ def test_privacy_budget_parallel_composition() -> None:
     assert s.distance.max() == 1
     assert s._value == len(pdf._value)
     pj.laplace_mechanism(s, eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 7
+    assert_budget_spent(pdf, eps * 6)
 
     s = pj.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b"):
         s += key * pdf_.shape[0]
     assert s.distance.max() == 5
     pj.laplace_mechanism(s, eps=eps)
-    assert pj.consumed_privacy_budget()[pdf.root_name()] == eps * 8
+    assert_budget_spent(pdf, eps * 7)

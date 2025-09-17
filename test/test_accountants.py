@@ -18,7 +18,7 @@ import pytest
 from privjail.accountants import *
 
 def test_pure_accountant() -> None:
-    a0 = PureAccountant(budget_limit=1.0)
+    a0 = PureAccountant(budget_limit=1.0, root_name="test")
 
     assert a0.budget_spent() == 0
 

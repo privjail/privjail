@@ -23,6 +23,7 @@ from .. import egrpc
 from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floating
 from ..prisoner import Prisoner, SensitiveInt
 from ..realexpr import RealExpr
+from ..accountants import Accountant
 from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance, Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
@@ -55,7 +56,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                  copy          : bool                          = False,
                  *,
                  parents       : Sequence[PrivPandasBase[Any]] = [],
-                 root_name     : str | None                    = None,
+                 accountant    : Accountant[Any] | None        = None,
                  preserve_row  : bool | None                   = None,
                  ):
         self._domains = domains
@@ -63,7 +64,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
         self._user_max_freq = user_max_freq
         df = _pd.DataFrame(data, index, columns, dtype, copy)
         assert user_key is None or user_key in df.columns
-        super().__init__(value=df, distance=distance, parents=parents, root_name=root_name, preserve_row=preserve_row)
+        super().__init__(value=df, distance=distance, parents=parents, accountant=accountant, preserve_row=preserve_row)
 
     def _is_eldp(self) -> bool:
         return self._user_key is None
@@ -652,7 +653,7 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
                  columns          : Any                     = None,
                  *,
                  parents          : Sequence[Prisoner[Any]] = [],
-                 root_name        : str | None              = None,
+                 accountant       : Accountant[Any] | None  = None,
                  distributed_df   : _pd.DataFrame | None    = None,
                  ):
         self._distance_group = distance_group
@@ -670,7 +671,7 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         else:
             raise Exception
 
-        super().__init__(value=df, distance=distance, parents=parents, root_name=root_name)
+        super().__init__(value=df, distance=distance, parents=parents, accountant=accountant)
 
     def _distance_of(self, key: ElementType) -> RealExpr:
         assert self._distance_per_ser is not None
@@ -678,13 +679,19 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         assert isinstance(icol, int)
         return self._distance_per_ser[icol]
 
-    def _wrap_sensitive_value(self, value: ElementType, column: ElementType, distance: RealExpr, parents: Sequence[Prisoner[Any]]) -> SensitiveInt | SensitiveFloat:
+    def _wrap_sensitive_value(self,
+                              value      : ElementType,
+                              column     : ElementType,
+                              distance   : RealExpr,
+                              parents    : Sequence[Prisoner[Any]],
+                              accountant : Accountant[Any] | None = None,
+                              ) -> SensitiveInt | SensitiveFloat:
         if self._value.dtypes[column] in ["int64", "Int64"]:
             assert is_integer(value)
-            return SensitiveInt(value, distance=distance, parents=parents)
+            return SensitiveInt(value, distance=distance, parents=parents, accountant=accountant)
         elif self._value.dtypes[column] in ["float64", "Float64"]:
             assert is_floating(value)
-            return SensitiveFloat(value, distance=distance, parents=parents)
+            return SensitiveFloat(value, distance=distance, parents=parents, accountant=accountant)
         else:
             raise Exception
 
@@ -692,7 +699,8 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         assert self._distance_group == "df"
 
         if self._distributed_df is None:
-            prisoner_dummy = Prisoner(value=None, distance=self.distance, parents=[self], children_type="exclusive")
+            accountant_type = type(self.accountant)
+            parallel_accountant = accountant_type.parallel_accountant()(parent=self.accountant)
 
             if self._distance_per_ser is None:
                 self._distance_per_ser = self.distance.create_exclusive_children(len(self.columns))
@@ -701,7 +709,8 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
 
             for col, dc in zip(self.columns, self._distance_per_ser):
                 for idx, d in zip(self.index, dc.create_exclusive_children(len(self.index))):
-                    ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[prisoner_dummy])
+                    ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[self],
+                                                                   accountant=accountant_type(parent=parallel_accountant))
 
             self._distributed_df = ddf
 

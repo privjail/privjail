@@ -23,7 +23,9 @@ from .. import egrpc
 from ..util import DPError, realnum
 from ..prisoner import SensitiveInt
 from ..realexpr import RealExpr
-from .util import ElementType, PrivPandasExclusiveDummy, assert_ptag
+from ..realexpr import RealExpr
+from ..accountants import PureAccountant
+from .util import ElementType, assert_ptag
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
@@ -63,11 +65,13 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
 
         domains[col] = column_schema2domain(col_schema)
 
-    return PrivDataFrame(data      = df,
-                         domains   = domains,
-                         distance  = RealExpr(1),
-                         user_key  = user_key,
-                         root_name = filepath)
+    accountant = PureAccountant(root_name=filepath)
+
+    return PrivDataFrame(data       = df,
+                         domains    = domains,
+                         distance   = RealExpr(1),
+                         user_key   = user_key,
+                         accountant = accountant)
 
 @egrpc.function
 def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]

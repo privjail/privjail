@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, Any
+from typing import Generic, TypeVar, Any, Sequence
 
 class BudgetExceededError(Exception):
     pass
@@ -22,19 +22,49 @@ class BudgetExceededError(Exception):
 T = TypeVar("T")
 
 class Accountant(ABC, Generic[T]):
+    _budget_limit : T | None
+    _budget_spent : T
+    _parent       : Accountant[Any] | None
+    _root_name    : str
+    _depth        : int
+
     def __init__(self,
                  *,
                  budget_limit : T | None               = None,
-                 parent       : Accountant[Any] | None = None):
+                 parent       : Accountant[Any] | None = None,
+                 root_name    : str | None             = None,
+                 ):
         if budget_limit is not None:
             type(self).assert_budget(budget_limit)
 
         self._budget_limit = budget_limit
         self._budget_spent = type(self).zero()
-        self._parent = parent
+        self._parent       = parent
+
+        if parent is not None:
+            self._root_name = parent._root_name
+            self._depth     = parent._depth + 1
+
+        else:
+            if root_name is None:
+                raise ValueError("root_name must be specified for root accountant")
+
+            self._root_name = root_name
+            self._depth     = 0
+
+            if root_name != "dummy":
+                register_root_accountant(root_name, self)
 
     def budget_spent(self) -> T:
         return self._budget_spent
+
+    def get_parent(self) -> Accountant[Any]:
+        if self._parent is None:
+            raise RuntimeError
+        return self._parent
+
+    def set_parent(self, parent: Accountant[Any]) -> None:
+        self._parent = parent
 
     def spend(self, budget: T) -> None:
         type(self).assert_budget(budget)
@@ -48,6 +78,11 @@ class Accountant(ABC, Generic[T]):
             type(self).propagate(self._budget_spent, next_budget_spent, self._parent)
 
         self._budget_spent = next_budget_spent
+
+    @staticmethod
+    @abstractmethod
+    def family_name() -> str:
+        pass
 
     @staticmethod
     @abstractmethod
@@ -83,3 +118,48 @@ class ParallelAccountant(Generic[T], Accountant[T]):
     @staticmethod
     def parallel_accountant() -> type[Accountant[T]]:
         raise Exception
+
+def get_lsca_of_same_family(accountants: Sequence[Accountant[Any]]) -> Accountant[Any]:
+    assert len(accountants) > 0
+
+    family = type(accountants[0]).family_name()
+    max_depth = max([a._depth for a in accountants])
+    accountants_set = set(accountants)
+
+    for d in reversed(range(max_depth + 1)):
+        if any(family != type(a).family_name() for a in accountants_set):
+            raise RuntimeError("Encountered accountants of different family before reaching LSCA")
+
+        if len(accountants_set) == 1:
+            return next(iter(accountants_set))
+
+        accountants_set = {a.get_parent() if a._depth == d else a for a in accountants_set}
+
+    raise RuntimeError
+
+root_accountants : dict[str, Accountant[Any]] = {}
+
+def register_root_accountant(name: str, accountant: Accountant[Any]) -> None:
+    global root_accountants
+
+    if name in root_accountants:
+        raise ValueError(f"Name '{name}' has alreadly been registered")
+
+    root_accountants[name] = accountant
+
+def get_root_accountant(name: str) -> Accountant[Any]:
+    global root_accountants
+
+    if name not in root_accountants:
+        raise ValueError(f"Name '{name}' does not exist")
+
+    return root_accountants[name]
+
+def get_all_root_accountants() -> dict[str, Accountant[Any]]:
+    global root_accountants
+    return root_accountants
+
+# should not be exposed
+def clear_root_accountants() -> None:
+    global root_accountants
+    root_accountants = {}

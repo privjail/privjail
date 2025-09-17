@@ -22,8 +22,9 @@ import pandas as _pd
 from .. import egrpc
 from ..util import DPError
 from ..realexpr import RealExpr, _min
+from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveInt
-from .util import ElementType, PrivPandasExclusiveDummy
+from .util import ElementType
 from .domain import CategoryDomain, sum_sensitivity
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .series import SensitiveSeries
@@ -36,25 +37,25 @@ def _squash_tuple(t: tuple[T, ...]) -> T | tuple[T, ...]:
 @egrpc.remoteclass
 class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
     # TODO: groups are ordered?
-    _df                       : PrivDataFrame
-    _by_columns               : list[str]
-    _by_objs                  : list[list[ElementType]]
-    _variable_exprs           : dict[tuple[ElementType, ...], RealExpr] | None
-    _exclusive_prisoner_dummy : PrivPandasExclusiveDummy # FIXME
+    _df                : PrivDataFrame
+    _by_columns        : list[str]
+    _by_objs           : list[list[ElementType]]
+    _variable_exprs    : dict[tuple[ElementType, ...], RealExpr] | None
+    _child_accountants : dict[tuple[ElementType, ...], Accountant[Any]] | None
 
     def __init__(self,
-                 obj                      : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
-                 df                       : PrivDataFrame,
-                 by_columns               : list[str],
-                 by_objs                  : list[list[ElementType]],
-                 variable_exprs           : dict[tuple[ElementType, ...], RealExpr] | None = None,
-                 exclusive_prisoner_dummy : PrivPandasExclusiveDummy | None                = None,
+                 obj               : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
+                 df                : PrivDataFrame,
+                 by_columns        : list[str],
+                 by_objs           : list[list[ElementType]],
+                 variable_exprs    : dict[tuple[ElementType, ...], RealExpr] | None = None,
+                 child_accountants : dict[tuple[ElementType, ...], Accountant[Any]] | None = None,
                  ):
-        self._df                       = df
-        self._by_columns               = by_columns
-        self._by_objs                  = by_objs
-        self._variable_exprs           = variable_exprs
-        self._exclusive_prisoner_dummy = PrivPandasExclusiveDummy(parents=[df]) if exclusive_prisoner_dummy is None else exclusive_prisoner_dummy
+        self._df                = df
+        self._by_columns        = by_columns
+        self._by_objs           = by_objs
+        self._variable_exprs    = variable_exprs
+        self._child_accountants = child_accountants
         super().__init__(value=obj, distance=df.distance, parents=[df])
 
     def _get_variable_exprs(self) -> dict[tuple[ElementType, ...], RealExpr]:
@@ -70,6 +71,18 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
             self._variable_exprs = {o: d for o, d in zip(itertools.product(*self._by_objs), exprs)}
 
         return self._variable_exprs
+
+    def _get_child_accountants(self) -> dict[tuple[ElementType, ...], Accountant[Any]]:
+        if self._child_accountants is None:
+            n_children = math.prod(len(ks) for ks in self._by_objs)
+            assert len(self) == n_children
+
+            accountant_type = type(self._df.accountant)
+            parallel_accountant = accountant_type.parallel_accountant()(parent=self._df.accountant)
+
+            self._child_accountants = {o: accountant_type(parent=parallel_accountant) for o in itertools.product(*self._by_objs)}
+
+        return self._child_accountants
 
     def _get_index(self) -> _pd.Index[Any] | _pd.MultiIndex:
         if len(self._by_columns) == 1:
@@ -104,9 +117,10 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                                  distance      = self._df.distance if self._df._is_uldp() else e,
                                  user_key      = self._df.user_key,
                                  user_max_freq = e if self._df._is_uldp() else RealExpr.INF,
-                                 parents       = [self._exclusive_prisoner_dummy],
+                                 parents       = [self._df],
+                                 accountant    = a,
                                  preserve_row  = False)
-                for (o, df), e in zip(groups.items(), self._get_variable_exprs().values())}
+                for (o, df), e, a in zip(groups.items(), self._get_variable_exprs().values(), self._get_child_accountants().values())}
 
     @egrpc.method
     def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
@@ -118,7 +132,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # TODO: column order?
         new_df = self._df[self._by_columns + keys]
         return PrivDataFrameGroupBy(self._value[key], new_df, self._by_columns, self._by_objs,
-                                    self._variable_exprs, self._exclusive_prisoner_dummy)
+                                    self._variable_exprs, self._child_accountants)
 
     @egrpc.method
     def get_group(self, obj: ElementType | tuple[ElementType, ...]) -> PrivDataFrame:
@@ -136,7 +150,8 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                              distance      = self._df.distance if self._df._is_uldp() else expr,
                              user_key      = self._df.user_key,
                              user_max_freq = expr if self._df._is_uldp() else RealExpr.INF,
-                             parents       = [self._exclusive_prisoner_dummy],
+                             parents       = [self._df],
+                             accountant    = self._get_child_accountants()[ot],
                              preserve_row  = False)
 
     @egrpc.method

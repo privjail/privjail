@@ -18,8 +18,8 @@ from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
 import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating
-from .provenance import ProvenanceEntity, new_provenance_root, new_provenance_node, consume_privacy_budget, consumed_privacy_budget_all, ChildrenType
 from .realexpr import RealExpr, _max as dmax
+from .accountants import Accountant, ParallelAccountant, DummyAccountant, get_lsca_of_same_family, get_all_root_accountants, BudgetType
 from . import egrpc
 
 T = TypeVar("T")
@@ -27,42 +27,44 @@ T = TypeVar("T")
 class Prisoner(Generic[T]):
     _value     : T
     distance   : RealExpr
-    provenance : list[ProvenanceEntity]
+    accountant : Accountant[Any]
 
     def __init__(self,
-                 value         : T,
-                 distance      : RealExpr,
+                 value      : T,
+                 distance   : RealExpr,
                  *,
-                 parents       : Sequence[Prisoner[Any]] = [],
-                 root_name     : str | None              = None,
-                 children_type : ChildrenType            = "inclusive",
+                 parents    : Sequence[Prisoner[Any]] = [], # FIXME: do we really need parents here?
+                 accountant : Accountant[Any] | None  = None,
                  ):
         self._value   = value
         self.distance = distance
 
         if distance.is_zero():
-            self.provenance = []
+            # constant (public value)
+            self.accountant = DummyAccountant()
 
         elif len(parents) == 0:
-            if root_name is None:
-                raise ValueError("Both parents and root_name are not specified.")
+            # root prisoner
+            if accountant is None:
+                raise ValueError("accountant must be set for the root prisoner.")
 
-            self.provenance = [new_provenance_root(root_name)]
+            self.accountant = accountant
 
-        elif children_type == "inclusive":
-            parent_provenance = list({pe for p in parents for pe in p.provenance})
+        elif accountant is not None:
+            # accountant is explicitly specified
+            if len(parents) != 1:
+                raise ValueError("different accountant cannot be set for a prisoner with multiple parents")
 
-            if len(parents) == 1 and parents[0].provenance[0].children_type == "exclusive":
-                self.provenance = [new_provenance_node(parent_provenance, "inclusive")]
-            else:
-                self.provenance = parent_provenance
+            self.accountant = accountant
 
-        elif children_type == "exclusive":
-            parent_provenance = list({pe for p in parents for pe in p.provenance})
-            self.provenance = [new_provenance_node(parent_provenance, "exclusive")]
+        elif len(parents) == 1:
+            # single parent
+            self.accountant = parents[0].accountant
 
         else:
-            raise RuntimeError
+            # multiple parents
+            lsca_accountant = get_lsca_of_same_family([p.accountant for p in parents if not isinstance(p.accountant, DummyAccountant)])
+            self.accountant = lsca_accountant.get_parent() if isinstance(lsca_accountant, ParallelAccountant) else lsca_accountant
 
     def __str__(self) -> str:
         return "<***>"
@@ -70,26 +72,18 @@ class Prisoner(Generic[T]):
     def __repr__(self) -> str:
         return "<***>"
 
-    def consume_privacy_budget(self, privacy_budget: float) -> None:
-        consume_privacy_budget(self.provenance, privacy_budget)
-
-    def root_name(self) -> str:
-        assert len(self.provenance) > 0
-        return self.provenance[0].root_name
-
 @egrpc.remoteclass
 class SensitiveInt(Prisoner[integer]):
     def __init__(self,
-                 value         : integer,
-                 distance      : RealExpr                = RealExpr(0),
+                 value      : integer,
+                 distance   : RealExpr                = RealExpr(0),
                  *,
-                 parents       : Sequence[Prisoner[Any]] = [],
-                 root_name     : str | None              = None,
-                 children_type : ChildrenType            = "inclusive",
+                 parents    : Sequence[Prisoner[Any]] = [],
+                 accountant : Accountant[Any] | None  = None,
                  ):
         if not is_integer(value):
             raise ValueError("`value` must be int for SensitveInt.")
-        super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
+        super().__init__(value, distance, parents=parents, accountant=accountant)
 
     def __str__(self) -> str:
         return "<*** (int)>"
@@ -196,16 +190,15 @@ class SensitiveInt(Prisoner[integer]):
 @egrpc.remoteclass
 class SensitiveFloat(Prisoner[floating]):
     def __init__(self,
-                 value         : floating,
-                 distance      : RealExpr                = RealExpr(0),
+                 value      : floating,
+                 distance   : RealExpr                = RealExpr(0),
                  *,
-                 parents       : Sequence[Prisoner[Any]] = [],
-                 root_name     : str | None              = None,
-                 children_type : ChildrenType            = "inclusive",
+                 parents    : Sequence[Prisoner[Any]] = [],
+                 accountant : Accountant[Any] | None  = None,
                  ):
         if not is_floating(value):
             raise ValueError("`value` must be float for SensitveFloat.")
-        super().__init__(value, distance, parents=parents, root_name=root_name, children_type=children_type)
+        super().__init__(value, distance, parents=parents, accountant=accountant)
 
     def __str__(self) -> str:
         return "<*** (float)>"
@@ -352,5 +345,6 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
     return result
 
 @egrpc.function
-def consumed_privacy_budget() -> dict[str, float]:
-    return consumed_privacy_budget_all()
+def budgets_spent() -> dict[str, tuple[str, BudgetType]]:
+    return {name: (type(accountant).family_name(), accountant.budget_spent())
+            for name, accountant in get_all_root_accountants().items()}

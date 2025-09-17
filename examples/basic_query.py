@@ -49,7 +49,7 @@ def main():
 
     print()
     print("Consumed Privacy Budget:")
-    print(pj.consumed_privacy_budget())
+    print(pj.budgets_spent())
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

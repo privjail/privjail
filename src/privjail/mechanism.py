@@ -19,6 +19,7 @@ import numpy as _np
 import pandas as _pd
 
 from .util import DPError, floating, realnum
+from .accountants import PureAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .pandas import SensitiveSeries, SensitiveDataFrame
 from .pandas.util import ElementType, Index, MultiIndex, pack_pandas_index
@@ -71,7 +72,10 @@ def laplace_mechanism_impl(prisoner: SensitiveInt | SensitiveFloat, eps: floatin
 
     result = float(_np.random.laplace(loc=prisoner._value, scale=sensitivity / eps))
 
-    prisoner.consume_privacy_budget(float(eps))
+    if isinstance(prisoner.accountant, PureAccountant):
+        prisoner.accountant.spend(float(eps))
+    else:
+        raise RuntimeError
 
     return result
 
@@ -93,7 +97,10 @@ def _(prisoner: SensitiveSeries[realnum], eps: floating) -> FloatSeriesBuf:
         assert_sensitivity(sensitivity)
         data = _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
 
-    prisoner.consume_privacy_budget(float(eps))
+    if isinstance(prisoner.accountant, PureAccountant):
+        prisoner.accountant.spend(float(eps))
+    else:
+        raise RuntimeError
 
     return FloatSeriesBuf(data.tolist(), pack_pandas_index(prisoner.index), prisoner.name)
 
@@ -115,7 +122,10 @@ def _(prisoner: SensitiveDataFrame, eps: floating) -> FloatDataFrameBuf:
         assert_sensitivity(sensitivity)
         data = _np.random.laplace(loc=prisoner._value, scale=sensitivity / eps)
 
-    prisoner.consume_privacy_budget(float(eps))
+    if isinstance(prisoner.accountant, PureAccountant):
+        prisoner.accountant.spend(float(eps))
+    else:
+        raise RuntimeError
 
     return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
 
@@ -148,7 +158,11 @@ def exponential_mechanism(scores: Sequence[SensitiveInt | SensitiveFloat], eps: 
 
     # create a dummy prisoner to propagate budget consumption to all prisoners
     prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
-    prisoner_dummy.consume_privacy_budget(float(eps))
+
+    if isinstance(prisoner_dummy.accountant, PureAccountant):
+        prisoner_dummy.accountant.spend(float(eps))
+    else:
+        raise RuntimeError
 
     return result
 

@@ -24,6 +24,7 @@ import pandas as _pd
 from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floating
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
 from ..realexpr import RealExpr, _max as dmax
+from ..accountants import Accountant
 from .. import egrpc
 from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance, Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
@@ -51,14 +52,14 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
                  user_max_freq : RealExpr                      = RealExpr.INF,
                  *,
                  parents       : Sequence[PrivPandasBase[Any]] = [],
-                 root_name     : str | None                    = None,
+                 accountant    : Accountant[Any] | None        = None,
                  preserve_row  : bool | None                   = None,
                  ):
         self._domain = domain
         self._is_user_key = is_user_key
         self._user_max_freq = user_max_freq
         ser = _pd.Series(data)
-        super().__init__(value=ser, distance=distance, parents=parents, root_name=root_name, preserve_row=preserve_row)
+        super().__init__(value=ser, distance=distance, parents=parents, accountant=accountant, preserve_row=preserve_row)
 
     def _is_eldp(self) -> bool:
         return not self._is_user_key
@@ -668,7 +669,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
                  name             : str | None              = None,
                  *,
                  parents          : Sequence[Prisoner[Any]] = [],
-                 root_name        : str | None              = None,
+                 accountant       : Accountant[Any] | None  = None,
                  distributed_ser  : _pd.Series | None       = None,
                  ):
         self._distance_group = distance_group
@@ -686,7 +687,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         else:
             raise Exception
 
-        super().__init__(value=ser, distance=distance, parents=parents, root_name=root_name)
+        super().__init__(value=ser, distance=distance, parents=parents, accountant=accountant)
 
     def _distance_of(self, key: ElementType) -> RealExpr:
         assert self._distance_per_val is not None
@@ -694,13 +695,18 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         assert isinstance(idx, int)
         return self._distance_per_val[idx]
 
-    def _wrap_sensitive_value(self, value: ElementType, distance: RealExpr, parents: Sequence[Prisoner[Any]]) -> SensitiveInt | SensitiveFloat:
+    def _wrap_sensitive_value(self,
+                              value      : ElementType,
+                              distance   : RealExpr,
+                              parents    : Sequence[Prisoner[Any]],
+                              accountant : Accountant[Any] | None = None,
+                              ) -> SensitiveInt | SensitiveFloat:
         if self._value.dtype in ["int64", "Int64"]:
             assert is_integer(value)
-            return SensitiveInt(value, distance=distance, parents=parents)
+            return SensitiveInt(value, distance=distance, parents=parents, accountant=accountant)
         elif self._value.dtype in ["float64", "Float64"]:
             assert is_floating(value)
-            return SensitiveFloat(value, distance=distance, parents=parents)
+            return SensitiveFloat(value, distance=distance, parents=parents, accountant=accountant)
         else:
             raise Exception
 
@@ -708,12 +714,13 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         assert self._distance_group == "ser"
 
         if self._distributed_ser is None:
-            prisoner_dummy = Prisoner(value=None, distance=self.distance, parents=[self], children_type="exclusive")
+            accountant_type = type(self.accountant)
+            parallel_accountant = accountant_type.parallel_accountant()(parent=self.accountant)
 
             if self._distance_per_val is None:
                 self._distance_per_val = self.distance.create_exclusive_children(len(self))
 
-            data = [self._wrap_sensitive_value(v, distance=d, parents=[prisoner_dummy])
+            data = [self._wrap_sensitive_value(v, distance=d, parents=[self], accountant=accountant_type(parent=parallel_accountant))
                     for v, d in zip(self._value, self._distance_per_val)]
 
             self._distributed_ser = _pd.Series(data, index=self.index, name=self.name)
