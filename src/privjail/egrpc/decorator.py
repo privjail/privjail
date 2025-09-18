@@ -123,7 +123,7 @@ else:
 
 def remoteclass_decorator(cls: Type[T]) -> Type[T]:
     init_remoteclass(cls)
-    methods = {k: v for k, v in cls.__dict__.items() if hasattr(v, "__egrpc_enabled")}
+    methods = {k: v for c in reversed(cls.__mro__) for k, v in c.__dict__.items() if hasattr(v, "__egrpc_enabled")}
 
     for method_name, method in methods.items():
         if isinstance(method, multimethod_decorator):
@@ -225,7 +225,8 @@ def register_remoteclass_multimethod(cls: Type[T], mmd: multimethod_decorator) -
     qualname = mmd.methods[0].__qualname__
 
     for i, method in enumerate(mmd.methods):
-        method.__qualname__ = f"{qualname}.{i}"
+        if not method.__qualname__.endswith(f".{i}"):
+            method.__qualname__ = f"{qualname}.{i}"
         method_wrapper = register_remoteclass_method(cls, method)
         md.register(method_wrapper)
 
@@ -235,11 +236,13 @@ def register_remoteclass_property(cls: Type[T], prop: property_decorator) -> pro
     assert prop.fget is not None
     qualname = prop.fget.__qualname__
 
-    prop.fget.__qualname__ = f"{qualname}.getter"
+    if not prop.fget.__qualname__.endswith(".getter"):
+        prop.fget.__qualname__ = f"{qualname}.getter"
     fget_wrapper = register_remoteclass_method(cls, prop.fget)
 
     if prop.fset is not None:
-        prop.fset.__qualname__ = f"{qualname}.setter"
+        if not prop.fset.__qualname__.endswith(".setter"):
+            prop.fset.__qualname__ = f"{qualname}.setter"
         fset_wrapper = register_remoteclass_method(cls, prop.fset)
     else:
         fset_wrapper = None

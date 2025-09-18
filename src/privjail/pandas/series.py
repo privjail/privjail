@@ -362,10 +362,6 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
                                 preserve_row = True)
 
     @egrpc.property
-    def max_distance(self) -> realnum:
-        return self.distance.max()
-
-    @egrpc.property
     def shape(self) -> tuple[SensitiveInt]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self._eldp_distance(), parents=[self])
         return (nrows,)
@@ -756,10 +752,6 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
             return self._wrap_sensitive_value(self._value[key], distance=self._distance_of(key), parents=[self]) # type: ignore
         else:
             raise Exception
-
-    @egrpc.property
-    def max_distance(self) -> realnum:
-        return self.distance.max()
 
     @property
     def index(self) -> _pd.Index[ElementType]: # type: ignore

@@ -323,10 +323,6 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                              preserve_row = True)
 
     @egrpc.property
-    def max_distance(self) -> realnum:
-        return self.distance.max()
-
-    @egrpc.property
     def shape(self) -> tuple[SensitiveInt, int]:
         nrows = SensitiveInt(value=self._value.shape[0], distance=self._eldp_distance(), parents=[self])
         ncols = self._value.shape[1]
@@ -756,10 +752,6 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
                                    parents          = [self])
         else:
             raise Exception
-
-    @egrpc.property
-    def max_distance(self) -> realnum:
-        return self.distance.max()
 
     # TODO: define privjail's own Index[T] type
     @property

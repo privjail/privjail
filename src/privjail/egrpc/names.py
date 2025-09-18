@@ -38,28 +38,37 @@ def proto_remoteclass_service_name(cls: Type[T]) -> str:
     return f"{proto_base_name(cls)}RemoteClassService"
 
 def proto_method_rpc_name(cls: Type[T], method: Callable[..., Any]) -> str:
+    cls_name = proto_base_name(cls)
+
     if method.__name__ == "__init__":
-        return f"{proto_base_name(cls)}Init"
+        return f"{cls_name}Init"
     elif method.__name__ == "__del__":
-        return f"{proto_base_name(cls)}Del"
+        return f"{cls_name}Del"
     else:
-        return f"{proto_base_name(method)}Method"
+        method_name = proto_base_name(method).removeprefix(cls_name)
+        return f"{cls_name}{method_name}Method"
 
 def proto_method_req_name(cls: Type[T], method: Callable[..., Any]) -> str:
+    cls_name = proto_base_name(cls)
+
     if method.__name__ == "__init__":
-        return f"{proto_base_name(cls)}InitRemoteClassRequest"
+        return f"{cls_name}InitRemoteClassRequest"
     elif method.__name__ == "__del__":
-        return f"{proto_base_name(cls)}DelRemoteClassRequest"
+        return f"{cls_name}DelRemoteClassRequest"
     else:
-        return f"{proto_base_name(method)}MethodRemoteClassRequest"
+        method_name = proto_base_name(method).removeprefix(cls_name)
+        return f"{cls_name}{method_name}MethodRemoteClassRequest"
 
 def proto_method_res_name(cls: Type[T], method: Callable[..., Any]) -> str:
+    cls_name = proto_base_name(cls)
+
     if method.__name__ == "__init__":
-        return f"{proto_base_name(cls)}InitRemoteClassResponse"
+        return f"{cls_name}InitRemoteClassResponse"
     elif method.__name__ == "__del__":
-        return f"{proto_base_name(cls)}DelRemoteClassResponse"
+        return f"{cls_name}DelRemoteClassResponse"
     else:
-        return f"{proto_base_name(method)}MethodRemoteClassResponse"
+        method_name = proto_base_name(method).removeprefix(cls_name)
+        return f"{cls_name}{method_name}MethodRemoteClassResponse"
 
 def proto_instance_ref_name(cls: Type[T]) -> str:
     return f"{proto_base_name(cls)}InstanceMessage"
