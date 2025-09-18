@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from .util import Accountant, ParallelAccountant
+from .approx import ApproxAccountant
 
 PureBudgetType = float
 
@@ -28,6 +29,9 @@ class PureAccountant(Accountant[PureBudgetType]):
     def propagate(budget_spent: PureBudgetType, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureParallelAccountant):
             parent.spend(next_budget_spent)
+        elif isinstance(parent, ApproxAccountant):
+            # basic composition
+            parent.spend((next_budget_spent - budget_spent, 0))
         else:
             raise Exception
 
