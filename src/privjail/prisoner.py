@@ -179,10 +179,14 @@ class SensitiveInt(Prisoner[integer]):
     def _(self, other: floating) -> SensitiveFloat:
         return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
 
-    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> float:
         if mech == "laplace":
             from .mechanism import laplace_mechanism
             result: float = laplace_mechanism(self, eps)
+            return result
+        elif mech == "gaussian":
+            from .mechanism import gaussian_mechanism
+            result: float = gaussian_mechanism(self, eps, delta)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
@@ -254,10 +258,14 @@ class SensitiveFloat(Prisoner[floating]):
     def __rmul__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
         return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
 
-    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> float:
         if mech == "laplace":
             from .mechanism import laplace_mechanism
             result: float = laplace_mechanism(self, eps)
+            return result
+        elif mech == "gaussian":
+            from .mechanism import gaussian_mechanism
+            result: float = gaussian_mechanism(self, eps, delta)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")

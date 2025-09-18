@@ -790,10 +790,13 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     def size(self) -> int:
         return self._value.size
 
-    def reveal(self, eps: floating, mech: str = "laplace") -> _pd.DataFrame:
+    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> _pd.DataFrame:
         if mech == "laplace":
             from ..mechanism import laplace_mechanism
             return laplace_mechanism(self, eps) # type: ignore
+        elif mech == "gaussian":
+            from ..mechanism import gaussian_mechanism
+            return gaussian_mechanism(self, eps, delta) # type: ignore
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
@@ -807,10 +810,14 @@ class DataFrame(_pd.DataFrame):
     def max_distance(self) -> realnum:
         return total_max_distance(list(self.values.flatten()))
 
-    def reveal(self, eps: floating, mech: str = "laplace") -> float:
+    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> float:
         if mech == "laplace":
             from ..mechanism import laplace_mechanism
             result: float = laplace_mechanism(self, eps)
+            return result
+        elif mech == "gaussian":
+            from ..mechanism import gaussian_mechanism
+            result: float = gaussian_mechanism(self, eps, delta)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
