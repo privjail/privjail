@@ -24,8 +24,7 @@ class DummyAccountant(Accountant[None]):
     def family_name() -> str:
         return "dummy"
 
-    @staticmethod
-    def propagate(budget_spent: None, next_budget_spent: None, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: None, parent: Accountant[Any]) -> None:
         pass
 
     @staticmethod
@@ -53,8 +52,7 @@ class DummyParallelAccountant(ParallelAccountant[None]):
     def family_name() -> str:
         return "dummy"
 
-    @staticmethod
-    def propagate(budget_spent: None, next_budget_spent: None, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: None, parent: Accountant[Any]) -> None:
         pass
 
     @staticmethod

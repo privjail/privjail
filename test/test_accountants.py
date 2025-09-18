@@ -15,6 +15,7 @@
 from typing import Any
 import pytest
 import uuid
+import math
 
 from privjail.accountants import *
 
@@ -132,3 +133,65 @@ def test_approx_accountant() -> None:
 
     assert a_pure.budget_spent() == pytest.approx(eps * 2)
     assert a0.budget_spent() == (pytest.approx(eps * 6), pytest.approx(delta * 3))
+
+def test_zCDP_accountant() -> None:
+    delta = 1e-6
+
+    a0 = ApproxAccountant(budget_limit=(1.0, delta))
+    a0.set_as_root(name=str(uuid.uuid4()))
+
+    assert a0.budget_spent() == (0, 0)
+
+    # should raise error without delta
+    with pytest.raises(Exception):
+        zCDPAccountant(parent=a0)
+
+    a_zcdp = zCDPAccountant(parent=a0, delta=delta)
+
+    assert a_zcdp.budget_spent() == 0
+
+    rho = 0.001
+
+    def eps_expected(rho: float, delta: float) -> float:
+        return rho + 2.0 * math.sqrt(rho * math.log(1.0 / delta))
+
+    a_zcdp.spend(rho)
+
+    assert a_zcdp.budget_spent() == pytest.approx(rho)
+    assert a0.budget_spent() == (pytest.approx(eps_expected(rho, delta)), pytest.approx(delta))
+
+    a_zcdp.spend(rho)
+
+    assert a_zcdp.budget_spent() == pytest.approx(rho * 2)
+    assert a0.budget_spent() == (pytest.approx(eps_expected(rho * 2, delta)), pytest.approx(delta))
+
+    a_zcdp_p = zCDPParallelAccountant(parent=a_zcdp)
+    a_zcdp_p1 = zCDPAccountant(parent=a_zcdp_p)
+    a_zcdp_p2 = zCDPAccountant(parent=a_zcdp_p)
+
+    a_zcdp_p1.spend(rho)
+    a_zcdp_p2.spend(rho)
+
+    assert a_zcdp_p1.budget_spent() == pytest.approx(rho)
+    assert a_zcdp_p2.budget_spent() == pytest.approx(rho)
+    assert a_zcdp.budget_spent() == pytest.approx(rho * 3)
+    assert a0.budget_spent() == (pytest.approx(eps_expected(rho * 3, delta)), pytest.approx(delta))
+
+    a_zcdp_p1.spend(rho)
+
+    assert a_zcdp_p1.budget_spent() == pytest.approx(rho * 2)
+    assert a_zcdp_p2.budget_spent() == pytest.approx(rho)
+    assert a_zcdp.budget_spent() == pytest.approx(rho * 4)
+    assert a0.budget_spent() == (pytest.approx(eps_expected(rho * 4, delta)), pytest.approx(delta))
+
+    with pytest.raises(BudgetExceededError):
+        a_zcdp_p1.spend(0.1)
+
+    # exceeding budget should not be counted
+    assert a_zcdp_p1.budget_spent() == pytest.approx(rho * 2)
+    assert a_zcdp_p2.budget_spent() == pytest.approx(rho)
+    assert a_zcdp.budget_spent() == pytest.approx(rho * 4)
+    assert a0.budget_spent() == (pytest.approx(eps_expected(rho * 4, delta)), pytest.approx(delta))
+
+    with pytest.raises(Exception):
+        a_zcdp.spend(-1.0)

@@ -16,8 +16,9 @@ from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_
 from .dummy import DummyAccountant, DummyParallelAccountant
 from .pure import PureAccountant, PureParallelAccountant, PureBudgetType
 from .approx import ApproxAccountant, ApproxParallelAccountant, ApproxBudgetType
+from .zcdp import zCDPAccountant, zCDPParallelAccountant, zCDPBudgetType
 
-BudgetType = PureBudgetType | ApproxBudgetType
+BudgetType = PureBudgetType | ApproxBudgetType | zCDPBudgetType
 
 __all__ = [
     "BudgetExceededError",
@@ -29,10 +30,13 @@ __all__ = [
     "PureParallelAccountant",
     "ApproxAccountant",
     "ApproxParallelAccountant",
+    "zCDPAccountant",
+    "zCDPParallelAccountant",
     "get_lsca_of_same_family",
     "get_root_accountant",
     "get_all_root_accountants",
     "BudgetType",
     "PureBudgetType",
     "ApproxBudgetType",
+    "zCDPBudgetType",
 ]

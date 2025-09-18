@@ -25,13 +25,12 @@ class PureAccountant(Accountant[PureBudgetType]):
     def family_name() -> str:
         return "pure"
 
-    @staticmethod
-    def propagate(budget_spent: PureBudgetType, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureParallelAccountant):
             parent.spend(next_budget_spent)
         elif isinstance(parent, ApproxAccountant):
             # basic composition
-            parent.spend((next_budget_spent - budget_spent, 0))
+            parent.spend((next_budget_spent - self._budget_spent, 0))
         else:
             raise Exception
 
@@ -60,10 +59,9 @@ class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
     def family_name() -> str:
         return "pure"
 
-    @staticmethod
-    def propagate(budget_spent: PureBudgetType, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureAccountant):
-            parent.spend(next_budget_spent - budget_spent)
+            parent.spend(next_budget_spent - self._budget_spent)
         else:
             raise Exception
 

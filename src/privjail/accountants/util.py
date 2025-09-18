@@ -65,7 +65,7 @@ class Accountant(ABC, Generic[T]):
             raise BudgetExceededError()
 
         if self._parent is not None:
-            type(self).propagate(self._budget_spent, next_budget_spent, self._parent)
+            self.propagate(next_budget_spent, self._parent)
 
         self._budget_spent = next_budget_spent
 
@@ -74,9 +74,8 @@ class Accountant(ABC, Generic[T]):
     def family_name() -> str:
         pass
 
-    @staticmethod
     @abstractmethod
-    def propagate(budget_spent: T, next_budget_spent: T, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: T, parent: Accountant[Any]) -> None:
         pass
 
     @staticmethod

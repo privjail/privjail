@@ -24,8 +24,7 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
     def family_name() -> str:
         return "approx"
 
-    @staticmethod
-    def propagate(budget_spent: ApproxBudgetType, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, ApproxParallelAccountant):
             parent.spend(next_budget_spent)
         else:
@@ -61,10 +60,9 @@ class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
     def family_name() -> str:
         return "approx"
 
-    @staticmethod
-    def propagate(budget_spent: ApproxBudgetType, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
+    def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, ApproxAccountant):
-            eps, delta = budget_spent
+            eps, delta = self._budget_spent
             next_eps, next_delta = next_budget_spent
             parent.spend((next_eps - eps, next_delta - delta))
         else:
