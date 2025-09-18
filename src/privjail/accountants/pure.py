@@ -19,62 +19,62 @@ from .util import Accountant, ParallelAccountant
 
 PureBudgetType = float
 
-class PureAccountant(Accountant[float]):
+class PureAccountant(Accountant[PureBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "pure"
 
     @staticmethod
-    def propagate(budget_spent: float, next_budget_spent: float, parent: Accountant[Any]) -> None:
+    def propagate(budget_spent: PureBudgetType, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureParallelAccountant):
             parent.spend(next_budget_spent)
         else:
             raise Exception
 
     @staticmethod
-    def compose(budget1: float, budget2: float) -> float:
+    def compose(budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
         return budget1 + budget2
 
     @staticmethod
-    def zero() -> float:
+    def zero() -> PureBudgetType:
         return 0.0
 
     @staticmethod
-    def exceeds(budget1: float, budget2: float) -> bool:
+    def exceeds(budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
         return budget1 > budget2
 
     @staticmethod
-    def assert_budget(budget: float) -> None:
+    def assert_budget(budget: PureBudgetType) -> None:
         assert budget >= 0
 
     @staticmethod
-    def parallel_accountant() -> type[Accountant[float]]:
+    def parallel_accountant() -> type[Accountant[PureBudgetType]]:
         return PureParallelAccountant
 
-class PureParallelAccountant(ParallelAccountant[float]):
+class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "pure"
 
     @staticmethod
-    def propagate(budget_spent: float, next_budget_spent: float, parent: Accountant[Any]) -> None:
+    def propagate(budget_spent: PureBudgetType, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureAccountant):
             parent.spend(next_budget_spent - budget_spent)
         else:
             raise Exception
 
     @staticmethod
-    def compose(budget1: float, budget2: float) -> float:
+    def compose(budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
         return max(budget1, budget2)
 
     @staticmethod
-    def zero() -> float:
+    def zero() -> PureBudgetType:
         return 0.0
 
     @staticmethod
-    def exceeds(budget1: float, budget2: float) -> bool:
+    def exceeds(budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
         return budget1 > budget2
 
     @staticmethod
-    def assert_budget(budget: float) -> None:
+    def assert_budget(budget: PureBudgetType) -> None:
         assert budget >= 0

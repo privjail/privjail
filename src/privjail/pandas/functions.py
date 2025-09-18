@@ -24,7 +24,7 @@ from ..util import DPError, realnum
 from ..prisoner import SensitiveInt
 from ..realexpr import RealExpr
 from ..realexpr import RealExpr
-from ..accountants import PureAccountant
+from ..accountants import BudgetType, Accountant, PureAccountant, ApproxAccountant
 from .util import ElementType, assert_ptag
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
@@ -33,7 +33,12 @@ from .dataframe import PrivDataFrame, SensitiveDataFrame
 T = TypeVar("T")
 
 @egrpc.function
-def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
+def read_csv(filepath     : str,
+             schemapath   : str | None        = None,
+             *,
+             accountant   : str | None        = "pure",
+             budget_limit : BudgetType | None = None,
+             ) -> PrivDataFrame:
     # TODO: more vaildation for the input data
     df = _pd.read_csv(filepath)
 
@@ -65,13 +70,20 @@ def read_csv(filepath: str, schemapath: str | None = None) -> PrivDataFrame:
 
         domains[col] = column_schema2domain(col_schema)
 
-    accountant = PureAccountant(root_name=filepath)
+    if accountant == "pure":
+        acc = PureAccountant(budget_limit=budget_limit)
+    elif accountant == "approx":
+        acc = ApproxAccountant(budget_limit=budget_limit)
+    else:
+        raise ValueError(f"Unknown accountant: '{accountant}'")
+
+    acc.set_as_root(name=filepath)
 
     return PrivDataFrame(data       = df,
                          domains    = domains,
                          distance   = RealExpr(1),
                          user_key   = user_key,
-                         accountant = accountant)
+                         accountant = acc)
 
 @egrpc.function
 def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]

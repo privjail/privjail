@@ -15,8 +15,9 @@
 from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_of_same_family, get_root_accountant, get_all_root_accountants
 from .dummy import DummyAccountant, DummyParallelAccountant
 from .pure import PureAccountant, PureParallelAccountant, PureBudgetType
+from .approx import ApproxAccountant, ApproxParallelAccountant, ApproxBudgetType
 
-BudgetType = PureBudgetType
+BudgetType = PureBudgetType | ApproxBudgetType
 
 __all__ = [
     "BudgetExceededError",
@@ -26,9 +27,12 @@ __all__ = [
     "DummyParallelAccountant",
     "PureAccountant",
     "PureParallelAccountant",
+    "ApproxAccountant",
+    "ApproxParallelAccountant",
     "get_lsca_of_same_family",
     "get_root_accountant",
     "get_all_root_accountants",
     "BudgetType",
     "PureBudgetType",
+    "ApproxBudgetType",
 ]

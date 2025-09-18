@@ -19,7 +19,7 @@ import numpy as _np
 import pandas as _pd
 
 from .util import DPError, floating, realnum
-from .accountants import PureAccountant
+from .accountants import PureAccountant, ApproxAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .pandas import SensitiveSeries, SensitiveDataFrame
 from .pandas.util import ElementType, Index, MultiIndex, pack_pandas_index
@@ -74,6 +74,8 @@ def laplace_mechanism_impl(prisoner: SensitiveInt | SensitiveFloat, eps: floatin
 
     if isinstance(prisoner.accountant, PureAccountant):
         prisoner.accountant.spend(float(eps))
+    elif isinstance(prisoner.accountant, ApproxAccountant):
+        prisoner.accountant.spend((float(eps), 0.0))
     else:
         raise RuntimeError
 
@@ -99,6 +101,8 @@ def _(prisoner: SensitiveSeries[realnum], eps: floating) -> FloatSeriesBuf:
 
     if isinstance(prisoner.accountant, PureAccountant):
         prisoner.accountant.spend(float(eps))
+    elif isinstance(prisoner.accountant, ApproxAccountant):
+        prisoner.accountant.spend((float(eps), 0.0))
     else:
         raise RuntimeError
 
@@ -124,6 +128,8 @@ def _(prisoner: SensitiveDataFrame, eps: floating) -> FloatDataFrameBuf:
 
     if isinstance(prisoner.accountant, PureAccountant):
         prisoner.accountant.spend(float(eps))
+    elif isinstance(prisoner.accountant, ApproxAccountant):
+        prisoner.accountant.spend((float(eps), 0.0))
     else:
         raise RuntimeError
 
@@ -161,6 +167,8 @@ def exponential_mechanism(scores: Sequence[SensitiveInt | SensitiveFloat], eps: 
 
     if isinstance(prisoner_dummy.accountant, PureAccountant):
         prisoner_dummy.accountant.spend(float(eps))
+    elif isinstance(prisoner_dummy.accountant, ApproxAccountant):
+        prisoner_dummy.accountant.spend((float(eps), 0.0))
     else:
         raise RuntimeError
 

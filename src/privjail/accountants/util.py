@@ -32,7 +32,6 @@ class Accountant(ABC, Generic[T]):
                  *,
                  budget_limit : T | None               = None,
                  parent       : Accountant[Any] | None = None,
-                 root_name    : str | None             = None,
                  ):
         if budget_limit is not None:
             type(self).assert_budget(budget_limit)
@@ -40,20 +39,14 @@ class Accountant(ABC, Generic[T]):
         self._budget_limit = budget_limit
         self._budget_spent = type(self).zero()
         self._parent       = parent
+        self._root_name    = parent._root_name if parent is not None else ""
+        self._depth        = parent._depth + 1 if parent is not None else 0
 
-        if parent is not None:
-            self._root_name = parent._root_name
-            self._depth     = parent._depth + 1
+    def set_as_root(self, name: str) -> None:
+        assert self._root_name == ""
+        self._root_name = name
 
-        else:
-            if root_name is None:
-                raise ValueError("root_name must be specified for root accountant")
-
-            self._root_name = root_name
-            self._depth     = 0
-
-            if root_name != "dummy":
-                register_root_accountant(root_name, self)
+        register_root_accountant(name, self)
 
     def budget_spent(self) -> T:
         return self._budget_spent
@@ -62,9 +55,6 @@ class Accountant(ABC, Generic[T]):
         if self._parent is None:
             raise RuntimeError
         return self._parent
-
-    def set_parent(self, parent: Accountant[Any]) -> None:
-        self._parent = parent
 
     def spend(self, budget: T) -> None:
         type(self).assert_budget(budget)

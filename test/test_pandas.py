@@ -31,7 +31,8 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": ppd.RealDomain(dtype="int64", range=(None, None)),
         "b": ppd.RealDomain(dtype="int64", range=(None, None)),
     }
-    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant()
+    accountant.set_as_root(name=str(uuid.uuid4()))
     pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.RealExpr(1), accountant=accountant)
     df = pd.DataFrame(data)
     assert (pdf.columns == df.columns).all()
@@ -128,7 +129,8 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(TypeError): pdf["a"] >  [0, 1, 2, 3, 4]
     with pytest.raises(TypeError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant()
+    accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
     # A sensitive value should not be compared against a private dataframe
@@ -200,7 +202,8 @@ def test_priv_dataframe_getitem() -> None:
     with pytest.raises(pj.DPError):
         pdf["a"][pdf_["a"] > 3]
 
-    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant()
+    accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
     # A sensitive value should not be used as a column name
@@ -262,7 +265,8 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    accountant = pj.PureAccountant(root_name=str(uuid.uuid4()))
+    accountant = pj.PureAccountant()
+    accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
     # A sensitive value should not be assigned to a single-column view
@@ -518,8 +522,6 @@ def test_privacy_budget() -> None:
 
     # Privacy budget for different data sources should be managed independently
     pdf_, df_ = load_dataframe()
-
-    root_name_ = pdf_.accountant._root_name
 
     pj.laplace_mechanism(pdf_.shape[0], eps=eps)
     assert_budget_spent(pdf, eps * 3)
