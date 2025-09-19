@@ -199,14 +199,21 @@ class SensitiveInt(Prisoner[integer]):
     def _(self, other: floating) -> SensitiveFloat:
         return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
 
-    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> float:
+    def reveal(self,
+               *,
+               eps   : floating | None = None,
+               delta : floating | None = None,
+               rho   : floating | None = None,
+               mech  : str             = "laplace",
+               ) -> float:
         if mech == "laplace":
+            assert eps is not None
             from .mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps)
+            result: float = laplace_mechanism(self, eps=eps)
             return result
         elif mech == "gaussian":
             from .mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps, delta)
+            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
@@ -274,14 +281,21 @@ class SensitiveFloat(Prisoner[floating]):
     def __rmul__(self, other: realnum) -> SensitiveFloat: # type: ignore[misc]
         return SensitiveFloat(other * self._value, distance=self.distance * _np.abs(other), parents=[self])
 
-    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> float:
+    def reveal(self,
+               *,
+               eps   : floating | None = None,
+               delta : floating | None = None,
+               rho   : floating | None = None,
+               mech  : str             = "laplace",
+               ) -> float:
         if mech == "laplace":
+            assert eps is not None
             from .mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps)
+            result: float = laplace_mechanism(self, eps=eps)
             return result
         elif mech == "gaussian":
             from .mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps, delta)
+            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")

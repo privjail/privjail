@@ -193,7 +193,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         n_cols = len(df_sum.columns)
         eps_each = eps / (n_cols + 1)
 
-        return df_sum.reveal(eps_each * n_cols).div(ser_size.reveal(eps_each), axis=0)
+        return df_sum.reveal(eps=eps_each * n_cols).div(ser_size.reveal(eps=eps_each), axis=0)
 
 # @egrpc.remoteclass
 # class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy[ByT, _TT]], Generic[ByT, _TT]):

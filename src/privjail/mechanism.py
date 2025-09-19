@@ -19,7 +19,7 @@ import numpy as _np
 import pandas as _pd
 
 from .util import DPError, floating, realnum
-from .accountants import PureAccountant, ApproxAccountant
+from .accountants import PureAccountant, ApproxAccountant, zCDPAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .pandas import SensitiveSeries, SensitiveDataFrame
 from .pandas.util import ElementType, Index, MultiIndex, pack_pandas_index
@@ -41,6 +41,10 @@ def assert_eps(eps: floating) -> None:
 def assert_delta(delta: floating) -> None:
     if delta <= 0 or 1.0 < delta:
         raise DPError(f"Invalid delta ({delta})")
+
+def assert_rho(rho: floating) -> None:
+    if rho <= 0:
+        raise DPError(f"Invalid rho ({rho})")
 
 # TODO: serialization/deserialization for numpy arrays might be slow
 @egrpc.dataclass
@@ -145,8 +149,22 @@ def sigma_from_eps_delta(sensitivity: float, eps: float, delta: float) -> float:
     # Theorem 3.22
     return sensitivity * math.sqrt(2.0 * math.log(1.25 / delta)) / eps
 
-def gaussian_mechanism(prisoner: Any, eps: floating, delta: floating) -> float | _pd.Series | _pd.DataFrame: # type: ignore[type-arg]
-    result = gaussian_mechanism_impl(prisoner, float(eps), float(delta))
+def sigma_from_rho(sensitivity: float, rho: float) -> float:
+    # Concentrated Differential Privacy: Simplifications, Extensions, and Lower Bounds
+    # https://arxiv.org/pdf/1605.02065
+    # Proposition 1.6
+    return sensitivity / math.sqrt(2.0 * rho)
+
+def gaussian_mechanism(prisoner : Any,
+                       *,
+                       eps      : floating | None = None,
+                       delta    : floating | None = None,
+                       rho      : floating | None = None,
+                       ) -> float | _pd.Series | _pd.DataFrame: # type: ignore[type-arg]
+    result = gaussian_mechanism_impl(prisoner,
+                                     eps   = float(eps) if eps is not None else None,
+                                     delta = float(delta) if delta is not None else None,
+                                     rho   = float(rho) if rho is not None else None)
 
     if isinstance(result, float):
         return result
@@ -158,87 +176,172 @@ def gaussian_mechanism(prisoner: Any, eps: floating, delta: floating) -> float |
         raise Exception
 
 @egrpc.multifunction
-def gaussian_mechanism_impl(prisoner: SensitiveInt | SensitiveFloat, eps: float, delta: float) -> float:
-    assert_eps(eps)
-    assert_delta(delta)
-
+def gaussian_mechanism_impl(prisoner : SensitiveInt | SensitiveFloat,
+                            *,
+                            eps      : float | None = None,
+                            delta    : float | None = None,
+                            rho      : float | None = None,
+                            ) -> float:
     sensitivity = float(prisoner.distance.max())
     assert_sensitivity(sensitivity)
 
-    sigma = sigma_from_eps_delta(sensitivity, eps, delta)
+    if isinstance(prisoner.accountant, PureAccountant):
+        raise DPError("Gaussian mechanism cannot be used under Pure DP")
+
+    elif isinstance(prisoner.accountant, ApproxAccountant):
+        assert eps is not None
+        assert delta is not None
+        assert_eps(eps)
+        assert_delta(delta)
+
+        sigma = sigma_from_eps_delta(sensitivity, eps, delta)
+        budget = (eps, delta)
+
+    elif isinstance(prisoner.accountant, zCDPAccountant):
+        assert rho is not None
+        assert_rho(rho)
+
+        sigma = sigma_from_rho(sensitivity, rho)
+        budget = rho
+
+    else:
+        raise RuntimeError
 
     result = float(_np.random.normal(loc=prisoner._value, scale=sigma))
 
-    if isinstance(prisoner.accountant, PureAccountant):
-        raise DPError("Gaussian mechanism cannot be used under Pure DP")
-    elif isinstance(prisoner.accountant, ApproxAccountant):
-        prisoner.accountant.spend((eps, delta))
-    else:
-        raise RuntimeError
+    prisoner.accountant.spend(budget)
 
     return result
 
 @gaussian_mechanism_impl.register
-def _(prisoner: SensitiveSeries[realnum], eps: float, delta: float) -> FloatSeriesBuf:
-    assert_eps(eps)
-    assert_delta(delta)
-
-    if prisoner._distance_group == "val":
-        eps_each = eps / len(prisoner)
-        delta_each = delta / len(prisoner)
-        scales = []
-        assert isinstance(prisoner._distance_per_val, list)
-        for distance in prisoner._distance_per_val:
-            sensitivity = float(distance.max())
-            assert_sensitivity(sensitivity)
-            sigma = sigma_from_eps_delta(sensitivity, eps_each, delta_each)
-            scales.append(sigma)
-        data = _np.random.normal(loc=prisoner._value, scale=scales)
-    else:
-        # L1 sensitivity = L2 sensitivity for groupby-count queries
-        sensitivity = float(prisoner.distance.max())
-        assert_sensitivity(sensitivity)
-        sigma = sigma_from_eps_delta(sensitivity, eps, delta)
-        data = _np.random.normal(loc=prisoner._value, scale=sigma)
-
+def _(prisoner : SensitiveSeries[realnum],
+      *,
+      eps      : float | None = None,
+      delta    : float | None = None,
+      rho      : float | None = None,
+      ) -> FloatSeriesBuf:
     if isinstance(prisoner.accountant, PureAccountant):
         raise DPError("Gaussian mechanism cannot be used under Pure DP")
+
     elif isinstance(prisoner.accountant, ApproxAccountant):
-        prisoner.accountant.spend((eps, delta))
+        assert eps is not None
+        assert delta is not None
+        assert_eps(eps)
+        assert_delta(delta)
+
+        if prisoner._distance_group == "val":
+            eps_each = eps / len(prisoner)
+            delta_each = delta / len(prisoner)
+            scales = []
+            assert isinstance(prisoner._distance_per_val, list)
+            for distance in prisoner._distance_per_val:
+                sensitivity = float(distance.max())
+                assert_sensitivity(sensitivity)
+                sigma = sigma_from_eps_delta(sensitivity, eps_each, delta_each)
+                scales.append(sigma)
+            data = _np.random.normal(loc=prisoner._value, scale=scales)
+        else:
+            # L1 sensitivity = L2 sensitivity for groupby-count queries
+            sensitivity = float(prisoner.distance.max())
+            assert_sensitivity(sensitivity)
+            sigma = sigma_from_eps_delta(sensitivity, eps, delta)
+            data = _np.random.normal(loc=prisoner._value, scale=sigma)
+
+        budget = (eps, delta)
+
+    elif isinstance(prisoner.accountant, zCDPAccountant):
+        assert rho is not None
+        assert_rho(rho)
+
+        if prisoner._distance_group == "val":
+            rho_each = rho / len(prisoner)
+            scales = []
+            assert isinstance(prisoner._distance_per_val, list)
+            for distance in prisoner._distance_per_val:
+                sensitivity = float(distance.max())
+                assert_sensitivity(sensitivity)
+                sigma = sigma_from_rho(sensitivity, rho_each)
+                scales.append(sigma)
+            data = _np.random.normal(loc=prisoner._value, scale=scales)
+        else:
+            # L1 sensitivity = L2 sensitivity for groupby-count queries
+            sensitivity = float(prisoner.distance.max())
+            assert_sensitivity(sensitivity)
+            sigma = sigma_from_rho(sensitivity, rho)
+            data = _np.random.normal(loc=prisoner._value, scale=sigma)
+
+        budget = rho
+
     else:
         raise RuntimeError
+
+    prisoner.accountant.spend(budget)
 
     return FloatSeriesBuf(data.tolist(), pack_pandas_index(prisoner.index), prisoner.name)
 
 @gaussian_mechanism_impl.register
-def _(prisoner: SensitiveDataFrame, eps: float, delta: float) -> FloatDataFrameBuf:
-    assert_eps(eps)
-    assert_delta(delta)
-
-    if prisoner._distance_group == "ser":
-        eps_each = eps / len(prisoner)
-        delta_each = delta / len(prisoner)
-        scales = []
-        assert isinstance(prisoner._distance_per_ser, list)
-        for distance in prisoner._distance_per_ser:
-            sensitivity = float(distance.max())
-            assert_sensitivity(sensitivity)
-            sigma = sigma_from_eps_delta(sensitivity, eps_each, delta_each)
-            scales.append(sigma)
-        data = _np.random.normal(loc=prisoner._value, scale=scales)
-    else:
-        # L1 sensitivity = L2 sensitivity for groupby-count queries
-        sensitivity = float(prisoner.distance.max())
-        assert_sensitivity(sensitivity)
-        sigma = sigma_from_eps_delta(sensitivity, eps, delta)
-        data = _np.random.normal(loc=prisoner._value, scale=sigma)
-
+def _(prisoner : SensitiveDataFrame,
+      *,
+      eps      : float | None = None,
+      delta    : float | None = None,
+      rho      : float | None = None,
+      ) -> FloatDataFrameBuf:
     if isinstance(prisoner.accountant, PureAccountant):
         raise DPError("Gaussian mechanism cannot be used under Pure DP")
+
     elif isinstance(prisoner.accountant, ApproxAccountant):
-        prisoner.accountant.spend((eps, delta))
+        assert eps is not None
+        assert delta is not None
+        assert_eps(eps)
+        assert_delta(delta)
+
+        if prisoner._distance_group == "ser":
+            eps_each = eps / len(prisoner)
+            delta_each = delta / len(prisoner)
+            scales = []
+            assert isinstance(prisoner._distance_per_ser, list)
+            for distance in prisoner._distance_per_ser:
+                sensitivity = float(distance.max())
+                assert_sensitivity(sensitivity)
+                sigma = sigma_from_eps_delta(sensitivity, eps_each, delta_each)
+                scales.append(sigma)
+            data = _np.random.normal(loc=prisoner._value, scale=scales)
+        else:
+            # L1 sensitivity = L2 sensitivity for groupby-count queries
+            sensitivity = float(prisoner.distance.max())
+            assert_sensitivity(sensitivity)
+            sigma = sigma_from_eps_delta(sensitivity, eps, delta)
+            data = _np.random.normal(loc=prisoner._value, scale=sigma)
+
+        budget = (eps, delta)
+
+    elif isinstance(prisoner.accountant, zCDPAccountant):
+        assert rho is not None
+        assert_rho(rho)
+
+        if prisoner._distance_group == "ser":
+            rho_each = rho / len(prisoner)
+            scales = []
+            assert isinstance(prisoner._distance_per_ser, list)
+            for distance in prisoner._distance_per_ser:
+                sensitivity = float(distance.max())
+                assert_sensitivity(sensitivity)
+                sigma = sigma_from_rho(sensitivity, rho_each)
+                scales.append(sigma)
+            data = _np.random.normal(loc=prisoner._value, scale=scales)
+        else:
+            # L1 sensitivity = L2 sensitivity for groupby-count queries
+            sensitivity = float(prisoner.distance.max())
+            assert_sensitivity(sensitivity)
+            sigma = sigma_from_rho(sensitivity, rho)
+            data = _np.random.normal(loc=prisoner._value, scale=sigma)
+
+        budget = rho
+
     else:
         raise RuntimeError
+
+    prisoner.accountant.spend(budget)
 
     return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
 

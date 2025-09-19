@@ -608,7 +608,7 @@ class PrivSeries(Generic[T], PrivPandasBase[_pd.Series]): # type: ignore[type-ar
 
     def mean(self, eps: float) -> float:
         eps_each = eps / 2
-        return self.sum().reveal(eps_each) / self.shape[0].reveal(eps_each)
+        return self.sum().reveal(eps=eps_each) / self.shape[0].reveal(eps=eps_each)
 
     @egrpc.method
     def value_counts(self,
@@ -793,42 +793,19 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
 
         return self._wrap_sensitive_value(self._value.min(), distance=distance, parents=[self])
 
-    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> _pd.Series: # type: ignore
+    def reveal(self,
+               *,
+               eps   : floating | None = None,
+               delta : floating | None = None,
+               rho   : floating | None = None,
+               mech  : str             = "laplace",
+               ) -> _pd.Series: # type: ignore
         if mech == "laplace":
+            assert eps is not None
             from ..mechanism import laplace_mechanism
-            return laplace_mechanism(self, eps) # type: ignore
+            return laplace_mechanism(self, eps=eps) # type: ignore
         elif mech == "gaussian":
             from ..mechanism import gaussian_mechanism
-            return gaussian_mechanism(self, eps, delta) # type: ignore
-        else:
-            raise ValueError(f"Unknown DP mechanism: '{mech}'")
-
-class Series(Generic[T], _pd.Series): # type: ignore[type-arg]
-    """Sensitive Series.
-
-    Each value in this series object is considered a sensitive value.
-    The numbers of values are not sensitive.
-    This is typically created by counting queries like `PrivSeries.value_counts()`.
-    """
-    def max_distance(self) -> realnum:
-        return total_max_distance(list(self.values))
-
-    def max(self, *args: Any, **kwargs: Any) -> SensitiveInt | SensitiveFloat:
-        # TODO: args?
-        return smax(self)
-
-    def min(self, *args: Any, **kwargs: Any) -> SensitiveInt | SensitiveFloat:
-        # TODO: args?
-        return smin(self)
-
-    def reveal(self, eps: floating, delta: floating = 0.0, mech: str = "laplace") -> float:
-        if mech == "laplace":
-            from ..mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps)
-            return result
-        elif mech == "gaussian":
-            from ..mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps, delta)
-            return result
+            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho) # type: ignore
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
