@@ -36,7 +36,7 @@ T = TypeVar("T")
 def read_csv(filepath     : str,
              schemapath   : str | None        = None,
              *,
-             accountant   : str | None        = "pure",
+             accountant   : str | None        = "approx",
              budget_limit : BudgetType | None = None,
              ) -> PrivDataFrame:
     # TODO: more vaildation for the input data

@@ -19,15 +19,16 @@ import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating
 from .realexpr import RealExpr, _max as dmax
-from .accountants import Accountant, ParallelAccountant, DummyAccountant, get_lsca_of_same_family, get_all_root_accountants, BudgetType
+from .accountants import *
 from . import egrpc
 
 T = TypeVar("T")
 
 class Prisoner(Generic[T]):
-    _value     : T
-    distance   : RealExpr
-    accountant : Accountant[Any]
+    _value          : T
+    distance        : RealExpr
+    accountant      : Accountant[Any]
+    accountant_orig : Accountant[Any]
 
     def __init__(self,
                  value      : T,
@@ -66,6 +67,8 @@ class Prisoner(Generic[T]):
             lsca_accountant = get_lsca_of_same_family([p.accountant for p in parents if not isinstance(p.accountant, DummyAccountant)])
             self.accountant = lsca_accountant.get_parent() if isinstance(lsca_accountant, ParallelAccountant) else lsca_accountant
 
+        self.accountant_orig = self.accountant
+
     def __str__(self) -> str:
         return "<***>"
 
@@ -75,6 +78,22 @@ class Prisoner(Generic[T]):
     @egrpc.property
     def max_distance(self) -> realnum:
         return self.distance.max()
+
+    @egrpc.method
+    def switch_to_pureDP(self, budget_limit: PureBudgetType | None = None) -> None:
+        self.accountant = PureAccountant(budget_limit=budget_limit, parent=self.accountant_orig)
+
+    @egrpc.method
+    def switch_to_approxDP(self, budget_limit: ApproxBudgetType | None = None) -> None:
+        self.accountant = ApproxAccountant(budget_limit=budget_limit, parent=self.accountant_orig)
+
+    @egrpc.method
+    def switch_to_zCDP(self, budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> None:
+        self.accountant = zCDPAccountant(budget_limit=budget_limit, parent=self.accountant_orig, delta=delta)
+
+    @egrpc.method
+    def switch_to_original_accountant(self) -> None:
+        self.accountant = self.accountant_orig
 
 @egrpc.remoteclass
 class SensitiveInt(Prisoner[integer]):
