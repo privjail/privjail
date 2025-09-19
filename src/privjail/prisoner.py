@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
+import contextlib
 
 import numpy as _np
 
@@ -371,3 +372,27 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 def budgets_spent() -> dict[str, tuple[str, BudgetType]]:
     return {name: (type(accountant).family_name(), accountant.budget_spent())
             for name, accountant in get_all_root_accountants().items()}
+
+@contextlib.contextmanager
+def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) -> Prisoner[Any]:
+    prisoner.switch_to_pureDP(budget_limit=budget_limit)
+    try:
+        yield prisoner
+    finally:
+        prisoner.switch_to_original_accountant()
+
+@contextlib.contextmanager
+def approxDP(prisoner: Prisoner[Any], budget_limit: ApproxBudgetType | None = None) -> Prisoner[Any]:
+    prisoner.switch_to_approxDP(budget_limit=budget_limit)
+    try:
+        yield prisoner
+    finally:
+        prisoner.switch_to_original_accountant()
+
+@contextlib.contextmanager
+def zCDP(prisoner: Prisoner[Any], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Prisoner[Any]:
+    prisoner.switch_to_zCDP(budget_limit=budget_limit, delta=delta)
+    try:
+        yield prisoner
+    finally:
+        prisoner.switch_to_original_accountant()
