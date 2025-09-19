@@ -31,7 +31,7 @@ def noisy_count(df, eps):
 
 def best_split(df, attributes, target_attr, eps):
     gains = [calc_gain(df, attr, target_attr) for attr in attributes]
-    return attributes[pj.argmax(gains, eps)]
+    return attributes[pj.argmax(gains, eps=eps)]
 
 def build_decision_tree(df, attributes, target_attr, max_depth, eps):
     t = max([len(df.domains[attr].categories) for attr in attributes])

@@ -346,43 +346,84 @@ def _(prisoner : SensitiveDataFrame,
     return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
 
 @egrpc.function
-def exponential_mechanism(scores: Sequence[SensitiveInt | SensitiveFloat], eps: floating) -> int:
+def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
+                          *,
+                          eps    : float | None = None,
+                          rho    : float | None = None,
+                          ) -> int:
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
-
-    assert_eps(eps)
 
     sensitivity = max([v.distance.max() for v in scores]) # type: ignore[type-var]
     assert_sensitivity(sensitivity)
 
+    # create a dummy prisoner to propagate budget consumption to all prisoners
+    prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
+
+    if isinstance(prisoner_dummy.accountant, PureAccountant):
+        assert eps is not None
+        assert_eps(eps)
+        budget = eps
+
+    elif isinstance(prisoner_dummy.accountant, ApproxAccountant):
+        assert eps is not None
+        assert_eps(eps)
+        budget = (eps, 0.0)
+
+    elif isinstance(prisoner_dummy.accountant, zCDPAccountant):
+        # Bounding, Concentrating, and Truncating: Unifying Privacy Loss Composition for Data Analytics
+        # https://arxiv.org/pdf/2004.07223
+        if eps is not None and rho is not None:
+            raise ValueError("only one of eps and rho should be specified")
+        elif eps is not None:
+            assert_eps(eps)
+            rho = eps * eps / 8.0
+        elif rho is not None:
+            assert_rho(rho)
+            eps = math.sqrt(8.0 * rho)
+        else:
+            raise ValueError("eps or rho should be specified")
+
+        budget = rho
+
+    else:
+        raise RuntimeError
+
     exponents = [eps * s._value / sensitivity / 2 for s in scores]
+
     # to prevent too small or large values (-> 0 or inf)
     M: float = _np.max(exponents) # type: ignore[arg-type]
     p = [_np.exp(x - M) for x in exponents]
     p /= sum(p)
     result = _np.random.choice(len(scores), p=p)
 
-    # create a dummy prisoner to propagate budget consumption to all prisoners
-    prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
-
-    if isinstance(prisoner_dummy.accountant, PureAccountant):
-        prisoner_dummy.accountant.spend(float(eps))
-    elif isinstance(prisoner_dummy.accountant, ApproxAccountant):
-        prisoner_dummy.accountant.spend((float(eps), 0.0))
-    else:
-        raise RuntimeError
+    prisoner_dummy.accountant.spend(budget)
 
     return result
 
-def argmax(args: Sequence[SensitiveInt | SensitiveFloat], eps: floating, mech: str = "exponential") -> int:
-    if mech == "exponential":
-        return exponential_mechanism(args, eps)
+def argmax(args : Sequence[SensitiveInt | SensitiveFloat],
+           *,
+           eps  : floating | None = None,
+           rho  : floating | None = None,
+           mech : str             = "exp",
+           ) -> int:
+    if mech == "exp":
+        return exponential_mechanism(args,
+                                     eps = float(eps) if eps is not None else None,
+                                     rho = float(rho) if rho is not None else None)
     else:
         raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
-def argmin(args: Sequence[SensitiveInt | SensitiveFloat], eps: floating, mech: str = "exponential") -> int:
+def argmin(args : Sequence[SensitiveInt | SensitiveFloat],
+           *,
+           eps  : floating | None = None,
+           rho  : floating | None = None,
+           mech : str             = "exp",
+           ) -> int:
     args_negative = [-x for x in args]
-    if mech == "exponential":
-        return exponential_mechanism(args_negative, eps)
+    if mech == "exp":
+        return exponential_mechanism(args_negative,
+                                     eps = float(eps) if eps is not None else None,
+                                     rho = float(rho) if rho is not None else None)
     else:
         raise ValueError(f"Unknown DP mechanism: '{mech}'")
