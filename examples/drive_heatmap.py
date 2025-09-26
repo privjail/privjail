@@ -120,23 +120,18 @@ if __name__ == "__main__":
     else:
         mode = sys.argv[1]
 
-    if mode in ("server", "client"):
+    if mode == "local":
+        main()
+
+    elif mode == "client":
         if len(sys.argv) < 4:
             raise ValueError(f"Usage: {sys.argv[0]} {mode} <host> <port>")
 
         host = sys.argv[2]
         port = int(sys.argv[3])
-
-    if mode == "local":
-        main()
-
-    elif mode == "server":
-        # print(pj.proto_file_content())
-        pj.serve(port)
-
-    elif mode == "client":
         pj.connect(host, port)
+
         main()
 
     else:
-        raise ValueError(f"Usage: {sys.argv[0]} [local|server|client] [host] [port]")
+        raise ValueError(f"Usage: {sys.argv[0]} [local|client] [host] [port]")
