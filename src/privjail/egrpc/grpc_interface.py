@@ -75,7 +75,7 @@ def grpc_register_method(cls: Type[T], method: Callable[P, R], handler: HandlerT
     # proto_handlers[proto_service_name][proto_rpc_name] = handler
     proto_handlers[proto_service_name][proto_rpc_name] = wrapper
 
-def init_server(port: int) -> Any:
+def init_server(port: int, host: str | None = None) -> Any:
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1),
                          maximum_concurrent_rpcs=1,
                          options=(("grpc.so_reuseport", 0),))
@@ -89,7 +89,8 @@ def init_server(port: int) -> Any:
         add_service_fn = getattr(dynamic_pb2_grpc, f"add_{proto_service_name}Servicer_to_server")
         add_service_fn(DynamicServicer(), server)
 
-    server.add_insecure_port(f"[::]:{port}")
+    bind_host = host if host is not None else "[::]"
+    server.add_insecure_port(f"{bind_host}:{port}")
 
     return server
 

@@ -23,11 +23,12 @@ def init() -> None:
     init_proto(dynamic_pb2)
     init_grpc(dynamic_pb2_grpc)
 
-def serve(port: int) -> None:
+def serve(port: int, host: str | None = None) -> None:
     init()
-    server = init_server(port)
+    server = init_server(port, host)
     server.start()
-    print(f"Server started on port {port} (pid = {os.getpid()}).")
+    bind_target = f"{host}:{port}" if host is not None else f"port {port}"
+    print(f"Server started on {bind_target} (pid = {os.getpid()}).")
     server.wait_for_termination()
 
 def connect(hostname: str, port: int) -> None:
