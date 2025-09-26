@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Sequence
 import argparse
 
-from . import serve as start_server
+from . import serve as start_server, proto_file_content
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -43,6 +43,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     serve_parser.set_defaults(func=_handle_serve)
 
+    proto_parser = subparsers.add_parser(
+        "show_proto",
+        help="Print the proto definition used by privjail's gRPC interface.",
+    )
+    proto_parser.set_defaults(func=_handle_show_proto)
+
     return parser
 
 def _handle_serve(args: argparse.Namespace) -> None:
@@ -50,6 +56,9 @@ def _handle_serve(args: argparse.Namespace) -> None:
         start_server(args.port, host=args.host)
     except KeyboardInterrupt:
         pass
+
+def _handle_show_proto(args: argparse.Namespace) -> None:
+    print(proto_file_content())
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser()
