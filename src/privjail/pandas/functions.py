@@ -20,12 +20,11 @@ import itertools
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError, realnum
+from ..util import DPError, ElementType, realnum
+from ..alignment import assert_axis_signature
 from ..prisoner import SensitiveInt
 from ..realexpr import RealExpr
-from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureAccountant, ApproxAccountant
-from .util import ElementType, assert_ptag
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
@@ -128,7 +127,7 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
     #     # TODO: consider handling for pd.NA
     #     warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
 
-    assert_ptag(index, columns)
+    assert_axis_signature(index, columns)
 
     counts = _pd.crosstab(index._value, columns._value,
                           values=None, rownames=rownames, colnames=colnames,

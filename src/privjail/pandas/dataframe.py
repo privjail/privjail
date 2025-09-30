@@ -20,11 +20,13 @@ import numpy as _np
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError, is_integer, is_floating, is_realnum, realnum, floating
+from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum, realnum
+from ..array_base import PrivArrayBase
+from ..alignment import assert_axis_signature
 from ..prisoner import Prisoner, SensitiveInt
 from ..realexpr import RealExpr
 from ..accountants import Accountant
-from .util import ElementType, PrivPandasBase, assert_ptag, total_max_distance, Index, MultiIndex, pack_pandas_index
+from .util import Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
 
@@ -34,7 +36,7 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 @egrpc.remoteclass
-class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
+class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     """Private DataFrame.
 
     Each row in this dataframe object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
@@ -48,16 +50,16 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                  data          : Any,
                  domains       : Mapping[str, Domain],
                  distance      : RealExpr,
-                 user_key      : str | None                    = None,
-                 user_max_freq : RealExpr                      = RealExpr.INF,
-                 index         : Any                           = None,
-                 columns       : Any                           = None,
-                 dtype         : Any                           = None,
-                 copy          : bool                          = False,
+                 user_key      : str | None                   = None,
+                 user_max_freq : RealExpr                     = RealExpr.INF,
+                 index         : Any                          = None,
+                 columns       : Any                          = None,
+                 dtype         : Any                          = None,
+                 copy          : bool                         = False,
                  *,
-                 parents       : Sequence[PrivPandasBase[Any]] = [],
-                 accountant    : Accountant[Any] | None        = None,
-                 preserve_row  : bool | None                   = None,
+                 parents       : Sequence[PrivArrayBase[Any]] = [],
+                 accountant    : Accountant[Any] | None       = None,
+                 preserve_row  : bool | None                  = None,
                  ):
         self._domains = domains
         self._user_key = user_key
@@ -136,7 +138,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @__getitem__.register
     def _(self, key: PrivSeries[bool]) -> PrivDataFrame:
-        assert_ptag(self, key)
+        assert_axis_signature(self, key)
         return PrivDataFrame(data          = self._value.__getitem__(key._value),
                              domains       = self.domains,
                              distance      = self.distance,
@@ -183,28 +185,28 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: ElementType) -> None:
         # TODO: consider domain transform
-        assert_ptag(self, key)
+        assert_axis_signature(self, key)
         self._assert_not_uldp()
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: list[ElementType]) -> None:
         # TODO: consider domain transform
-        assert_ptag(self, key)
+        assert_axis_signature(self, key)
         self._assert_not_uldp()
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: PrivDataFrame) -> None:
         # TODO: consider domain transform
-        assert_ptag(self, key)
+        assert_axis_signature(self, key)
         self._assert_not_uldp()
         value._assert_not_uldp()
         self._value[key._value] = value._value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivDataFrame) -> PrivDataFrame:
-        assert_ptag(self, other)
+        assert_axis_signature(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
         return PrivDataFrame(data         = self._value == other._value,
@@ -224,7 +226,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __ne__(self, other: PrivDataFrame) -> PrivDataFrame:
-        assert_ptag(self, other)
+        assert_axis_signature(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
         return PrivDataFrame(data         = self._value != other._value,
@@ -244,7 +246,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __lt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_ptag(self, other)
+        assert_axis_signature(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
         return PrivDataFrame(data         = self._value < other._value,
@@ -264,7 +266,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __le__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_ptag(self, other)
+        assert_axis_signature(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
         return PrivDataFrame(data         = self._value <= other._value,
@@ -284,7 +286,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __gt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_ptag(self, other)
+        assert_axis_signature(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
         return PrivDataFrame(data         = self._value > other._value,
@@ -304,7 +306,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __ge__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_ptag(self, other)
+        assert_axis_signature(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
         return PrivDataFrame(data         = self._value >= other._value,
@@ -469,7 +471,7 @@ class PrivDataFrame(PrivPandasBase[_pd.DataFrame]):
                     ) -> PrivDataFrame | None:
         if inplace:
             self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
-            self.renew_ptag()
+            self.renew_axis_signature()
             return None
         else:
             return PrivDataFrame(data          = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),

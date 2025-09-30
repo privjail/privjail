@@ -13,62 +13,12 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, TypeVar, Generic, Sequence
+from typing import Any
 
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError, realnum
-from ..realexpr import RealExpr
-from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
-from ..accountants import Accountant
-
-T = TypeVar("T")
-
-ElementType = realnum | str | bool
-
-PTag = int
-
-ptag_count = 0
-
-def new_ptag() -> PTag:
-    global ptag_count
-    ptag_count += 1
-    return ptag_count
-
-class PrivPandasBase(Generic[T], Prisoner[T]):
-    _ptag : PTag
-
-    def __init__(self,
-                 value        : Any,
-                 distance     : RealExpr,
-                 parents      : Sequence[PrivPandasBase[Any]],
-                 accountant   : Accountant[Any] | None,
-                 preserve_row : bool | None,
-                 ):
-        if len(parents) == 0:
-            preserve_row = False
-        elif preserve_row is None:
-            raise ValueError("preserve_row is required when parents are specified.")
-
-        if preserve_row:
-            assert_ptag(*parents)
-            self._ptag = parents[0]._ptag
-        else:
-            self._ptag = new_ptag()
-
-        super().__init__(value=value, distance=distance, parents=parents, accountant=accountant)
-
-    def renew_ptag(self) -> None:
-        self._ptag = new_ptag()
-
-def assert_ptag(*prisoners: PrivPandasBase[Any]) -> None:
-    if len(prisoners) > 0 and not all(prisoners[0]._ptag == p._ptag for p in prisoners):
-        raise DPError("Row tags do not match")
-
-@egrpc.function
-def total_max_distance(prisoners: list[SensitiveInt | SensitiveFloat]) -> realnum:
-    return sum([x.distance for x in prisoners], start=RealExpr(0)).max()
+from ..util import ElementType
 
 @egrpc.dataclass
 class Index:

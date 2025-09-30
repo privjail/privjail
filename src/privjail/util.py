@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from typing import Any, TypeGuard
+
 import numpy as _np
 
 class DPError(Exception):
@@ -30,3 +31,5 @@ def is_floating(x: Any) -> TypeGuard[floating]:
 
 def is_realnum(x: Any) -> TypeGuard[realnum]:
     return is_integer(x) or is_floating(x)
+
+ElementType = realnum | str | bool
