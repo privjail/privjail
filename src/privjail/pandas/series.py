@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Generic, Sequence
+from typing import overload, TypeVar, Any, Literal, Generic, Sequence, Iterator
 import warnings
 import copy
 import functools
@@ -656,7 +656,7 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
 class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
     _distance_group   : Literal["ser", "val"]
     _distance_per_val : list[RealExpr] | None
-    _distributed_ser  : _pd.Series[SensitiveInt | SensitiveFloat] | None # type: ignore
+    _distributed_ser  : _pd.Series[Any] | None
 
     def __init__(self,
                  data             : Any,
@@ -668,7 +668,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
                  *,
                  parents          : Sequence[Prisoner[Any]] = [],
                  accountant       : Accountant[Any] | None  = None,
-                 distributed_ser  : _pd.Series | None       = None,
+                 distributed_ser  : _pd.Series[Any] | None  = None,
                  ):
         self._distance_group = distance_group
         self._distance_per_val = distance_per_val
@@ -708,7 +708,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         else:
             raise Exception
 
-    def _get_distributed_ser(self) -> _pd.Series[SensitiveInt | SensitiveFloat]: # type: ignore
+    def _get_distributed_ser(self) -> _pd.Series[Any]:
         assert self._distance_group == "ser"
 
         if self._distributed_ser is None:
@@ -779,6 +779,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     def max(self) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
         if self._distance_group == "val":
+            assert self._distance_per_val is not None
             distance = functools.reduce(dmax, self._distance_per_val)
         else:
             distance = self.distance
@@ -789,6 +790,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     def min(self) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
         if self._distance_group == "val":
+            assert self._distance_per_val is not None
             distance = functools.reduce(dmax, self._distance_per_val)
         else:
             distance = self.distance

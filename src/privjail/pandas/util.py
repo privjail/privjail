@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as _pd
 
@@ -22,22 +22,22 @@ from ..util import ElementType
 
 @egrpc.dataclass
 class Index:
-    values : list[ElementType]
+    values : Sequence[ElementType]
     name   : ElementType | None
 
-    def to_pandas(self) -> _pd.Index[ElementType]:
+    def to_pandas(self) -> _pd.Index[Any]:
         return _pd.Index(self.values, name=self.name)
 
 @egrpc.dataclass
 class MultiIndex:
-    values : list[tuple[ElementType, ...]]
-    names  : list[ElementType]
+    values : Sequence[tuple[ElementType, ...]]
+    names  : Sequence[ElementType | None]
 
-    def to_pandas(self) -> _pd.MultiIndex[ElementType]:
-        return _pd.MultiIndex.from_tuples(self.values, names=self.names)
+    def to_pandas(self) -> _pd.MultiIndex:
+        return _pd.MultiIndex.from_tuples(self.values, names=list(self.names))
 
-def pack_pandas_index(index: _pd.Index) -> Index | MultiIndex:
+def pack_pandas_index(index: _pd.Index[Any]) -> Index | MultiIndex:
     if isinstance(index, _pd.MultiIndex):
-        return MultiIndex(index.tolist(), index.names)
+        return MultiIndex(index.tolist(), list(index.names))
     else:
         return Index(index.tolist(), index.name)
