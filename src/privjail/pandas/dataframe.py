@@ -787,14 +787,14 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
                eps   : floating | None = None,
                delta : floating | None = None,
                rho   : floating | None = None,
+               scale : floating | None = None,
                mech  : str             = "laplace",
                ) -> _pd.DataFrame:
         if mech == "laplace":
-            assert eps is not None
             from ..mechanism import laplace_mechanism
-            return laplace_mechanism(self, eps=eps) # type: ignore
+            return laplace_mechanism(self, eps=eps, scale=scale) # type: ignore
         elif mech == "gaussian":
             from ..mechanism import gaussian_mechanism
-            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho) # type: ignore
+            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale) # type: ignore
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")

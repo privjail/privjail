@@ -204,16 +204,16 @@ class SensitiveInt(Prisoner[integer]):
                eps   : floating | None = None,
                delta : floating | None = None,
                rho   : floating | None = None,
+               scale : floating | None = None,
                mech  : str             = "laplace",
                ) -> float:
         if mech == "laplace":
-            assert eps is not None
             from .mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps=eps)
+            result: float = laplace_mechanism(self, eps=eps, scale=scale)
             return result
         elif mech == "gaussian":
             from .mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho)
+            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
@@ -286,16 +286,16 @@ class SensitiveFloat(Prisoner[floating]):
                eps   : floating | None = None,
                delta : floating | None = None,
                rho   : floating | None = None,
+               scale : floating | None = None,
                mech  : str             = "laplace",
                ) -> float:
         if mech == "laplace":
-            assert eps is not None
             from .mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps=eps)
+            result: float = laplace_mechanism(self, eps=eps, scale=scale)
             return result
         elif mech == "gaussian":
             from .mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho)
+            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
             return result
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
