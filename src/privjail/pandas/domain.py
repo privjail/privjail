@@ -97,13 +97,21 @@ def normalize_column_schema(col_schema: dict[str, Any]) -> dict[str, Any]:
         if "categories" not in col_schema:
             raise ValueError("Please specify the 'categories' field for the column of type 'category'.")
 
-        if not isinstance(col_schema["categories"], list) or not all(isinstance(x, str) for x in col_schema["categories"]):
-            raise ValueError("The 'categories' field must be a list of strings.")
+        categories = col_schema["categories"]
+        if not isinstance(categories, list):
+            raise ValueError("The 'categories' field must be a list.")
 
-        if len(col_schema["categories"]) == 0:
+        if len(categories) == 0:
             raise ValueError("The 'categories' list must have at least one element.")
 
-        new_col_schema["categories"] = col_schema["categories"]
+        first_type = type(categories[0])
+        if first_type not in (str, int):
+            raise ValueError("Categories must be strings or integers.")
+
+        if not all(isinstance(x, first_type) for x in categories):
+            raise ValueError("All categories must have the same type.")
+
+        new_col_schema["categories"] = categories
 
     elif col_type == "string":
         pass
