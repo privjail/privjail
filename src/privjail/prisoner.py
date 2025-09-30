@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence
+from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence, Iterator
 import contextlib
 
 import numpy as _np
@@ -209,12 +209,10 @@ class SensitiveInt(Prisoner[integer]):
                ) -> float:
         if mech == "laplace":
             from .mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps=eps, scale=scale)
-            return result
+            return laplace_mechanism(self, eps=eps, scale=scale)
         elif mech == "gaussian":
             from .mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
-            return result
+            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
@@ -291,12 +289,10 @@ class SensitiveFloat(Prisoner[floating]):
                ) -> float:
         if mech == "laplace":
             from .mechanism import laplace_mechanism
-            result: float = laplace_mechanism(self, eps=eps, scale=scale)
-            return result
+            return laplace_mechanism(self, eps=eps, scale=scale)
         elif mech == "gaussian":
             from .mechanism import gaussian_mechanism
-            result: float = gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
-            return result
+            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
 
@@ -388,7 +384,7 @@ def budgets_spent() -> dict[str, tuple[str, BudgetType]]:
             for name, accountant in get_all_root_accountants().items()}
 
 @contextlib.contextmanager
-def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) -> Prisoner[Any]:
+def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) -> Iterator[Prisoner[Any]]:
     prisoner.switch_to_pureDP(budget_limit=budget_limit)
     try:
         yield prisoner
@@ -396,7 +392,7 @@ def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) 
         prisoner.switch_to_original_accountant()
 
 @contextlib.contextmanager
-def approxDP(prisoner: Prisoner[Any], budget_limit: ApproxBudgetType | None = None) -> Prisoner[Any]:
+def approxDP(prisoner: Prisoner[Any], budget_limit: ApproxBudgetType | None = None) -> Iterator[Prisoner[Any]]:
     prisoner.switch_to_approxDP(budget_limit=budget_limit)
     try:
         yield prisoner
@@ -404,7 +400,7 @@ def approxDP(prisoner: Prisoner[Any], budget_limit: ApproxBudgetType | None = No
         prisoner.switch_to_original_accountant()
 
 @contextlib.contextmanager
-def zCDP(prisoner: Prisoner[Any], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Prisoner[Any]:
+def zCDP(prisoner: Prisoner[Any], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Iterator[Prisoner[Any]]:
     prisoner.switch_to_zCDP(budget_limit=budget_limit, delta=delta)
     try:
         yield prisoner

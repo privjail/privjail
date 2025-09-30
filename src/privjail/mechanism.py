@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar, Sequence, Any
+from typing import TypeVar, Sequence, Any, overload
 import math
 
 import numpy as _np
 import pandas as _pd
 
-from .util import DPError, floating, realnum
+from .util import DPError, floating, realnum, ElementType
 from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .pandas import SensitiveSeries, SensitiveDataFrame
-from .pandas.util import ElementType, Index, MultiIndex, pack_pandas_index
+from .pandas.util import Index, MultiIndex, pack_pandas_index
 from . import egrpc
 
 T = TypeVar("T")
@@ -166,6 +166,27 @@ class FloatDataFrameBuf:
     values  : list[list[float]]
     index   : Index | MultiIndex
     columns : Index | MultiIndex
+
+@overload
+def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
+                      *,
+                      eps      : floating | None = ...,
+                      scale    : floating | None = ...,
+                      ) -> float: ...
+
+@overload
+def laplace_mechanism(prisoner : SensitiveSeries[Any],
+                      *,
+                      eps      : floating | None = ...,
+                      scale    : floating | None = ...,
+                      ) -> _pd.Series: ...
+
+@overload
+def laplace_mechanism(prisoner : SensitiveDataFrame,
+                      *,
+                      eps      : floating | None = ...,
+                      scale    : floating | None = ...,
+                      ) -> _pd.DataFrame: ...
 
 def laplace_mechanism(prisoner : Any,
                       *,
@@ -312,6 +333,33 @@ def _(prisoner : SensitiveDataFrame,
         raise RuntimeError
 
     return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
+
+@overload
+def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
+                       *,
+                       eps      : floating | None = ...,
+                       delta    : floating | None = ...,
+                       rho      : floating | None = ...,
+                       scale    : floating | None = ...,
+                       ) -> float: ...
+
+@overload
+def gaussian_mechanism(prisoner : SensitiveSeries[Any],
+                       *,
+                       eps      : floating | None = ...,
+                       delta    : floating | None = ...,
+                       rho      : floating | None = ...,
+                       scale    : floating | None = ...,
+                       ) -> _pd.Series: ...
+
+@overload
+def gaussian_mechanism(prisoner : SensitiveDataFrame,
+                       *,
+                       eps      : floating | None = ...,
+                       delta    : floating | None = ...,
+                       rho      : floating | None = ...,
+                       scale    : floating | None = ...,
+                       ) -> _pd.DataFrame: ...
 
 def gaussian_mechanism(prisoner : Any,
                        *,

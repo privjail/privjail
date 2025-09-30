@@ -20,11 +20,10 @@ import itertools
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError
+from ..util import DPError, ElementType
 from ..realexpr import RealExpr, _min
 from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveInt
-from .util import ElementType
 from .domain import CategoryDomain, sum_sensitivity
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .series import SensitiveSeries

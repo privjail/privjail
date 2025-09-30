@@ -21,8 +21,7 @@ import numpy as _np
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError, realnum
-from .util import ElementType
+from ..util import DPError, realnum, ElementType
 
 @egrpc.dataclass
 class Domain(ABC):
