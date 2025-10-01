@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Sequence
 from abc import ABC, abstractmethod
 from dataclasses import field
 
@@ -55,7 +55,7 @@ class StrDomain(Domain):
 @egrpc.dataclass
 class CategoryDomain(Domain):
     dtype: str = "categories"
-    categories: list[ElementType] = field(default_factory=list)
+    categories: Sequence[ElementType] = field(default_factory=list)
 
     def type(self) -> type:
         assert len(self.categories) > 0

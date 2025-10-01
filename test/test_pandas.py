@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Mapping
 import uuid
 import copy
 import pytest
@@ -41,7 +41,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
 
 def assert_budget_spent(pdf: ppd.PrivDataFrame, expected_budget: float) -> None:
     root_name = pdf.accountant._root_name
-    assert pj.budgets_spent()[root_name] == ("pure", pytest.approx(expected_budget))
+    assert pj.budgets_spent()[root_name] == pytest.approx(("pure", expected_budget))
 
 def assert_equal_sensitive_series(sensitive_ser: ppd.SensitiveSeries[Any], expected_ser: pd.Series[Any]) -> None:
     assert isinstance(sensitive_ser, ppd.SensitiveSeries)
@@ -53,6 +53,11 @@ def assert_equal_sensitive_dataframes(sensitive_df: ppd.SensitiveDataFrame, expe
     assert (sensitive_df.index == expected_df.index).all()
     assert (sensitive_df.columns == expected_df.columns).all()
     assert (sensitive_df._value == expected_df).all().all()
+
+def merge_domains(domains: Mapping[str, ppd.Domain], updates: Mapping[str, ppd.Domain]) -> dict[str, ppd.Domain]:
+    merged: dict[str, ppd.Domain] = dict(domains)
+    merged.update(updates)
+    return merged
 
 def test_priv_dataframe_size() -> None:
     pdf, df = load_dataframe()
@@ -373,26 +378,26 @@ def test_priv_series_value_counts() -> None:
     with pytest.raises(pj.DPError):
         pdf["b"].value_counts(sort=False)
 
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])} # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}) # FIXME: use public API
 
     # Should return an error with `sort=True`
     with pytest.raises(pj.DPError):
         pdf["b"].value_counts()
 
     # Should return correct counts when all possible values are provided
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[2, 3, 4])} # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[2, 3, 4])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({2: 1, 3: 1, 4: 3}))
     assert counts[2].distance.max() == 1
 
     # Should return correct counts when only a part of possible values are provided
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[3, 4])} # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[3, 4])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({3: 1, 4: 3}))
     assert counts[3].distance.max() == 1
 
     # Should return correct counts when non-existent values are provided
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[1, 3, 4, 5])} # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 3, 4, 5])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({1: 0, 3: 1, 4: 3, 5: 0}))
     assert counts[1].distance.max() == 1
@@ -423,13 +428,14 @@ def test_crosstab() -> None:
 
     # Should raise an error without rowvalues/colvalues
     with pytest.raises(pj.DPError): ppd.crosstab(pdf["a"], pdf["b"])
-    pdf._domains = original_domain | {"a": ppd.CategoryDomain(categories=rowvalues)} # FIXME: use public API
+    pdf._domains = merge_domains(original_domain, {"a": ppd.CategoryDomain(categories=rowvalues)}) # FIXME: use public API
     with pytest.raises(pj.DPError): ppd.crosstab(pdf["a"], pdf["b"])
-    pdf._domains = original_domain | {"b": ppd.CategoryDomain(categories=colvalues)} # FIXME: use public API
+    pdf._domains = merge_domains(original_domain, {"b": ppd.CategoryDomain(categories=colvalues)}) # FIXME: use public API
     with pytest.raises(pj.DPError): ppd.crosstab(pdf["a"], pdf["b"])
 
-    pdf._domains = original_domain | {"a": ppd.CategoryDomain(categories=rowvalues),
-                                      "b": ppd.CategoryDomain(categories=colvalues)} # FIXME: use public API
+    pdf._domains = merge_domains(original_domain,
+                                 {"a": ppd.CategoryDomain(categories=rowvalues),
+                                  "b": ppd.CategoryDomain(categories=colvalues)}) # FIXME: use public API
 
     # Should raise an error with margins=True
     with pytest.raises(pj.DPError):
@@ -473,7 +479,7 @@ def test_dataframe_groupby() -> None:
     # Should be able to group by a single column
     keys = [1, 2, 4]
     # FIXME: use public API
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=list(keys))}
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=list(keys))})
     groups = pdf.groupby("b")
     assert len(groups) == len(keys)
 
@@ -506,7 +512,7 @@ def test_privacy_budget() -> None:
 
     eps = 0.1
     pdf1 = pdf[pdf["b"] >= 3]
-    pdf1._domains |= {"b": ppd.CategoryDomain(categories=[3, 4, 5])} # FIXME: use public API
+    pdf1._domains = merge_domains(pdf1._domains, {"b": ppd.CategoryDomain(categories=[3, 4, 5])}) # FIXME: use public API
     counts = pdf1["b"].value_counts(sort=False)
 
     pj.laplace_mechanism(counts, eps=eps)
@@ -533,7 +539,7 @@ def test_privacy_budget_parallel_composition() -> None:
     eps = 0.1
 
     # value_counts()
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[2, 3, 4])} # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[2, 3, 4])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
 
     pj.laplace_mechanism(counts, eps=eps)
@@ -546,8 +552,8 @@ def test_privacy_budget_parallel_composition() -> None:
     assert_budget_spent(pdf, eps * 2)
 
     # crosstab()
-    pdf._domains |= {"a": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])} # FIXME: use public API
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])} # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"a": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}) # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}) # FIXME: use public API
     crosstab = ppd.crosstab(pdf["a"], pdf["b"])
 
     for idx in crosstab.index:
@@ -564,12 +570,12 @@ def test_privacy_budget_parallel_composition() -> None:
     pj.laplace_mechanism(s, eps=eps)
     assert_budget_spent(pdf, eps * 4)
 
-    assert crosstab[5][1].distance.max() == 1 # type: ignore
+    assert crosstab[5][1].distance.max() == 1
     pj.laplace_mechanism(crosstab[5][1], eps=eps)
     assert_budget_spent(pdf, eps * 5)
 
     # FIXME: use public API
-    pdf._domains |= {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])})
     print(pdf._value)
 
     # groupby()

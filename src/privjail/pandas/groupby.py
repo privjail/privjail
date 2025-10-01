@@ -265,6 +265,6 @@ def _do_group_by(df         : PrivDataFrame,
             if not isinstance(key_domain, CategoryDomain):
                 raise DPError("Groupby columns must be of a categorical type")
 
-            by_objs.append(key_domain.categories)
+            by_objs.append(list(key_domain.categories))
 
         return PrivDataFrameGroupBy(grouped, df, by_columns, by_objs)

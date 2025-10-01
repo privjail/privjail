@@ -634,7 +634,7 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
             raise DPError("The `sort` argument must be False.")
 
         if isinstance(self.domain, CategoryDomain):
-            values = self.domain.categories
+            values = list(self.domain.categories)
         else:
             raise DPError("Series for value_counts() must be of a categorical type")
 
