@@ -179,7 +179,7 @@ def laplace_mechanism(prisoner : SensitiveSeries[Any],
                       *,
                       eps      : floating | None = ...,
                       scale    : floating | None = ...,
-                      ) -> _pd.Series: ...
+                      ) -> _pd.Series: ... # type: ignore[type-arg]
 
 @overload
 def laplace_mechanism(prisoner : SensitiveDataFrame,
@@ -350,7 +350,7 @@ def gaussian_mechanism(prisoner : SensitiveSeries[Any],
                        delta    : floating | None = ...,
                        rho      : floating | None = ...,
                        scale    : floating | None = ...,
-                       ) -> _pd.Series: ...
+                       ) -> _pd.Series: ... # type: ignore[type-arg]
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveDataFrame,
