@@ -23,7 +23,7 @@ from .. import egrpc
 from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum, realnum
 from ..array_base import PrivArrayBase
 from ..alignment import assert_axis_signature
-from ..prisoner import Prisoner, SensitiveInt
+from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr
 from ..accountants import Accountant
 from .util import Index, MultiIndex, pack_pandas_index
@@ -639,7 +639,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 @egrpc.remoteclass
 class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     _distance_group   : Literal["df", "ser"]
-    _distance_per_ser : RealExpr | list[RealExpr]
+    _distance_per_ser : list[RealExpr] | None
     _distributed_df   : _pd.DataFrame | None
 
     def __init__(self,
@@ -684,10 +684,12 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
                               parents    : Sequence[Prisoner[Any]],
                               accountant : Accountant[Any] | None = None,
                               ) -> SensitiveInt | SensitiveFloat:
-        if self._value.dtypes[column] in ["int64", "Int64"]:
+        dtype = self.dtypes[column] # type: ignore
+
+        if dtype in ["int64", "Int64"]:
             assert is_integer(value)
             return SensitiveInt(value, distance=distance, parents=parents, accountant=accountant)
-        elif self._value.dtypes[column] in ["float64", "Float64"]:
+        elif dtype in ["float64", "Float64"]:
             assert is_floating(value)
             return SensitiveFloat(value, distance=distance, parents=parents, accountant=accountant)
         else:
@@ -707,7 +709,7 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
 
             for col, dc in zip(self.columns, self._distance_per_ser):
                 for idx, d in zip(self.index, dc.create_exclusive_children(len(self.index))):
-                    ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[self],
+                    ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[self], # type: ignore
                                                                    accountant=accountant_type(parent=parallel_accountant))
 
             self._distributed_df = ddf
@@ -734,24 +736,24 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         return self.shape[0]
 
     @egrpc.multimethod
-    def __getitem__(self, key: ElementType) -> SensitiveSeries:
+    def __getitem__(self, key: ElementType) -> SensitiveSeries[ElementType]:
         if self._distance_group == "df":
             ddf = self._get_distributed_df()
-            return SensitiveSeries(self._value[key],
-                                   distance_group   = "ser",
-                                   distance         = self._distance_of(key),
-                                   distance_per_val = [v.distance for v in ddf[key]],
-                                   index            = self.index,
-                                   name             = key,
-                                   parents          = [self],
-                                   distributed_ser  = ddf[key])
+            return SensitiveSeries[ElementType](self._value[key],
+                                                distance_group   = "ser",
+                                                distance         = self._distance_of(key),
+                                                distance_per_val = [v.distance for v in ddf[key]],
+                                                index            = self.index,
+                                                name             = key,
+                                                parents          = [self],
+                                                distributed_ser  = ddf[key])
         elif self._distance_group == "ser":
-            return SensitiveSeries(self._value[key],
-                                   distance_group   = "ser",
-                                   distance         = self._distance_of(key),
-                                   index            = self.index,
-                                   name             = key,
-                                   parents          = [self])
+            return SensitiveSeries[ElementType](self._value[key],
+                                                distance_group   = "ser",
+                                                distance         = self._distance_of(key),
+                                                index            = self.index,
+                                                name             = key,
+                                                parents          = [self])
         else:
             raise Exception
 
@@ -767,6 +769,11 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     @property
     def columns(self) -> _pd.Index[ElementType]: # type: ignore
         return self._get_columns().to_pandas()
+
+    # FIXME
+    @property
+    def dtypes(self) -> _pd.Series[Any]:
+        return self._value.dtypes
 
     @egrpc.method
     def _get_columns(self) -> Index | MultiIndex:

@@ -378,8 +378,8 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         return self._value.dtype
 
     @egrpc.property
-    def name(self) -> str | None:
-        return str(self._value.name) if self._value.name is not None else None
+    def name(self) -> ElementType | None:
+        return self._value.name  # type: ignore[return-value]
 
     @egrpc.property
     def domain(self) -> Domain:
@@ -664,7 +664,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
                  distance         : RealExpr | None         = None,
                  distance_per_val : list[RealExpr] | None   = None,
                  index            : Any                     = None,
-                 name             : str | None              = None,
+                 name             : ElementType | None      = None,
                  *,
                  parents          : Sequence[Prisoner[Any]] = [],
                  accountant       : Accountant[Any] | None  = None,
@@ -764,8 +764,8 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         return pack_pandas_index(self._value.index)
 
     @egrpc.property
-    def name(self) -> str | None:
-        return str(self._value.name) if self._value.name is not None else None
+    def name(self) -> ElementType | None:
+        return self._value.name  # type: ignore[return-value]
 
     @egrpc.property
     def shape(self) -> tuple[int]:
