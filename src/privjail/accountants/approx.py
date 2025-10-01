@@ -51,6 +51,18 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
         eps, delta = budget
         assert eps >= 0 and delta >= 0
 
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> ApproxBudgetType | None:
+        if budget is None:
+            return None
+        elif isinstance(budget, tuple) and len(budget) == 2:
+            eps, delta = budget
+            normalized = (float(eps), float(delta))
+            cls.assert_budget(normalized)
+            return normalized
+        else:
+            raise TypeError("Approx accountant budget must be a tuple of two float values.")
+
     @staticmethod
     def parallel_accountant() -> type[Accountant[ApproxBudgetType]]:
         return ApproxParallelAccountant
@@ -88,3 +100,7 @@ class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
     def assert_budget(budget: ApproxBudgetType) -> None:
         eps, delta = budget
         assert eps >= 0 and delta >= 0
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> ApproxBudgetType | None:
+        return ApproxAccountant.normalize_budget(budget)

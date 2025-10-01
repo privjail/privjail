@@ -50,6 +50,17 @@ class PureAccountant(Accountant[PureBudgetType]):
     def assert_budget(budget: PureBudgetType) -> None:
         assert budget >= 0
 
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> PureBudgetType | None:
+        if budget is None:
+            return None
+        elif isinstance(budget, (int, float)):
+            normalized = float(budget)
+            cls.assert_budget(normalized)
+            return normalized
+        else:
+            raise TypeError("Pure accountant budget must be a single float value.")
+
     @staticmethod
     def parallel_accountant() -> type[Accountant[PureBudgetType]]:
         return PureParallelAccountant
@@ -80,3 +91,7 @@ class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
     @staticmethod
     def assert_budget(budget: PureBudgetType) -> None:
         assert budget >= 0
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> PureBudgetType | None:
+        return PureAccountant.normalize_budget(budget)

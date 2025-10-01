@@ -98,6 +98,11 @@ class Accountant(ABC, Generic[T]):
     def assert_budget(budget: T) -> None:
         pass
 
+    @classmethod
+    @abstractmethod
+    def normalize_budget(cls, budget: Any) -> T | None:
+        pass
+
     @staticmethod
     @abstractmethod
     def parallel_accountant() -> type[Accountant[T]]:

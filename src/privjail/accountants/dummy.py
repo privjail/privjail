@@ -43,6 +43,10 @@ class DummyAccountant(Accountant[None]):
     def assert_budget(budget: None) -> None:
         pass
 
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> None:
+        return None
+
     @staticmethod
     def parallel_accountant() -> type[Accountant[None]]:
         return DummyParallelAccountant
@@ -66,6 +70,10 @@ class DummyParallelAccountant(ParallelAccountant[None]):
     @staticmethod
     def exceeds(budget1: None, budget2: None) -> bool:
         return False
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> None:
+        return None
 
     @staticmethod
     def assert_budget(budget: None) -> None:

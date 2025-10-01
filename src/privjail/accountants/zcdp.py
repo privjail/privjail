@@ -72,6 +72,17 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
     def assert_budget(budget: zCDPBudgetType) -> None:
         assert budget >= 0
 
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> zCDPBudgetType | None:
+        if budget is None:
+            return None
+        elif isinstance(budget, (int, float)):
+            normalized = float(budget)
+            cls.assert_budget(normalized)
+            return normalized
+        else:
+            raise TypeError("zCDP accountant budget must be a single float value.")
+
     @staticmethod
     def parallel_accountant() -> type[Accountant[zCDPBudgetType]]:
         return zCDPParallelAccountant
@@ -102,6 +113,10 @@ class zCDPParallelAccountant(ParallelAccountant[zCDPBudgetType]):
     @staticmethod
     def assert_budget(budget: zCDPBudgetType) -> None:
         assert budget >= 0
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> zCDPBudgetType | None:
+        return zCDPAccountant.normalize_budget(budget)
 
 def eps_from_rho_delta(rho: float, delta: float) -> float:
     # Concentrated Differential Privacy: Simplifications, Extensions, and Lower Bounds

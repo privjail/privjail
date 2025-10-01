@@ -69,10 +69,12 @@ def read_csv(filepath     : str,
 
         domains[col] = column_schema2domain(col_schema)
 
+    acc: Accountant[Any]
+
     if accountant == "pure":
-        acc = PureAccountant(budget_limit=budget_limit)
+        acc = PureAccountant(budget_limit=PureAccountant.normalize_budget(budget_limit))
     elif accountant == "approx":
-        acc = ApproxAccountant(budget_limit=budget_limit)
+        acc = ApproxAccountant(budget_limit=ApproxAccountant.normalize_budget(budget_limit))
     else:
         raise ValueError(f"Unknown accountant: '{accountant}'")
 
