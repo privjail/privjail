@@ -319,7 +319,7 @@ def test_priv_dataframe_replace() -> None:
     assert (pdf.replace(4, 10)._value == df.replace(4, 10)).all().all()
 
     # Special behaviour when `inplace=True`
-    assert pdf.replace(3, 10, inplace=True) == None
+    assert pdf.replace(3, 10, inplace=True) is None
     assert (pdf._value == df.replace(3, 10)).all().all()
 
 def test_priv_series_replace() -> None:
@@ -329,7 +329,7 @@ def test_priv_series_replace() -> None:
     assert (pdf["b"].replace(4, 10)._value == df["b"].replace(4, 10)).all()
 
     # Special behaviour when `inplace=True`
-    assert pdf["b"].replace(3, 10, inplace=True) == None
+    assert pdf["b"].replace(3, 10, inplace=True) is None
     assert (pdf["b"]._value == df["b"].replace(3, 10)).all()
 
 def test_priv_dataframe_dropna() -> None:
@@ -346,7 +346,7 @@ def test_priv_dataframe_dropna() -> None:
         pdf.dropna(ignore_index=True)
 
     # Special behaviour when `inplace=True`
-    assert pdf.dropna(inplace=True) == None
+    assert pdf.dropna(inplace=True) is None
     assert (pdf._value == df.dropna()).all().all()
 
 def test_priv_series_dropna() -> None:
@@ -364,7 +364,7 @@ def test_priv_series_dropna() -> None:
 
     # TODO: this fails because of the original pandas bug?
     # # Special behaviour when `inplace=True`
-    # assert pdf["b"].dropna(inplace=True) == None
+    # assert pdf["b"].dropna(inplace=True) is None
     # assert (pdf["b"]._value == df["b"].dropna()).all()
 
 def test_priv_series_value_counts() -> None:

@@ -98,19 +98,19 @@ def test_min_max() -> None:
     assert pj.min([x, y, z])._value == 10
     assert pj.min([x, y, z]).distance.max() == 2
 
-    assert type(pj.max(x * 3.0, y, z)) == pj.SensitiveFloat
+    assert isinstance(pj.max(x * 3.0, y, z), pj.SensitiveFloat)
     assert pj.max(x * 3.0, y, z)._value == pytest.approx(33.0)
     assert pj.max(x * 3.0, y, z).distance.max() == pytest.approx(3.0)
 
-    assert type(pj.min(x * 3.0, y, z)) == pj.SensitiveFloat
+    assert isinstance(pj.min(x * 3.0, y, z), pj.SensitiveFloat)
     assert pj.min(x * 3.0, y, z)._value == pytest.approx(10.0)
     assert pj.min(x * 3.0, y, z).distance.max() == pytest.approx(3.0)
 
-    assert type(pj.max([x, y, z - 25.0])) == pj.SensitiveFloat
+    assert isinstance(pj.max([x, y, z - 25.0]), pj.SensitiveFloat)
     assert pj.max([x, y, z - 25.0])._value == pytest.approx(11.0)
     assert pj.max([x, y, z - 25.0]).distance.max() == pytest.approx(2.0)
 
-    assert type(pj.min([x, y, z - 25.0])) == pj.SensitiveFloat
+    assert isinstance(pj.min([x, y, z - 25.0]), pj.SensitiveFloat)
     assert pj.min([x, y, z - 25.0])._value == pytest.approx(1.0)
     assert pj.min([x, y, z - 25.0]).distance.max() == pytest.approx(2.0)
 

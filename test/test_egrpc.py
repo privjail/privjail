@@ -122,7 +122,7 @@ def test_function(server: Any) -> None:
     assert func6((1, "a")) == ("a", 1)
     assert func7({"a": 1, "b": 2}) == {"a": ["a"], "b": ["b", "b"]}
     assert func8(2) == 4
-    assert func8() == None
+    assert func8() is None
     assert func9((1, 2, 3)) == (1.0, 2.0, 3.0)
 
 @egrpc.multifunction

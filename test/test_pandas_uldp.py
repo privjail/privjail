@@ -13,12 +13,10 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any
 import uuid
 import math
 import pytest
 import pandas as pd
-import numpy as np
 import privjail as pj
 from privjail import pandas as ppd
 
@@ -86,7 +84,7 @@ def test_uldp() -> None:
     pdf, df = load_dataframe()
 
     assert pdf.user_key == "uid"
-    assert pdf.user_max_freq == None
+    assert pdf.user_max_freq is None
 
     assert pdf.shape[0].max_distance == math.inf
 
