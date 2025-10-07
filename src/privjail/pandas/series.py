@@ -24,7 +24,7 @@ import pandas as _pd
 from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum, realnum
 from ..array_base import PrivArrayBase
 from ..alignment import assert_axis_signature
-from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as smax, _min as smin
+from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr, _max as dmax
 from ..accountants import Accountant
 from .. import egrpc

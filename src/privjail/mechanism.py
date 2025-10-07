@@ -29,7 +29,7 @@ T = TypeVar("T")
 
 def assert_sensitivity(sensitivity: realnum) -> None:
     if sensitivity == math.inf:
-        raise DPError(f"Unbounded sensitivity")
+        raise DPError("Unbounded sensitivity")
 
     if sensitivity <= 0:
         raise DPError(f"Invalid sensitivity ({sensitivity})")

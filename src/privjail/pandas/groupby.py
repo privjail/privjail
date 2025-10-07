@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, Iterator, Mapping, Sequence, TypeVar, overload
+from typing import Any, Iterator, TypeVar
 import math
 import itertools
 
@@ -23,7 +23,7 @@ from .. import egrpc
 from ..util import DPError, ElementType
 from ..realexpr import RealExpr, _min
 from ..accountants import Accountant
-from ..prisoner import Prisoner, SensitiveInt
+from ..prisoner import Prisoner
 from .domain import CategoryDomain, sum_sensitivity
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .series import SensitiveSeries

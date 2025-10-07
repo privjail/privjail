@@ -1,0 +1,5 @@
+[lint]
+extend-ignore = ["E701"]
+
+[lint.per-file-ignores]
+"test/**/*" = ["F403", "F405", "E712"]

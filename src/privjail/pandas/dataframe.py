@@ -20,14 +20,14 @@ import numpy as _np
 import pandas as _pd
 
 from .. import egrpc
-from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum, realnum
+from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum
 from ..array_base import PrivArrayBase
 from ..alignment import assert_axis_signature
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr
 from ..accountants import Accountant
 from .util import Index, MultiIndex, pack_pandas_index
-from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
+from .domain import Domain, BoolDomain, RealDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
 
 if TYPE_CHECKING:

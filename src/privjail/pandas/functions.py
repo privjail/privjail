@@ -15,14 +15,12 @@
 from __future__ import annotations
 from typing import TypeVar, Any, Sequence
 import json
-import itertools
 
 import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError, ElementType, realnum
 from ..alignment import assert_axis_signature
-from ..prisoner import SensitiveInt
 from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureAccountant, ApproxAccountant
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
