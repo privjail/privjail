@@ -23,6 +23,7 @@ dev = [
     "mypy>=1.13.0",
     "pandas-stubs>=2.2.3.241126",
     "pytest>=8.3.3",
+    "ruff>=0.13.3",
 ]
 
 [tool.uv.sources]
