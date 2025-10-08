@@ -647,51 +647,62 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         # Select only the specified values and fill non-existent counts with 0
         counts = counts.reindex(values).fillna(0).astype(int)
 
-        return SensitiveSeries[int](data           = counts,
-                                    distance_group = "ser",
-                                    distance       = self.distance,
-                                    parents        = [self])
+        return SensitiveSeries[int](data                = counts,
+                                    distance_group_axes = None,
+                                    distance            = self.distance,
+                                    parents             = [self])
 
 @egrpc.remoteclass
 class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
-    _distance_group   : Literal["ser", "val"]
-    _distance_per_val : list[RealExpr] | None
-    _distributed_ser  : _pd.Series[Any] | None
+    _distance_group_axes   : tuple[int, ...] | None
+    _partitioned_distances : list[RealExpr] | None
+    _distributed_ser       : _pd.Series[Any] | None
 
     def __init__(self,
-                 data             : Any,
-                 distance_group   : Literal["ser", "val"],
-                 distance         : RealExpr | None         = None,
-                 distance_per_val : list[RealExpr] | None   = None,
-                 index            : Any                     = None,
-                 name             : ElementType | None      = None,
+                 data                  : Any,
+                 distance_group_axes   : tuple[int, ...] | None    = None,
+                 distance              : RealExpr | None           = None,
+                 partitioned_distances : Sequence[RealExpr] | None = None,
+                 index                 : Any                       = None,
+                 name                  : ElementType | None        = None,
                  *,
-                 parents          : Sequence[Prisoner[Any]] = [],
-                 accountant       : Accountant[Any] | None  = None,
-                 distributed_ser  : _pd.Series[Any] | None  = None,
+                 parents               : Sequence[Prisoner[Any]]   = [],
+                 accountant            : Accountant[Any] | None    = None,
+                 distributed_ser       : _pd.Series[Any] | None    = None,
                  ):
-        self._distance_group = distance_group
-        self._distance_per_val = distance_per_val
+        self._distance_group_axes = tuple(distance_group_axes) if distance_group_axes is not None else None
+        self._partitioned_distances = list(partitioned_distances) if partitioned_distances is not None else None
         self._distributed_ser = distributed_ser
 
         ser = _pd.Series(data, index=index, name=name)
 
-        if distance_group == "ser":
-            assert distance is not None
-        elif distance_group == "val":
-            assert distance_per_val is not None
-            assert len(ser) == len(distance_per_val)
-            distance = sum(distance_per_val, start=RealExpr(0))
+        if self._distance_group_axes is None:
+            if distance is None:
+                raise ValueError("`distance` must be specified when distance_group_axes is None.")
+            if self._partitioned_distances is not None:
+                raise ValueError("`partitioned_distances` must not be provided when distance_group_axes is None.")
+
+        elif self._distance_group_axes == (0,):
+            if self._partitioned_distances is None:
+                raise ValueError("`partitioned_distances` is required when distance_group_axes=(0,).")
+            if len(ser) != len(self._partitioned_distances):
+                raise ValueError("`partitioned_distances` length must match the series length.")
+
+            distance = sum(self._partitioned_distances, start=RealExpr(0))
+
         else:
-            raise Exception
+            raise ValueError("Unsupported distance_group_axes for SensitiveSeries.")
 
         super().__init__(value=ser, distance=distance, parents=parents, accountant=accountant)
 
+        if self._distance_group_axes is None and self._distributed_ser is not None:
+            self._partitioned_distances = [value.distance for value in self._distributed_ser]
+
     def _distance_of(self, key: ElementType) -> RealExpr:
-        assert self._distance_per_val is not None
+        components = self._ensure_partitioned_distances()
         idx = self.index.get_loc(key)
         assert isinstance(idx, int)
-        return self._distance_per_val[idx]
+        return components[idx]
 
     def _wrap_sensitive_value(self,
                               value      : ElementType,
@@ -708,18 +719,31 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         else:
             raise Exception
 
+    def _ensure_partitioned_distances(self) -> list[RealExpr]:
+        if self._distance_group_axes is None:
+            if self._partitioned_distances is None:
+                self._partitioned_distances = self.distance.create_exclusive_children(len(self))
+
+        elif self._distance_group_axes == (0,):
+            assert self._partitioned_distances is not None
+
+        else:
+            raise ValueError("Unsupported distance_group_axes for SensitiveSeries.")
+
+        assert self._partitioned_distances is not None
+        return self._partitioned_distances
+
     def _get_distributed_ser(self) -> _pd.Series[Any]:
-        assert self._distance_group == "ser"
+        assert self._distance_group_axes is None
 
         if self._distributed_ser is None:
             accountant_type = type(self.accountant)
             parallel_accountant = accountant_type.parallel_accountant()(parent=self.accountant)
 
-            if self._distance_per_val is None:
-                self._distance_per_val = self.distance.create_exclusive_children(len(self))
+            distances = self._ensure_partitioned_distances()
 
             data = [self._wrap_sensitive_value(v, distance=d, parents=[self], accountant=accountant_type(parent=parallel_accountant))
-                    for v, d in zip(self._value, self._distance_per_val)]
+                    for v, d in zip(self._value, distances)]
 
             self._distributed_ser = _pd.Series(data, index=self.index, name=self.name)
 
@@ -748,12 +772,12 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
 
     @egrpc.multimethod
     def __getitem__(self, key: ElementType) -> SensitiveInt | SensitiveFloat:
-        if self._distance_group == "ser":
+        if self._distance_group_axes is None:
             return copy.copy(self._get_distributed_ser().loc[key]) # type: ignore
-        elif self._distance_group == "val":
+        elif self._distance_group_axes == (0,):
             return self._wrap_sensitive_value(self._value[key], distance=self._distance_of(key), parents=[self]) # type: ignore
         else:
-            raise Exception
+            raise ValueError("Unsupported distance_group_axes for SensitiveSeries.")
 
     @property
     def index(self) -> _pd.Index[ElementType]: # type: ignore
@@ -778,9 +802,9 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     @egrpc.method
     def max(self) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
-        if self._distance_group == "val":
-            assert self._distance_per_val is not None
-            distance = functools.reduce(dmax, self._distance_per_val)
+        if self._distance_group_axes == (0,):
+            components = self._ensure_partitioned_distances()
+            distance = functools.reduce(dmax, components)
         else:
             distance = self.distance
 
@@ -789,9 +813,9 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     @egrpc.method
     def min(self) -> SensitiveInt | SensitiveFloat:
         # TODO: args?
-        if self._distance_group == "val":
-            assert self._distance_per_val is not None
-            distance = functools.reduce(dmax, self._distance_per_val)
+        if self._distance_group_axes == (0,):
+            components = self._ensure_partitioned_distances()
+            distance = functools.reduce(dmax, components)
         else:
             distance = self.distance
 

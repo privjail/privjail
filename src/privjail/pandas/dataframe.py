@@ -608,9 +608,15 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         distances = [self.distance * sum_sensitivity(domain) for col, domain in self.domains.items()]
         data = self._value.sum()
         if all(domain.dtype in ("int64", "Int64") for domain in self.domains.values()):
-            return SensitiveSeries[int](data, distance_group="val", distance_per_val=distances, parents=[self])
+            return SensitiveSeries[int](data,
+                                        distance_group_axes   = (0,),
+                                        partitioned_distances = distances,
+                                        parents               = [self])
         else:
-            return SensitiveSeries[float](data, distance_group="val", distance_per_val=distances, parents=[self])
+            return SensitiveSeries[float](data,
+                                          distance_group_axes   = (0,),
+                                          partitioned_distances = distances,
+                                          parents               = [self])
 
     def mean(self, eps: float) -> _pd.Series[float]:
         eps_each = eps / len(self.columns)
@@ -638,44 +644,66 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
 @egrpc.remoteclass
 class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
-    _distance_group   : Literal["df", "ser"]
-    _distance_per_ser : list[RealExpr] | None
-    _distributed_df   : _pd.DataFrame | None
+    _distance_group_axes   : tuple[int, ...] | None
+    _partitioned_distances : list[RealExpr] | None
+    _distributed_df        : _pd.DataFrame | None
 
     def __init__(self,
-                 data             : Any,
-                 distance_group   : Literal["df", "ser"],
-                 distance         : RealExpr | None         = None,
-                 distance_per_ser : list[RealExpr] | None   = None,
-                 index            : Any                     = None,
-                 columns          : Any                     = None,
+                 data                  : Any,
+                 distance_group_axes   : tuple[int, ...] | None    = None,
+                 distance              : RealExpr | None           = None,
+                 partitioned_distances : Sequence[RealExpr] | None = None,
+                 index                 : Any                       = None,
+                 columns               : Any                       = None,
                  *,
-                 parents          : Sequence[Prisoner[Any]] = [],
-                 accountant       : Accountant[Any] | None  = None,
-                 distributed_df   : _pd.DataFrame | None    = None,
+                 parents               : Sequence[Prisoner[Any]]   = [],
+                 accountant            : Accountant[Any] | None    = None,
+                 distributed_df        : _pd.DataFrame | None      = None,
                  ):
-        self._distance_group = distance_group
-        self._distance_per_ser = distance_per_ser
+        self._distance_group_axes = tuple(distance_group_axes) if distance_group_axes is not None else None
+        self._partitioned_distances = list(partitioned_distances) if partitioned_distances is not None else None
         self._distributed_df = distributed_df
 
         df = _pd.DataFrame(data, index=index, columns=columns)
 
-        if distance_group == "df":
-            assert distance is not None
-        elif distance_group == "ser":
-            assert distance_per_ser is not None
-            assert len(df.columns) == len(distance_per_ser)
-            distance = sum(distance_per_ser, start=RealExpr(0))
+        if self._distance_group_axes is None:
+            if distance is None:
+                raise ValueError("`distance` must be specified when distance_group_axes is None.")
+            if self._partitioned_distances is not None:
+                raise ValueError("`partitioned_distances` must not be provided when distance_group_axes is None.")
+
+        elif self._distance_group_axes == (1,):
+            if self._partitioned_distances is None:
+                raise ValueError("`partitioned_distances` is required when distance_group_axes=(1,).")
+            if len(df.columns) != len(self._partitioned_distances):
+                raise ValueError("`partitioned_distances` length must match the number of columns.")
+
+            distance = sum(self._partitioned_distances, start=RealExpr(0))
+
         else:
-            raise Exception
+            raise ValueError("Unsupported distance_group_axes for SensitiveDataFrame.")
 
         super().__init__(value=df, distance=distance, parents=parents, accountant=accountant)
 
     def _distance_of(self, key: ElementType) -> RealExpr:
-        assert self._distance_per_ser is not None
+        distances = self._ensure_partitioned_distances()
         icol = self.columns.get_loc(key)
         assert isinstance(icol, int)
-        return self._distance_per_ser[icol]
+        return distances[icol]
+
+    def _ensure_partitioned_distances(self) -> list[RealExpr]:
+        if self._distance_group_axes is None:
+            if self._partitioned_distances is None:
+                self._partitioned_distances = self.distance.create_exclusive_children(len(self.columns))
+
+        elif self._distance_group_axes == (1,):
+            assert self._partitioned_distances is not None
+
+        else:
+            raise ValueError("Unsupported distance_group_axes for SensitiveDataFrame.")
+
+        assert self._partitioned_distances is not None
+        return self._partitioned_distances
 
     def _wrap_sensitive_value(self,
                               value      : ElementType,
@@ -696,18 +724,17 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
             raise Exception
 
     def _get_distributed_df(self) -> _pd.DataFrame:
-        assert self._distance_group == "df"
+        assert self._distance_group_axes is None
 
         if self._distributed_df is None:
             accountant_type = type(self.accountant)
             parallel_accountant = accountant_type.parallel_accountant()(parent=self.accountant)
 
-            if self._distance_per_ser is None:
-                self._distance_per_ser = self.distance.create_exclusive_children(len(self.columns))
+            distances = self._ensure_partitioned_distances()
 
             ddf = _pd.DataFrame(index=self.index, columns=self.columns)
 
-            for col, dc in zip(self.columns, self._distance_per_ser):
+            for col, dc in zip(self.columns, distances):
                 for idx, d in zip(self.index, dc.create_exclusive_children(len(self.index))):
                     ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[self], # type: ignore
                                                                    accountant=accountant_type(parent=parallel_accountant))
@@ -737,23 +764,24 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
 
     @egrpc.multimethod
     def __getitem__(self, key: ElementType) -> SensitiveSeries[ElementType]:
-        if self._distance_group == "df":
+        if self._distance_group_axes is None:
             ddf = self._get_distributed_df()
             return SensitiveSeries[ElementType](self._value[key],
-                                                distance_group   = "ser",
-                                                distance         = self._distance_of(key),
-                                                distance_per_val = [v.distance for v in ddf[key]],
-                                                index            = self.index,
-                                                name             = key,
-                                                parents          = [self],
-                                                distributed_ser  = ddf[key])
-        elif self._distance_group == "ser":
+                                                distance_group_axes = None,
+                                                distance            = self._distance_of(key),
+                                                index               = self.index,
+                                                name                = key,
+                                                parents             = [self],
+                                                distributed_ser     = ddf[key])
+
+        elif self._distance_group_axes == (1,):
             return SensitiveSeries[ElementType](self._value[key],
-                                                distance_group   = "ser",
-                                                distance         = self._distance_of(key),
-                                                index            = self.index,
-                                                name             = key,
-                                                parents          = [self])
+                                                distance_group_axes = None,
+                                                distance            = self._distance_of(key),
+                                                index               = self.index,
+                                                name                = key,
+                                                parents             = [self])
+
         else:
             raise Exception
 

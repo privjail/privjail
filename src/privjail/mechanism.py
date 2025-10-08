@@ -240,14 +240,14 @@ def _(prisoner : SensitiveSeries[realnum],
       eps      : float | None = None,
       scale    : float | None = None,
       ) -> FloatSeriesBuf:
-    if prisoner._distance_group == "val":
-        assert isinstance(prisoner._distance_per_val, list)
+    if prisoner._distance_group_axes == (0,):
+        assert isinstance(prisoner._partitioned_distances, list)
 
         if eps is not None:
             assert_eps(eps)
             eps_each = eps / len(prisoner)
             scales = []
-            for distance in prisoner._distance_per_val:
+            for distance in prisoner._partitioned_distances:
                 sensitivity = float(distance.max())
                 assert_sensitivity(sensitivity)
                 _, resolved_scale = resolve_laplace_params(sensitivity, eps=eps_each)
@@ -258,7 +258,7 @@ def _(prisoner : SensitiveSeries[realnum],
         elif scale is not None:
             assert_laplace_scale(scale)
             total_eps = 0.0
-            for distance in prisoner._distance_per_val:
+            for distance in prisoner._partitioned_distances:
                 sensitivity = float(distance.max())
                 assert_sensitivity(sensitivity)
                 resolved_eps, _ = resolve_laplace_params(sensitivity, scale=scale)
@@ -290,14 +290,14 @@ def _(prisoner : SensitiveDataFrame,
       eps      : float | None = None,
       scale    : float | None = None,
       ) -> FloatDataFrameBuf:
-    if prisoner._distance_group == "ser":
-        assert isinstance(prisoner._distance_per_ser, list)
+    if prisoner._distance_group_axes == (1,):
+        assert isinstance(prisoner._partitioned_distances, list)
 
         if eps is not None:
             assert_eps(eps)
             eps_each = eps / len(prisoner)
             scales = []
-            for distance in prisoner._distance_per_ser:
+            for distance in prisoner._partitioned_distances:
                 sensitivity = float(distance.max())
                 assert_sensitivity(sensitivity)
                 _, resolved_scale = resolve_laplace_params(sensitivity, eps=eps_each)
@@ -308,7 +308,7 @@ def _(prisoner : SensitiveDataFrame,
         elif scale is not None:
             assert_laplace_scale(scale)
             total_eps = 0.0
-            for distance in prisoner._distance_per_ser:
+            for distance in prisoner._partitioned_distances:
                 sensitivity = float(distance.max())
                 assert_sensitivity(sensitivity)
                 resolved_eps, _ = resolve_laplace_params(sensitivity, scale=scale)
@@ -433,26 +433,26 @@ def _(prisoner : SensitiveSeries[realnum],
     elif isinstance(prisoner.accountant, ApproxAccountant):
         assert delta is not None
 
-        if prisoner._distance_group == "val":
-            assert isinstance(prisoner._distance_per_val, list)
+        if prisoner._distance_group_axes == (0,):
+            assert isinstance(prisoner._partitioned_distances, list)
             delta_each = delta / len(prisoner)
 
             if eps is not None:
                 assert_eps(eps)
                 eps_each = eps / len(prisoner)
                 scales = []
-                for distance in prisoner._distance_per_val:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     _, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps_each, delta=delta_each)
-                scales.append(resolved_scale)
+                    scales.append(resolved_scale)
                 data = _np.random.normal(loc=prisoner._value, scale=scales)
                 spent_eps = eps
 
             elif scale is not None:
                 assert_gaussian_scale(scale)
                 total_eps = 0.0
-                for distance in prisoner._distance_per_val:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     resolved_eps, _ = resolve_gaussian_params_approx(sensitivity, delta=delta_each, scale=scale)
@@ -472,14 +472,14 @@ def _(prisoner : SensitiveSeries[realnum],
             budget = (resolved_eps, delta)
 
     elif isinstance(prisoner.accountant, zCDPAccountant):
-        if prisoner._distance_group == "val":
-            assert isinstance(prisoner._distance_per_val, list)
+        if prisoner._distance_group_axes == (0,):
+            assert isinstance(prisoner._partitioned_distances, list)
 
             if rho is not None:
                 assert_rho(rho)
                 rho_each = rho / len(prisoner)
                 scales = []
-                for distance in prisoner._distance_per_val:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     _, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho_each)
@@ -490,7 +490,7 @@ def _(prisoner : SensitiveSeries[realnum],
                 assert scale is not None
                 assert_gaussian_scale(scale)
                 total_rho = 0.0
-                for distance in prisoner._distance_per_val:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     resolved_rho, _ = resolve_gaussian_params_zcdp(sensitivity, scale=scale)
@@ -529,15 +529,15 @@ def _(prisoner : SensitiveDataFrame,
     elif isinstance(prisoner.accountant, ApproxAccountant):
         assert delta is not None
 
-        if prisoner._distance_group == "ser":
-            assert isinstance(prisoner._distance_per_ser, list)
+        if prisoner._distance_group_axes == (1,):
+            assert isinstance(prisoner._partitioned_distances, list)
             delta_each = delta / len(prisoner)
 
             if eps is not None:
                 assert_eps(eps)
                 eps_each = eps / len(prisoner)
                 scales = []
-                for distance in prisoner._distance_per_ser:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     _, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps_each, delta=delta_each)
@@ -548,7 +548,7 @@ def _(prisoner : SensitiveDataFrame,
             elif scale is not None:
                 assert_gaussian_scale(scale)
                 total_eps = 0.0
-                for distance in prisoner._distance_per_ser:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     resolved_eps, _ = resolve_gaussian_params_approx(sensitivity, delta=delta_each, scale=scale)
@@ -568,14 +568,14 @@ def _(prisoner : SensitiveDataFrame,
             budget = (resolved_eps, delta)
 
     elif isinstance(prisoner.accountant, zCDPAccountant):
-        if prisoner._distance_group == "ser":
-            assert isinstance(prisoner._distance_per_ser, list)
+        if prisoner._distance_group_axes == (1,):
+            assert isinstance(prisoner._partitioned_distances, list)
 
             if rho is not None:
                 assert_rho(rho)
                 rho_each = rho / len(prisoner)
                 scales = []
-                for distance in prisoner._distance_per_ser:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     _, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho_each)
@@ -586,7 +586,7 @@ def _(prisoner : SensitiveDataFrame,
             elif scale is not None:
                 assert_gaussian_scale(scale)
                 total_rho = 0.0
-                for distance in prisoner._distance_per_ser:
+                for distance in prisoner._partitioned_distances:
                     sensitivity = float(distance.max())
                     assert_sensitivity(sensitivity)
                     resolved_rho, _ = resolve_gaussian_params_zcdp(sensitivity, scale=scale)

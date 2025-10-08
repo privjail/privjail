@@ -139,7 +139,10 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
                    .reindex(list(colvalues), axis="columns") \
                    .fillna(0).astype(int)
 
-    return SensitiveDataFrame(counts, distance_group="df", distance=index.distance, parents=[index, columns])
+    return SensitiveDataFrame(counts,
+                              distance_group_axes=None,
+                              distance=index.distance,
+                              parents=[index, columns])
 
 # TODO: change multifunction -> function by type checking in egrpc.function
 @egrpc.multifunction

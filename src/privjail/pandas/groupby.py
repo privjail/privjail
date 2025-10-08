@@ -162,10 +162,10 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
 
         distance = self._df.distance * self._df._user_max_freq if self._df._is_uldp() else self._df.distance
 
-        return SensitiveSeries[int](data           = counts,
-                                    distance_group = "ser",
-                                    distance       = distance,
-                                    parents        = [self._df])
+        return SensitiveSeries[int](data                  = counts,
+                                    distance_group_axes  = None,
+                                    distance             = distance,
+                                    parents              = [self._df])
 
     @egrpc.method
     def sum(self) -> SensitiveDataFrame:
@@ -179,10 +179,10 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         distance_per_ser = [distance * sum_sensitivity(domain)
                             for col, domain in self._df.domains.items() if col not in self._by_columns]
 
-        return SensitiveDataFrame(data             = sums,
-                                  distance_group   = "ser",
-                                  distance_per_ser = distance_per_ser,
-                                  parents          = [self._df])
+        return SensitiveDataFrame(data                  = sums,
+                                  distance_group_axes   = (1,),
+                                  partitioned_distances = distance_per_ser,
+                                  parents               = [self._df])
 
     def mean(self, eps: float) -> _pd.DataFrame:
         df_sum = self.sum()
