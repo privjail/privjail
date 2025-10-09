@@ -172,6 +172,28 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         # TODO: add `value` to parents?
 
     @__setitem__.register
+    def _(self, key: str, value: PrivNDArray) -> None:
+        assert_axis_signature(self, value)
+
+        if value.ndim != 1:
+            raise ValueError("Only 1D arrays can be assigned as a column.")
+
+        bound = value.domain.norm_bound
+        if bound is None:
+            new_domain = RealDomain(dtype="float64", range=(None, None))
+        else:
+            new_domain = RealDomain(dtype="float64", range=(-bound, bound))
+
+        self._domains = dict(self.domains) | {key: new_domain}
+
+        if self._user_key == key:
+            # This df is no longer a user df
+            self._user_key = None
+            self._user_max_freq = RealExpr.INF
+
+        self._value[key] = value._value
+
+    @__setitem__.register
     def _(self, key: list[str], value: ElementType) -> None:
         # TODO: consider domain transform
         self._assert_user_key_not_in(key)
