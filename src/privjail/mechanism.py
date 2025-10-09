@@ -17,10 +17,12 @@ import math
 
 import numpy as _np
 import pandas as _pd
+import numpy.typing as _npt
 
 from .util import DPError, floating, realnum, ElementType
 from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
+from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
 from .pandas.util import Index, MultiIndex, pack_pandas_index
 from . import egrpc
@@ -167,6 +169,11 @@ class FloatDataFrameBuf:
     index   : Index | MultiIndex
     columns : Index | MultiIndex
 
+@egrpc.dataclass
+class FloatArrayBuf:
+    values : list[float]
+    shape  : tuple[int, ...]
+
 @overload
 def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                       *,
@@ -188,11 +195,18 @@ def laplace_mechanism(prisoner : SensitiveDataFrame,
                       scale    : floating | None = ...,
                       ) -> _pd.DataFrame: ...
 
+@overload
+def laplace_mechanism(prisoner : SensitiveNDArray,
+                      *,
+                      eps      : floating | None = ...,
+                      scale    : floating | None = ...,
+                      ) -> _npt.NDArray[Any]: ...
+
 def laplace_mechanism(prisoner : Any,
                       *,
                       eps      : floating | None = None,
                       scale    : floating | None = None,
-                      ) -> float | _pd.Series | _pd.DataFrame: # type: ignore[type-arg]
+                      ) -> float | _pd.Series | _pd.DataFrame | _npt.NDArray[Any]: # type: ignore[type-arg]
     if eps is None and scale is None:
         raise ValueError("Either eps or scale must be specified.")
 
@@ -209,6 +223,8 @@ def laplace_mechanism(prisoner : Any,
         return _pd.Series(result.values, index=result.index.to_pandas(), name=result.name)
     elif isinstance(result, FloatDataFrameBuf):
         return _pd.DataFrame(result.values, index=result.index.to_pandas(), columns=result.columns.to_pandas())
+    elif isinstance(result, FloatArrayBuf):
+        return _np.asarray(result.values).reshape(result.shape)
     else:
         raise Exception
 
@@ -334,6 +350,28 @@ def _(prisoner : SensitiveDataFrame,
 
     return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
 
+@laplace_mechanism_impl.register
+def _(prisoner : SensitiveNDArray,
+      *,
+      eps      : float | None = None,
+      scale    : float | None = None,
+      ) -> FloatArrayBuf:
+    sensitivity = float(prisoner.distance.max())
+    assert_sensitivity(sensitivity)
+
+    resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
+    samples = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
+
+    if isinstance(prisoner.accountant, PureAccountant):
+        prisoner.accountant.spend(resolved_eps)
+    elif isinstance(prisoner.accountant, ApproxAccountant):
+        prisoner.accountant.spend((resolved_eps, 0.0))
+    else:
+        raise RuntimeError
+
+    array = _np.asarray(samples)
+    return FloatArrayBuf(values=array.reshape(-1).tolist(), shape=array.shape)
+
 @overload
 def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                        *,
@@ -361,13 +399,22 @@ def gaussian_mechanism(prisoner : SensitiveDataFrame,
                        scale    : floating | None = ...,
                        ) -> _pd.DataFrame: ...
 
+@overload
+def gaussian_mechanism(prisoner : SensitiveNDArray,
+                       *,
+                       eps      : floating | None = ...,
+                       delta    : floating | None = ...,
+                       rho      : floating | None = ...,
+                       scale    : floating | None = ...,
+                       ) -> _npt.NDArray[Any]: ...
+
 def gaussian_mechanism(prisoner : Any,
                        *,
                        eps      : floating | None = None,
                        delta    : floating | None = None,
                        rho      : floating | None = None,
                        scale    : floating | None = None,
-                       ) -> float | _pd.Series | _pd.DataFrame: # type: ignore[type-arg]
+                       ) -> float | _pd.Series | _pd.DataFrame | _npt.NDArray[Any]: # type: ignore[type-arg]
     result = gaussian_mechanism_impl(prisoner,
                                      eps   = float(eps)   if eps   is not None else None,
                                      delta = float(delta) if delta is not None else None,
@@ -380,6 +427,8 @@ def gaussian_mechanism(prisoner : Any,
         return _pd.Series(result.values, index=result.index.to_pandas(), name=result.name)
     elif isinstance(result, FloatDataFrameBuf):
         return _pd.DataFrame(result.values, index=result.index.to_pandas(), columns=result.columns.to_pandas())
+    elif isinstance(result, FloatArrayBuf):
+        return _np.asarray(result.values).reshape(result.shape)
     else:
         raise Exception
 
@@ -611,6 +660,44 @@ def _(prisoner : SensitiveDataFrame,
     prisoner.accountant.spend(budget)
 
     return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
+
+@gaussian_mechanism_impl.register
+def _(prisoner : SensitiveNDArray,
+      *,
+      eps      : float | None = None,
+      delta    : float | None = None,
+      rho      : float | None = None,
+      scale    : float | None = None,
+      ) -> FloatArrayBuf:
+    if prisoner.norm_type != "l2":
+        raise DPError("Gaussian mechanism on SensitiveNDArray requires L2 sensitivity. Use clip_norm(ord=None or 2).")
+
+    sensitivity = float(prisoner.distance.max())
+    assert_sensitivity(sensitivity)
+
+    budget: BudgetType
+
+    if isinstance(prisoner.accountant, PureAccountant):
+        raise DPError("Gaussian mechanism cannot be used under Pure DP")
+
+    elif isinstance(prisoner.accountant, ApproxAccountant):
+        resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
+        assert delta is not None
+        budget = (resolved_eps, delta)
+
+    elif isinstance(prisoner.accountant, zCDPAccountant):
+        resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
+        budget = resolved_rho
+
+    else:
+        raise RuntimeError
+
+    samples = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
+
+    prisoner.accountant.spend(budget)
+
+    array = _np.asarray(samples)
+    return FloatArrayBuf(values=array.reshape(-1).tolist(), shape=array.shape)
 
 @egrpc.function
 def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
