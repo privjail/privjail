@@ -20,7 +20,8 @@ import pytest
 import pandas as pd
 import numpy as np
 import privjail as pj
-from privjail import pandas as ppd
+import privjail.pandas as ppd
+import privjail.numpy as pnp
 
 def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
     data = {
@@ -506,6 +507,72 @@ def test_dataframe_groupby() -> None:
     assert (groups.get_group(4)._value == pd.DataFrame({"a": [2, 3, 4], "b": [4, 4, 4]}, index=[1, 2, 3])).all().all()
     assert (groups.get_group(4).columns == pdf.columns).all()
     assert (groups.get_group(4).dtypes == pdf.dtypes).all()
+
+def test_dataframe_values_returns_ndarray() -> None:
+    pdf, df = load_dataframe()
+
+    arr = pdf.values
+
+    assert isinstance(arr, pnp.PrivNDArray)
+    assert arr._value.tolist() == df.to_numpy(dtype=float).tolist()
+    assert arr.max_distance == pytest.approx(pdf.max_distance)
+    assert arr.domain.norm_bound is None
+
+    pdf["a"] = pdf["a"].clip(0, 5)
+    pdf["b"] = pdf["b"].clip(0, 5)
+    clipped_arr = pdf.values
+
+    assert isinstance(clipped_arr, pnp.PrivNDArray)
+    assert clipped_arr._value.tolist() == df.to_numpy(dtype=float).tolist()
+    assert clipped_arr.max_distance == pytest.approx(pdf.max_distance)
+    assert clipped_arr.domain.norm_type == "l1"
+    assert clipped_arr.domain.norm_bound == pytest.approx(10.0)
+
+    pdf._domains = merge_domains(pdf._domains, {"a": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}) # FIXME: use public API
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}) # FIXME: use public API
+
+    counts = ppd.crosstab(pdf["a"], pdf["b"])
+    counts_arr = counts.values
+
+    assert isinstance(counts_arr, pnp.SensitiveNDArray)
+    assert counts_arr.shape == (5, 5)
+    assert counts_arr.max_distance == pytest.approx(1.0)
+    assert counts_arr.norm_type == "l1"
+
+    expected = [[0, 1, 0, 0, 0],
+                [0, 0, 0, 1, 0],
+                [0, 0, 0, 1, 0],
+                [0, 0, 0, 1, 0],
+                [0, 0, 1, 0, 0]]
+    assert counts_arr._value.tolist() == expected
+
+def test_series_values_returns_ndarray() -> None:
+    pdf, df = load_dataframe()
+
+    arr = pdf["a"].values
+
+    assert isinstance(arr, pnp.PrivNDArray)
+    assert arr._value.tolist() == df["a"].to_numpy(dtype=float).tolist()
+    assert arr.max_distance == pytest.approx(pdf["a"].max_distance)
+    assert arr.domain.norm_bound is None
+
+    clipped_arr = pdf["a"].clip(0, 5).values
+
+    assert isinstance(clipped_arr, pnp.PrivNDArray)
+    assert clipped_arr._value.tolist() == df["a"].to_numpy(dtype=float).tolist()
+    assert clipped_arr.max_distance == pytest.approx(pdf.max_distance)
+    assert clipped_arr.domain.norm_type == "l1"
+    assert clipped_arr.domain.norm_bound == pytest.approx(5.0)
+
+    pdf._domains = merge_domains(pdf._domains, {"a": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])}) # FIXME: use public API
+
+    counts = pdf["a"].value_counts(sort=False)
+    counts_arr = counts.values
+
+    assert isinstance(counts_arr, pnp.SensitiveNDArray)
+    assert counts_arr.shape == (5,)
+    assert counts_arr.max_distance == pytest.approx(1.0)
+    assert counts_arr.norm_type == "l1"
 
 def test_privacy_budget() -> None:
     pdf, df = load_dataframe()

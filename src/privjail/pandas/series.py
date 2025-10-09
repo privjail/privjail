@@ -17,6 +17,7 @@ from typing import overload, TypeVar, Any, Literal, Generic, Sequence, Iterator
 import warnings
 import copy
 import functools
+import math
 
 import numpy as _np
 import pandas as _pd
@@ -27,6 +28,7 @@ from ..alignment import assert_axis_signature
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr, _max as dmax
 from ..accountants import Accountant
+from ..numpy import PrivNDArray, SensitiveNDArray, NDArrayDomain
 from .. import egrpc
 from .util import Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
@@ -392,6 +394,27 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
     @egrpc.property
     def user_max_freq(self) -> int | None:
         return int(self._user_max_freq.max()) if not self._user_max_freq.is_inf() else None
+
+    @egrpc.property
+    def values(self) -> PrivNDArray:
+        self._assert_not_uldp()
+
+        if not isinstance(self.domain, RealDomain):
+            raise DPError("PrivSeries.values requires to have RealDomain.")
+
+        array = self._value.to_numpy(dtype=float)
+
+        lower, upper = self.domain.range
+        lower_abs = _np.abs(lower) if lower is not None else math.inf
+        upper_abs = _np.abs(upper) if upper is not None else math.inf
+        l1_norm_max = max(lower_abs, upper_abs)
+
+        new_domain = NDArrayDomain(norm_type="l1", norm_bound=l1_norm_max if l1_norm_max != math.inf else None)
+        return PrivNDArray(value        = array,
+                           distance     = self.distance,
+                           domain       = new_domain,
+                           parents      = [self],
+                           preserve_row = True)
 
     # TODO: add test
     @egrpc.method
@@ -798,6 +821,19 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
     @egrpc.property
     def size(self) -> int:
         return self._value.size
+
+    @egrpc.property
+    def values(self) -> SensitiveNDArray:
+        try:
+            raw = self._value.to_numpy(dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise DPError("SensitiveSeries.values requires a numeric dtype.") from exc
+
+        array = _np.asarray(raw, dtype=float)
+        return SensitiveNDArray(value     = array,
+                                distance  = self.distance,
+                                norm_type = "l1",
+                                parents   = [self])
 
     @egrpc.method
     def max(self) -> SensitiveInt | SensitiveFloat:

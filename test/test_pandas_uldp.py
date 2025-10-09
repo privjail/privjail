@@ -137,3 +137,11 @@ def test_uldp() -> None:
     assert s.max_distance == k
 
     assert pdf.groupby("c")["b"].sum()["b"]["w"]._value == 0 # type: ignore
+
+    # should not convert user dataframe to PrivNDArray
+    with pytest.raises(pj.DPError):
+        _ = pdf.values
+
+    with pytest.raises(pj.DPError):
+        _ = pdf["uid"].values
+

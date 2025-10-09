@@ -15,6 +15,7 @@
 from __future__ import annotations
 from typing import overload, TypeVar, Any, Literal, Sequence, Mapping, TYPE_CHECKING
 import copy
+import math
 
 import numpy as _np
 import pandas as _pd
@@ -26,6 +27,7 @@ from ..alignment import assert_axis_signature
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr
 from ..accountants import Accountant
+from ..numpy import PrivNDArray, SensitiveNDArray, NDArrayDomain
 from .util import Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
@@ -359,6 +361,30 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     @egrpc.property
     def user_max_freq(self) -> int | None:
         return int(self._user_max_freq.max()) if not self._user_max_freq.is_inf() else None
+
+    @egrpc.property
+    def values(self) -> PrivNDArray:
+        self._assert_not_uldp()
+
+        if not all(isinstance(domain, RealDomain) for domain in self.domains.values()):
+            raise DPError("PrivDataFrame.values requires all columns to have RealDomain.")
+
+        array = self._value.to_numpy(dtype=float)
+
+        l1_norm_max = 0.0
+        for domain in self.domains.values():
+            assert isinstance(domain, RealDomain)
+            lower, upper = domain.range
+            lower_abs = _np.abs(lower) if lower is not None else math.inf
+            upper_abs = _np.abs(upper) if upper is not None else math.inf
+            l1_norm_max += max(lower_abs, upper_abs)
+
+        new_domain = NDArrayDomain(norm_type="l1", norm_bound=l1_norm_max if l1_norm_max != math.inf else None)
+        return PrivNDArray(value        = array,
+                           distance     = self.distance,
+                           domain       = new_domain,
+                           parents      = [self],
+                           preserve_row = True)
 
     # TODO: add test
     @egrpc.method
@@ -818,6 +844,19 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     @egrpc.property
     def size(self) -> int:
         return self._value.size
+
+    @egrpc.property
+    def values(self) -> SensitiveNDArray:
+        try:
+            raw = self._value.to_numpy(dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise DPError("SensitiveDataFrame.values requires numeric dtypes.") from exc
+
+        array = _np.asarray(raw, dtype=float)
+        return SensitiveNDArray(value     = array,
+                                distance  = self.distance,
+                                norm_type = "l1",
+                                parents   = [self])
 
     def reveal(self,
                *,
