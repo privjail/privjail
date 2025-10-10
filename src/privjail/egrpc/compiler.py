@@ -28,6 +28,7 @@ import numpy as _np
 from . import names
 from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_typed_params, get_method_return_type, TypeHint, my_get_origin
 from .instance_ref import InstanceRefType
+from .registry import get_handler_for_type
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -39,6 +40,7 @@ proto_primitive_type_mapping = {
     float        : "double",
     bool         : "bool",
     type(None)   : "bool",
+    bytes        : "bytes",
     _np.integer  : "int64",
     _np.floating : "double",
 }
@@ -63,12 +65,28 @@ def subclasses(type_hint: TypeHint, type_mapping: dict[Any, str]) -> dict[TypeHi
     else:
         return {}
 
+def resolve_custom_type(type_hint: TypeHint) -> TypeHint:
+    type_origin = my_get_origin(type_hint)
+
+    if isinstance(type_hint, type):
+        handler = get_handler_for_type(type_hint)
+    elif isinstance(type_origin, type):
+        handler = get_handler_for_type(type_origin)
+    else:
+        return type_hint
+
+    if handler is not None:
+        return handler.surrogate_type
+    else:
+        return type_hint
+
 def gen_proto_field_def(index          : int,
                         param_name     : str,
                         type_hint      : TypeHint,
                         allow_subclass : bool = True,
                         repeated       : bool = False,
                         depth          : int = 0) -> tuple[list[str], list[str], int]:
+    type_hint = resolve_custom_type(type_hint)
     type_origin = my_get_origin(type_hint)
     type_args = get_args(type_hint)
 
@@ -176,9 +194,29 @@ def defer(func: Callable[[], None]) -> None:
 
 def do_deferred() -> None:
     global deferred_compilation
-    for func in deferred_compilation:
-        func()
+    pending = deferred_compilation
     deferred_compilation = []
+
+    last_error: Exception | None = None
+
+    while pending:
+        next_pending = []
+        progress = False
+
+        for func in pending:
+            try:
+                func()
+            except Exception as exc:
+                next_pending.append(func)
+                last_error = exc
+            else:
+                progress = True
+
+        if not progress:
+            assert last_error
+            raise last_error
+
+        pending = next_pending
 
 def compile_function(func: Callable[P, R]) -> None:
     def do_compile() -> None:

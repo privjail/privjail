@@ -17,6 +17,7 @@ from .series import PrivSeries, SensitiveSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .groupby import PrivDataFrameGroupBy, PrivDataFrameGroupByUser
 from .functions import read_csv, crosstab, cut
+from . import serialization # noqa: F401
 
 __all__ = [
     "Domain",

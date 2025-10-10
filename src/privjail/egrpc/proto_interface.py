@@ -20,6 +20,7 @@ from . import names
 from .util import is_type_match, get_function_typed_params, get_function_return_type, get_method_typed_params, get_method_return_type, normalize_args, TypeHint, my_get_origin
 from .compiler import proto_primitive_type_mapping, proto_dataclass_type_mapping, proto_remoteclass_type_mapping, is_subclass, subclasses
 from .instance_ref import InstanceRefType, get_ref_from_instance, get_instance_from_ref
+from .registry import get_handler_for_type
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -188,7 +189,12 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
         return dict(zip(keys, values))
 
     else:
-        raise TypeError(f"Type {type_origin} is not supported.")
+        handler = get_handler_for_type(type_origin)
+        if handler is not None:
+            surrogate = get_proto_field(proto_msg, param_name, handler.surrogate_type, allow_subclass=allow_subclass, on_server=on_server)
+            return handler.from_surrogate(surrogate)
+        else:
+            raise TypeError(f"Type {type_origin} is not supported.")
 
 def get_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, allow_subclass: bool, on_server: bool) -> list[Any]:
     if type_hint in proto_primitive_type_mapping:
@@ -262,7 +268,12 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
         set_proto_repeated_field(repeated_container_v, param_name, type_args[1], obj.values(), allow_subclass=type_origin is Mapping, on_server=on_server)
 
     else:
-        raise TypeError(f"Type {type_origin} is not supported.")
+        handler = get_handler_for_type(type_origin)
+        if handler is not None:
+            surrogate_obj = handler.to_surrogate(obj)
+            set_proto_field(proto_msg, param_name, handler.surrogate_type, surrogate_obj, allow_subclass=allow_subclass, on_server=on_server)
+        else:
+            raise TypeError(f"Type {type_origin} is not supported.")
 
 def set_proto_repeated_field(repeated_container: Any, param_name: str, type_hint: TypeHint, objs: list[Any], allow_subclass: bool, on_server: bool) -> None:
     if type_hint in proto_primitive_type_mapping:

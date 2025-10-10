@@ -313,7 +313,7 @@ def test_priv_dataframe_setitem() -> None:
     with pytest.raises(TypeError):
         pdf[2:5] = 0
 
-def test_priv_dataframe_setitem() -> None:
+def test_priv_dataframe_setitem_numpy() -> None:
     pdf, df = load_dataframe()
 
     # A numpy array should be successfully assigned to a column

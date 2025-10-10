@@ -15,6 +15,7 @@
 from .array import PrivNDArray, SensitiveNDArray
 from .domain import NDArrayDomain
 from . import linalg
+from . import serialization as _serialization # noqa: F401
 
 __all__ = [
     "PrivNDArray",

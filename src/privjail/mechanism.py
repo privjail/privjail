@@ -19,12 +19,11 @@ import numpy as _np
 import pandas as _pd
 import numpy.typing as _npt
 
-from .util import DPError, floating, realnum, ElementType
+from .util import DPError, floating, realnum
 from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
-from .pandas.util import Index, MultiIndex, pack_pandas_index
 from . import egrpc
 
 T = TypeVar("T")
@@ -156,24 +155,6 @@ def resolve_gaussian_params_zcdp(sensitivity : float,
     else:
         raise Exception
 
-# TODO: serialization/deserialization for numpy arrays might be slow
-@egrpc.dataclass
-class FloatSeriesBuf:
-    values : list[float]
-    index  : Index | MultiIndex
-    name   : ElementType | None
-
-@egrpc.dataclass
-class FloatDataFrameBuf:
-    values  : list[list[float]]
-    index   : Index | MultiIndex
-    columns : Index | MultiIndex
-
-@egrpc.dataclass
-class FloatArrayBuf:
-    values : list[float]
-    shape  : tuple[int, ...]
-
 @overload
 def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                       *,
@@ -202,38 +183,12 @@ def laplace_mechanism(prisoner : SensitiveNDArray,
                       scale    : floating | None = ...,
                       ) -> _npt.NDArray[Any]: ...
 
-def laplace_mechanism(prisoner : Any,
-                      *,
-                      eps      : floating | None = None,
-                      scale    : floating | None = None,
-                      ) -> float | _pd.Series | _pd.DataFrame | _npt.NDArray[Any]: # type: ignore[type-arg]
-    if eps is None and scale is None:
-        raise ValueError("Either eps or scale must be specified.")
-
-    elif eps is not None and scale is not None:
-        raise ValueError("eps and scale cannot be specified simultaneously.")
-
-    result = laplace_mechanism_impl(prisoner,
-                                    eps   = float(eps)   if eps   is not None else None,
-                                    scale = float(scale) if scale is not None else None)
-
-    if isinstance(result, float):
-        return result
-    if isinstance(result, FloatSeriesBuf):
-        return _pd.Series(result.values, index=result.index.to_pandas(), name=result.name)
-    elif isinstance(result, FloatDataFrameBuf):
-        return _pd.DataFrame(result.values, index=result.index.to_pandas(), columns=result.columns.to_pandas())
-    elif isinstance(result, FloatArrayBuf):
-        return _np.asarray(result.values).reshape(result.shape)
-    else:
-        raise Exception
-
 @egrpc.multifunction
-def laplace_mechanism_impl(prisoner : SensitiveInt | SensitiveFloat,
-                           *,
-                           eps      : float | None = None,
-                           scale    : float | None = None,
-                           ) -> float:
+def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
+                      *,
+                      eps      : float | None = None,
+                      scale    : float | None = None,
+                      ) -> float:
     sensitivity = float(prisoner.distance.max())
     assert_sensitivity(sensitivity)
 
@@ -250,12 +205,12 @@ def laplace_mechanism_impl(prisoner : SensitiveInt | SensitiveFloat,
 
     return result
 
-@laplace_mechanism_impl.register
+@laplace_mechanism.register # type: ignore
 def _(prisoner : SensitiveSeries[realnum],
       *,
       eps      : float | None = None,
       scale    : float | None = None,
-      ) -> FloatSeriesBuf:
+      ) -> _pd.Series: # type: ignore[type-arg]
     if prisoner._distance_group_axes == (0,):
         assert isinstance(prisoner._partitioned_distances, list)
 
@@ -298,14 +253,14 @@ def _(prisoner : SensitiveSeries[realnum],
     else:
         raise RuntimeError
 
-    return FloatSeriesBuf(data.tolist(), pack_pandas_index(prisoner.index), prisoner.name)
+    return _pd.Series(data, index=prisoner.index, name=prisoner.name)
 
-@laplace_mechanism_impl.register
+@laplace_mechanism.register # type: ignore
 def _(prisoner : SensitiveDataFrame,
       *,
       eps      : float | None = None,
       scale    : float | None = None,
-      ) -> FloatDataFrameBuf:
+      ) -> _pd.DataFrame:
     if prisoner._distance_group_axes == (1,):
         assert isinstance(prisoner._partitioned_distances, list)
 
@@ -348,14 +303,14 @@ def _(prisoner : SensitiveDataFrame,
     else:
         raise RuntimeError
 
-    return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
+    return _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
 
-@laplace_mechanism_impl.register
+@laplace_mechanism.register # type: ignore
 def _(prisoner : SensitiveNDArray,
       *,
       eps      : float | None = None,
       scale    : float | None = None,
-      ) -> FloatArrayBuf:
+      ) -> _npt.NDArray[Any]:
     sensitivity = float(prisoner.distance.max())
     assert_sensitivity(sensitivity)
 
@@ -369,8 +324,7 @@ def _(prisoner : SensitiveNDArray,
     else:
         raise RuntimeError
 
-    array = _np.asarray(samples)
-    return FloatArrayBuf(values=array.reshape(-1).tolist(), shape=array.shape)
+    return _np.asarray(samples)
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
@@ -408,38 +362,14 @@ def gaussian_mechanism(prisoner : SensitiveNDArray,
                        scale    : floating | None = ...,
                        ) -> _npt.NDArray[Any]: ...
 
-def gaussian_mechanism(prisoner : Any,
-                       *,
-                       eps      : floating | None = None,
-                       delta    : floating | None = None,
-                       rho      : floating | None = None,
-                       scale    : floating | None = None,
-                       ) -> float | _pd.Series | _pd.DataFrame | _npt.NDArray[Any]: # type: ignore[type-arg]
-    result = gaussian_mechanism_impl(prisoner,
-                                     eps   = float(eps)   if eps   is not None else None,
-                                     delta = float(delta) if delta is not None else None,
-                                     rho   = float(rho)   if rho   is not None else None,
-                                     scale = float(scale) if scale is not None else None)
-
-    if isinstance(result, float):
-        return result
-    if isinstance(result, FloatSeriesBuf):
-        return _pd.Series(result.values, index=result.index.to_pandas(), name=result.name)
-    elif isinstance(result, FloatDataFrameBuf):
-        return _pd.DataFrame(result.values, index=result.index.to_pandas(), columns=result.columns.to_pandas())
-    elif isinstance(result, FloatArrayBuf):
-        return _np.asarray(result.values).reshape(result.shape)
-    else:
-        raise Exception
-
 @egrpc.multifunction
-def gaussian_mechanism_impl(prisoner : SensitiveInt | SensitiveFloat,
-                            *,
-                            eps      : float | None = None,
-                            delta    : float | None = None,
-                            rho      : float | None = None,
-                            scale    : float | None = None,
-                            ) -> float:
+def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
+                       *,
+                       eps      : float | None = None,
+                       delta    : float | None = None,
+                       rho      : float | None = None,
+                       scale    : float | None = None,
+                       ) -> float:
     sensitivity = float(prisoner.distance.max())
     assert_sensitivity(sensitivity)
 
@@ -466,14 +396,14 @@ def gaussian_mechanism_impl(prisoner : SensitiveInt | SensitiveFloat,
 
     return result
 
-@gaussian_mechanism_impl.register
+@gaussian_mechanism.register # type: ignore
 def _(prisoner : SensitiveSeries[realnum],
       *,
       eps      : float | None = None,
       delta    : float | None = None,
       rho      : float | None = None,
       scale    : float | None = None,
-      ) -> FloatSeriesBuf:
+      ) -> _pd.Series: # type: ignore[type-arg]
     budget : BudgetType
 
     if isinstance(prisoner.accountant, PureAccountant):
@@ -560,16 +490,16 @@ def _(prisoner : SensitiveSeries[realnum],
 
     prisoner.accountant.spend(budget)
 
-    return FloatSeriesBuf(data.tolist(), pack_pandas_index(prisoner.index), prisoner.name)
+    return _pd.Series(data, index=prisoner.index, name=prisoner.name)
 
-@gaussian_mechanism_impl.register
+@gaussian_mechanism.register # type: ignore
 def _(prisoner : SensitiveDataFrame,
       *,
       eps      : float | None = None,
       delta    : float | None = None,
       rho      : float | None = None,
       scale    : float | None = None,
-      ) -> FloatDataFrameBuf:
+      ) -> _pd.DataFrame:
     budget : BudgetType
 
     if isinstance(prisoner.accountant, PureAccountant):
@@ -659,16 +589,16 @@ def _(prisoner : SensitiveDataFrame,
 
     prisoner.accountant.spend(budget)
 
-    return FloatDataFrameBuf(data.tolist(), pack_pandas_index(prisoner.index), pack_pandas_index(prisoner.columns))
+    return _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
 
-@gaussian_mechanism_impl.register
+@gaussian_mechanism.register # type: ignore
 def _(prisoner : SensitiveNDArray,
       *,
       eps      : float | None = None,
       delta    : float | None = None,
       rho      : float | None = None,
       scale    : float | None = None,
-      ) -> FloatArrayBuf:
+      ) -> _npt.NDArray[Any]:
     if prisoner.norm_type != "l2":
         raise DPError("Gaussian mechanism on SensitiveNDArray requires L2 sensitivity. Use clip_norm(ord=None or 2).")
 
@@ -696,8 +626,7 @@ def _(prisoner : SensitiveNDArray,
 
     prisoner.accountant.spend(budget)
 
-    array = _np.asarray(samples)
-    return FloatArrayBuf(values=array.reshape(-1).tolist(), shape=array.shape)
+    return _np.asarray(samples)
 
 @egrpc.function
 def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
