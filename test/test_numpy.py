@@ -163,3 +163,74 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
     expected = _np.asarray(clipped._value.sum(axis=0), dtype=float)
     assert summed._value.tolist() == pytest.approx(expected.tolist())
     assert summed.max_distance == pytest.approx(bound)
+
+def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
+    arr1 = pnp.SensitiveNDArray([4.0, 6.0],
+                                distance   = pj.RealExpr(1.0),
+                                norm_type  = "l1",
+                                accountant = accountant)
+
+    arr2 = pnp.SensitiveNDArray([0.5, -1.0],
+                                distance   = pj.RealExpr(5.0),
+                                norm_type  = "l1",
+                                accountant = accountant)
+
+    combined = arr1 + arr2
+    assert combined._value.tolist() == pytest.approx([4.5, 5.0])
+    assert combined.max_distance == pytest.approx(arr1.max_distance + arr2.max_distance)
+
+    scalar_rhs_add = arr1 + 2.0
+    assert isinstance(scalar_rhs_add, pnp.SensitiveNDArray)
+    assert scalar_rhs_add._value.tolist() == pytest.approx([6.0, 8.0])
+    assert scalar_rhs_add.max_distance == pytest.approx(arr1.max_distance)
+
+    scalar_lhs_add = 2.0 + arr1
+    assert isinstance(scalar_lhs_add, pnp.SensitiveNDArray)
+    assert scalar_lhs_add._value.tolist() == pytest.approx([6.0, 8.0])
+    assert scalar_lhs_add.max_distance == pytest.approx(arr1.max_distance)
+
+    array_rhs_add = arr1 + _np.array([1.0, 1.0])
+    assert isinstance(array_rhs_add, pnp.SensitiveNDArray)
+    assert array_rhs_add._value.tolist() == pytest.approx([5.0, 7.0])
+    assert array_rhs_add.max_distance == pytest.approx(arr1.max_distance)
+
+    array_lhs_add = _np.array([1.0, 1.5]) + arr1
+    assert isinstance(array_lhs_add, pnp.SensitiveNDArray)
+    assert array_lhs_add._value.tolist() == pytest.approx([5.0, 7.5])
+    assert array_lhs_add.max_distance == pytest.approx(arr1.max_distance)
+
+    scalar_rhs_sub = arr1 - 2.0
+    assert isinstance(scalar_rhs_sub, pnp.SensitiveNDArray)
+    assert scalar_rhs_sub._value.tolist() == pytest.approx([2.0, 4.0])
+    assert scalar_rhs_sub.max_distance == pytest.approx(arr1.max_distance)
+
+    scalar_lhs_sub = 2.0 - arr1
+    assert isinstance(scalar_lhs_sub, pnp.SensitiveNDArray)
+    assert scalar_lhs_sub._value.tolist() == pytest.approx([-2.0, -4.0])
+    assert scalar_lhs_sub.max_distance == pytest.approx(arr1.max_distance)
+
+    array_rhs_sub = arr1 - _np.array([1.0, 1.5])
+    assert isinstance(array_rhs_sub, pnp.SensitiveNDArray)
+    assert array_rhs_sub._value.tolist() == pytest.approx([3.0, 4.5])
+    assert array_rhs_sub.max_distance == pytest.approx(arr1.max_distance)
+
+    array_lhs_sub = _np.array([1.0, 1.5]) - arr1
+    assert isinstance(array_lhs_sub, pnp.SensitiveNDArray)
+    assert array_lhs_sub._value.tolist() == pytest.approx([-3.0, -4.5])
+    assert array_lhs_sub.max_distance == pytest.approx(arr1.max_distance)
+
+    unary_neg = -arr1
+    assert isinstance(unary_neg, pnp.SensitiveNDArray)
+    assert unary_neg._value.tolist() == pytest.approx([-4.0, -6.0])
+    assert unary_neg.max_distance == pytest.approx(arr1.max_distance)
+
+    # shape mismatch
+    with pytest.raises(ValueError):
+        arr1 + _np.array([1.0, 1.0, 1.0])
+
+    # norm type mismatch
+    with pytest.raises(ValueError):
+        arr1 + pnp.SensitiveNDArray([0.1, 0.2],
+                                    distance   = pj.RealExpr(0.5),
+                                    norm_type  = "l2",
+                                    accountant = accountant)

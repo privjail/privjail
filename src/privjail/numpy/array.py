@@ -120,6 +120,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
 
 @egrpc.remoteclass
 class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
+    __array_priority__ = 1000  # To prevent NumPy from treating SensitiveNDArray as a scalar operand
     _norm_type: str
 
     def __init__(self,
@@ -146,3 +147,96 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
     @egrpc.property
     def norm_type(self) -> str:
         return self._norm_type
+
+    @egrpc.method
+    def __neg__(self) -> SensitiveNDArray:
+        return SensitiveNDArray(value     = -self._value,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @egrpc.multimethod
+    def __add__(self, other: realnum) -> SensitiveNDArray:
+        return SensitiveNDArray(value     = self._value + other,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @__add__.register
+    def _(self, other: _npt.NDArray[Any]) -> SensitiveNDArray:
+        if self.shape != other.shape:
+            raise ValueError("Shape mismatch in SensitiveNDArray addition.")
+        return SensitiveNDArray(value     = self._value + other,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @__add__.register
+    def _(self, other: SensitiveNDArray) -> SensitiveNDArray:
+        if self.shape != other.shape:
+            raise ValueError("Shape mismatch in SensitiveNDArray addition.")
+        if self.norm_type != other.norm_type:
+            raise ValueError("Norm type mismatch in SensitiveNDArray addition.")
+        return SensitiveNDArray(value     = self._value + other._value,
+                                distance  = self.distance + other.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self, other])
+
+    @egrpc.multimethod
+    def __radd__(self, other: realnum) -> SensitiveNDArray:  # type: ignore[misc]
+        return SensitiveNDArray(value     = other + self._value,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @__radd__.register
+    def _(self, other: _npt.NDArray[Any]) -> SensitiveNDArray:
+        if self.shape != other.shape:
+            raise ValueError("Shape mismatch in SensitiveNDArray addition.")
+        return SensitiveNDArray(value     = other + self._value,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @egrpc.multimethod
+    def __sub__(self, other: realnum) -> SensitiveNDArray:
+        return SensitiveNDArray(value     = self._value - other,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @__sub__.register
+    def _(self, other: _npt.NDArray[Any]) -> SensitiveNDArray:
+        if self.shape != other.shape:
+            raise ValueError("Shape mismatch in SensitiveNDArray subtraction.")
+        return SensitiveNDArray(value     = self._value - other,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @__sub__.register
+    def _(self, other: SensitiveNDArray) -> SensitiveNDArray:
+        if self.shape != other.shape:
+            raise ValueError("Shape mismatch in SensitiveNDArray subtraction.")
+        if self.norm_type != other.norm_type:
+            raise ValueError("Norm type mismatch in SensitiveNDArray subtraction.")
+        return SensitiveNDArray(value     = self._value - other._value,
+                                distance  = self.distance + other.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self, other])
+
+    @egrpc.multimethod
+    def __rsub__(self, other: realnum) -> SensitiveNDArray:  # type: ignore[misc]
+        return SensitiveNDArray(value     = other - self._value,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
+    @__rsub__.register
+    def _(self, other: _npt.NDArray[Any]) -> SensitiveNDArray:
+        if self.shape != other.shape:
+            raise ValueError("Shape mismatch in SensitiveNDArray subtraction.")
+        return SensitiveNDArray(value     = other - self._value,
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
