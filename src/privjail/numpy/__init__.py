@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from . import util # noqa: F401
-from .array import PrivNDArray, SensitiveNDArray
+from .array import PrivNDArray, SensitiveNDArray, histogram, histogramdd
 from .domain import NDArrayDomain
 from . import linalg
 
@@ -22,4 +22,6 @@ __all__ = [
     "SensitiveNDArray",
     "NDArrayDomain",
     "linalg",
+    "histogram",
+    "histogramdd",
 ]

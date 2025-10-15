@@ -234,3 +234,64 @@ def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
                                     distance   = pj.RealExpr(0.5),
                                     norm_type  = "l2",
                                     accountant = accountant)
+
+def test_histogram_basic(accountant: pj.ApproxAccountant) -> None:
+    samples = pnp.PrivNDArray([0.1, 0.4, 0.8],
+                              distance   = pj.RealExpr(1.0),
+                              accountant = accountant)
+
+    hist, edges = pnp.histogram(samples, bins=3, range=(0.0, 0.9))
+    expected_hist, expected_edges = _np.histogram([0.1, 0.4, 0.8], bins=3, range=(0.0, 0.9))
+
+    assert isinstance(hist, pnp.SensitiveNDArray)
+    assert hist.norm_type == "l1"
+    assert hist.max_distance == pytest.approx(samples.max_distance)
+    assert _np.allclose(hist._value, expected_hist)
+    assert _np.allclose(edges, expected_edges)
+
+    explicit_edges = [0.0, 0.3, 0.6, 0.9]
+    hist2, edges2 = pnp.histogram(samples, bins=explicit_edges)
+    expected_hist2, expected_edges2 = _np.histogram([0.1, 0.4, 0.8], bins=explicit_edges)
+    assert _np.allclose(hist2._value, expected_hist2)
+    assert _np.allclose(edges2, expected_edges2)
+
+    with pytest.raises(pj.DPError):
+        pnp.histogram(samples, bins=4)
+
+    with pytest.raises(ValueError):
+        pnp.histogram(samples, bins=explicit_edges, range=(0.0, 0.9))
+
+def test_histogramdd_basic(accountant: pj.ApproxAccountant) -> None:
+    samples = pnp.PrivNDArray([[0.1, 0.2 ],
+                               [0.4, 0.8 ],
+                               [0.9, 0.05]],
+                              distance   = pj.RealExpr(1.0),
+                              accountant = accountant)
+
+    hist, edges = pnp.histogramdd(samples,
+                                  bins  = [2, 2],
+                                  range = [(0.0, 1.0), (0.0, 1.0)])
+
+    assert isinstance(hist, pnp.SensitiveNDArray)
+    assert hist.norm_type == "l1"
+    assert hist.max_distance == pytest.approx(samples.max_distance)
+    assert hist._value.tolist() == [[1.0, 1.0], [1.0, 0.0]]
+
+    assert len(edges) == 2
+    for edge in edges:
+        assert edge.dtype == float
+        assert _np.allclose(edge, _np.linspace(0.0, 1.0, num=3))
+
+    with pytest.raises(pj.DPError):
+        pnp.histogramdd(samples, bins=[2, 2])
+
+    grid = [_np.linspace(0.0, 1.0, num=3).tolist(), _np.linspace(0.0, 1.0, num=3).tolist()]
+    hist2, edges2 = pnp.histogramdd(samples, bins=grid)
+    assert _np.allclose(hist2._value, hist._value)
+    for e1, e2 in zip(edges, edges2, strict=True):
+        assert _np.allclose(e1, e2)
+
+    with pytest.raises(ValueError):
+        pnp.histogramdd(samples,
+                        bins  = grid,
+                        range = [(0.0, 1.0), (0.0, 1.0)])

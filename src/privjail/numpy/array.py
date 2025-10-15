@@ -13,18 +13,17 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeGuard
 
 import numpy as _np
 import numpy.typing as _npt
 
 from .. import egrpc
-from ..util import realnum
+from ..util import DPError, realnum
 from ..array_base import PrivArrayBase
 from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveFloat, SensitiveInt
-from ..util import DPError
 from .domain import NDArrayDomain
 
 @egrpc.remoteclass
@@ -240,3 +239,67 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
                                 distance  = self.distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
+
+def _is_sequence(value: Any) -> TypeGuard[Sequence[Any]]:
+    if isinstance(value, _np.ndarray):
+        return value.ndim > 0
+    return isinstance(value, Sequence)
+
+@egrpc.function
+def histogram(a     : PrivNDArray,
+              bins  : int | Sequence[float]      = 10,
+              range : tuple[float, float] | None = None,
+              ) -> tuple[SensitiveNDArray, _npt.NDArray[_np.floating[Any]]]:
+    if a.ndim != 1:
+        if not all(dim == 1 for dim in a._value.shape[1:]):
+            raise ValueError("`a` must be 1-D or have trailing singleton dimensions.")
+
+    if _is_sequence(bins):
+        if range is not None:
+            raise ValueError("`range` must be None when explicit bin edges are provided.")
+    else:
+        if range is None:
+            raise DPError("`range` must be specified when bins are given as counts.")
+
+    hist, edges = _np.histogram(a._value, bins=bins, range=range)
+
+    sensitive_hist = SensitiveNDArray(value     = hist,
+                                      distance  = a.distance,
+                                      norm_type = "l1",
+                                      parents   = [a])
+
+    return sensitive_hist, edges
+
+@egrpc.function
+def histogramdd(sample : PrivNDArray,
+                bins   : int | Sequence[int] | Sequence[Sequence[float]] = 10,
+                range  : Sequence[tuple[float, float]] | None            = None,
+                ) -> tuple[SensitiveNDArray, tuple[_npt.NDArray[_np.floating[Any]], ...]]:
+    if sample.ndim == 1:
+        dim = 1
+    elif sample.ndim == 2:
+        dim = sample._value.shape[1]
+    else:
+        raise ValueError("`sample` must be (N, D) array")
+
+    if _is_sequence(bins) and len(bins) > 0 and _is_sequence(bins[0]):
+        if range is not None:
+            raise ValueError("`range` must be None when explicit bin edges are provided.")
+        if len(bins) != dim:
+            raise ValueError("`bins` length must match the dimensionality of the sample.")
+    else:
+        if range is None:
+            raise DPError("`range` must be specified when bins are given as counts.")
+        if len(range) != dim:
+            raise ValueError("`range` length must match the dimensionality of the sample.")
+        if _is_sequence(bins) and len(bins) != dim:
+            raise ValueError("`bins` length must match the dimensionality of the sample.")
+
+    hist, edges = _np.histogramdd(sample._value, bins=bins, range=range) # type: ignore
+
+    sensitive_hist = SensitiveNDArray(value     = hist,
+                                      distance  = sample.distance,
+                                      norm_type = "l1",
+                                      parents   = [sample])
+
+    return sensitive_hist, edges
