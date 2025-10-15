@@ -161,6 +161,7 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
+    # FIXME: type mismatch error with numpy>=2.2.0
     @__add__.register
     def _(self, other: _npt.NDArray[Any]) -> SensitiveNDArray:
         if self.shape != other.shape:
