@@ -240,6 +240,14 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
+    # TODO: support Literal type in egrpc
+    @egrpc.method
+    def flatten(self, order: str = "C") -> SensitiveNDArray:
+        return SensitiveNDArray(value     = self._value.flatten(order=order), # type: ignore
+                                distance  = self.distance,
+                                norm_type = self.norm_type,
+                                parents   = [self])
+
 def _is_sequence(value: Any) -> TypeGuard[Sequence[Any]]:
     if isinstance(value, _np.ndarray):
         return value.ndim > 0
