@@ -599,9 +599,6 @@ def _(prisoner : SensitiveNDArray,
       rho      : float | None = None,
       scale    : float | None = None,
       ) -> _npt.NDArray[Any]:
-    if prisoner.norm_type != "l2":
-        raise DPError("Gaussian mechanism on SensitiveNDArray requires L2 sensitivity. Use clip_norm(ord=None or 2).")
-
     sensitivity = float(prisoner.distance.max())
     assert_sensitivity(sensitivity)
 
