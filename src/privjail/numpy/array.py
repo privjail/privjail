@@ -248,6 +248,23 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
+    def reveal(self,
+               *,
+               eps   : float | None = None,
+               delta : float | None = None,
+               rho   : float | None = None,
+               scale : float | None = None,
+               mech  : str          = "laplace",
+               ) -> _npt.NDArray[_np.floating[Any]]:
+        if mech == "laplace":
+            from ..mechanism import laplace_mechanism
+            return laplace_mechanism(self, eps=eps, scale=scale)
+        elif mech == "gaussian":
+            from ..mechanism import gaussian_mechanism
+            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
+        else:
+            raise ValueError(f"Unknown DP mechanism: '{mech}'")
+
 def _is_sequence(value: Any) -> TypeGuard[Sequence[Any]]:
     if isinstance(value, _np.ndarray):
         return value.ndim > 0
