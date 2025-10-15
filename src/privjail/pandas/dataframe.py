@@ -379,14 +379,17 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     def user_max_freq(self) -> int | None:
         return int(self._user_max_freq.max()) if not self._user_max_freq.is_inf() else None
 
-    @egrpc.property
-    def values(self) -> PrivNDArray:
+    @egrpc.method
+    def to_numpy(self, copy: bool | None = None) -> PrivNDArray:
         self._assert_not_uldp()
+
+        if copy is None or not copy:
+            raise NotImplementedError("`copy` must be True in privjail to_numpy().")
 
         if not all(isinstance(domain, RealDomain) for domain in self.domains.values()):
             raise DPError("PrivDataFrame.values requires all columns to have RealDomain.")
 
-        array = self._value.to_numpy(dtype=float)
+        array = self._value.to_numpy(dtype=float, copy=copy)
 
         l1_norm_max = 0.0
         for domain in self.domains.values():
@@ -402,6 +405,10 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                            domain       = new_domain,
                            parents      = [self],
                            preserve_row = True)
+
+    @property
+    def values(self) -> PrivNDArray:
+        return self.to_numpy(copy=True)
 
     # TODO: add test
     @egrpc.method
@@ -853,18 +860,24 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
     def size(self) -> int:
         return self._value.size
 
-    @egrpc.property
-    def values(self) -> SensitiveNDArray:
+    @egrpc.method
+    def to_numpy(self, copy: bool | None = None) -> SensitiveNDArray:
+        if copy is None or not copy:
+            raise NotImplementedError("`copy` must be True in privjail to_numpy().")
+
         try:
-            raw = self._value.to_numpy(dtype=float)
+            array = self._value.to_numpy(dtype=float, copy=copy)
         except (TypeError, ValueError) as exc:
             raise DPError("SensitiveDataFrame.values requires numeric dtypes.") from exc
 
-        array = _np.asarray(raw, dtype=float)
         return SensitiveNDArray(value     = array,
                                 distance  = self.distance,
                                 norm_type = "l1",
                                 parents   = [self])
+
+    @property
+    def values(self) -> SensitiveNDArray:
+        return self.to_numpy(copy=True)
 
     def reveal(self,
                *,
