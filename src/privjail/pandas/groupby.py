@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, Iterator, TypeVar
+from typing import Any, Iterator, TypeVar, Sequence
 import math
 import itertools
 
@@ -24,6 +24,7 @@ from ..util import DPError, ElementType
 from ..realexpr import RealExpr, _min
 from ..accountants import Accountant
 from ..prisoner import Prisoner
+from .util import ColumnType, ColumnsType
 from .domain import CategoryDomain, sum_sensitivity
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .series import SensitiveSeries
@@ -37,7 +38,7 @@ def _squash_tuple(t: tuple[T, ...]) -> T | tuple[T, ...]:
 class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
     # TODO: groups are ordered?
     _df                : PrivDataFrame
-    _by_columns        : list[str]
+    _by_columns        : ColumnsType
     _by_objs           : list[list[ElementType]]
     _variable_exprs    : dict[tuple[ElementType, ...], RealExpr] | None
     _child_accountants : dict[tuple[ElementType, ...], Accountant[Any]] | None
@@ -45,7 +46,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
     def __init__(self,
                  obj               : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
                  df                : PrivDataFrame,
-                 by_columns        : list[str],
+                 by_columns        : ColumnsType,
                  by_objs           : list[list[ElementType]],
                  variable_exprs    : dict[tuple[ElementType, ...], RealExpr] | None = None,
                  child_accountants : dict[tuple[ElementType, ...], Accountant[Any]] | None = None,
@@ -122,14 +123,16 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                 for (o, df), e, a in zip(groups.items(), self._get_variable_exprs().values(), self._get_child_accountants().values())}
 
     @egrpc.method
-    def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupBy:
-        if isinstance(key, list):
-            keys = key
-        else:
+    def __getitem__(self, key: ColumnType | ColumnsType) -> PrivDataFrameGroupBy:
+        if isinstance(key, ColumnType):
             keys = [key]
+        elif isinstance(key, Sequence):
+            keys = list(key)
+        else:
+            raise TypeError
 
         # TODO: column order?
-        new_df = self._df[self._by_columns + keys]
+        new_df = self._df[list(self._by_columns) + keys]
         return PrivDataFrameGroupBy(self._value[key], new_df, self._by_columns, self._by_objs,
                                     self._variable_exprs, self._child_accountants)
 
@@ -199,12 +202,12 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
 @egrpc.remoteclass
 class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
     _df         : PrivDataFrame
-    _by_columns : list[str]
+    _by_columns : ColumnsType
 
     def __init__(self,
                  obj        : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
                  df         : PrivDataFrame,
-                 by_columns : list[str],
+                 by_columns : ColumnsType,
                  ):
         assert df._is_uldp()
         self._df         = df
@@ -215,7 +218,7 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
         raise DPError("This operation is not allowed for user-grouped objects.")
 
     @egrpc.method
-    def __getitem__(self, key: str | list[str]) -> PrivDataFrameGroupByUser:
+    def __getitem__(self, key: ColumnType | ColumnsType) -> PrivDataFrameGroupByUser:
         # TODO: column order?
         return PrivDataFrameGroupByUser(self._value[key], self._df, self._by_columns)
 
@@ -237,21 +240,23 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
 
 @egrpc.function
 def _do_group_by(df         : PrivDataFrame,
-                 by         : str | list[str],
-                 level      : int | None      = None, # TODO: support multiindex?
-                 as_index   : bool            = True,
-                 sort       : bool            = True,
-                 group_keys : bool            = True,
-                 observed   : bool            = True,
-                 dropna     : bool            = True,
+                 by         : ColumnType | ColumnsType,
+                 level      : int | None = None, # TODO: support multiindex?
+                 as_index   : bool       = True,
+                 sort       : bool       = True,
+                 group_keys : bool       = True,
+                 observed   : bool       = True,
+                 dropna     : bool       = True,
                  ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
     # TODO: consider extra arguments
     grouped = df._value.groupby(by, observed=observed)
 
-    if isinstance(by, list):
-        by_columns = by
-    else:
+    if isinstance(by, ColumnType):
         by_columns = [by]
+    elif isinstance(by, Sequence):
+        by_columns = list(by)
+    else:
+        raise TypeError
 
     if df.user_key in by_columns:
         return PrivDataFrameGroupByUser(grouped, df, by_columns)

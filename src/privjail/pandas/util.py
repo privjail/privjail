@@ -21,6 +21,9 @@ from .. import egrpc
 from ..util import ElementType
 from ..numpy.util import NDArrayPayload
 
+ColumnType = str
+ColumnsType = list[ColumnType] | tuple[ColumnType, ...]
+
 @egrpc.dataclass
 class IndexPayload:
     values : Sequence[ElementType]

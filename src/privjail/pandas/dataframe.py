@@ -28,6 +28,7 @@ from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..numpy import PrivNDArray, SensitiveNDArray, NDArrayDomain
+from .util import ColumnType, ColumnsType
 from .domain import Domain, BoolDomain, RealDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
 
@@ -79,7 +80,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         if self._is_uldp():
             raise DPError("This operation is not permitted for user DataFrame.")
 
-    def _assert_user_key_not_in(self, columns: list[str]) -> None:
+    def _assert_user_key_not_in(self, columns: Sequence[str]) -> None:
         if self._user_key is not None and self._user_key in columns:
             raise DPError("This operation is not permitted for the user key of user DataFrame.")
 
@@ -112,7 +113,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         raise DPError("len(df) is not supported. Use df.shape[0] instead.")
 
     @egrpc.multimethod
-    def __getitem__(self, key: str) -> PrivSeries[ElementType]:
+    def __getitem__(self, key: ColumnType) -> PrivSeries[ElementType]:
         # TODO: consider duplicated column names
         value_type = self.domains[key].type()
         user_key_included = self._user_key == key
@@ -126,7 +127,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                                       preserve_row  = True)
 
     @__getitem__.register
-    def _(self, key: list[str]) -> PrivDataFrame:
+    def _(self, key: ColumnsType) -> PrivDataFrame:
         new_domains = {c: d for c, d in self.domains.items() if c in key}
         user_key_included = self._user_key in key
         return PrivDataFrame(data          = self._value.__getitem__(key),
@@ -149,13 +150,13 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                              preserve_row  = False)
 
     @egrpc.multimethod
-    def __setitem__(self, key: str, value: ElementType) -> None:
+    def __setitem__(self, key: ColumnType, value: ElementType) -> None:
         self._assert_user_key_not_in([key])
         # TODO: consider domain transform
         self._value[key] = value
 
     @__setitem__.register
-    def _(self, key: str, value: PrivSeries[Any]) -> None:
+    def _(self, key: ColumnType, value: PrivSeries[Any]) -> None:
         self._domains = dict(self.domains) | {key: value.domain}
 
         if value._is_uldp():
@@ -171,7 +172,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         # TODO: add `value` to parents?
 
     @__setitem__.register
-    def _(self, key: str, value: PrivNDArray) -> None:
+    def _(self, key: ColumnType, value: PrivNDArray) -> None:
         assert_axis_signature(self, value)
 
         if value.ndim != 1:
@@ -193,13 +194,13 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         self._value[key] = value._value
 
     @__setitem__.register
-    def _(self, key: list[str], value: ElementType) -> None:
+    def _(self, key: ColumnsType, value: ElementType) -> None:
         # TODO: consider domain transform
         self._assert_user_key_not_in(key)
         self._value[key] = value
 
     @__setitem__.register
-    def _(self, key: list[str], value: PrivDataFrame) -> None:
+    def _(self, key: ColumnsType, value: PrivDataFrame) -> None:
         # TODO: consider domain transform
         self._assert_user_key_not_in(key)
         value._assert_not_uldp()
@@ -213,7 +214,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         self._value[key._value] = value
 
     @__setitem__.register
-    def _(self, key: PrivSeries[bool], value: list[ElementType]) -> None:
+    def _(self, key: PrivSeries[bool], value: Sequence[ElementType]) -> None:
         # TODO: consider domain transform
         assert_axis_signature(self, key)
         self._assert_not_uldp()
@@ -368,11 +369,11 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         return self._value.dtypes
 
     @egrpc.property
-    def domains(self) -> Mapping[str, Domain]:
+    def domains(self) -> Mapping[ColumnType, Domain]:
         return self._domains
 
     @egrpc.property
-    def user_key(self) -> str | None:
+    def user_key(self) -> ColumnType | None:
         return self._user_key
 
     @egrpc.property
@@ -432,46 +433,46 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
     @overload
     def drop(self,
-             labels  : str | list[str] | None = ...,
+             labels  : ColumnType | ColumnsType | None = ...,
              *,
-             axis    : int | str              = ...,
-             index   : str | list[str] | None = ...,
-             columns : str | list[str] | None = ...,
-             level   : int | None             = ...,
+             axis    : int | str                       = ...,
+             index   : ColumnType | ColumnsType | None = ...,
+             columns : ColumnType | ColumnsType | None = ...,
+             level   : int | None                      = ...,
              inplace : Literal[True],
-             errors  : str                    = "raise",
+             errors  : str                             = "raise",
              ) -> None: ...
 
     @overload
     def drop(self,
-             labels  : str | list[str] | None = ...,
+             labels  : ColumnType | ColumnsType | None = ...,
              *,
-             axis    : int | str              = ...,
-             index   : str | list[str] | None = ...,
-             columns : str | list[str] | None = ...,
-             level   : int | None             = ...,
-             inplace : Literal[False]         = ...,
-             errors  : str                    = "raise",
+             axis    : int | str                       = ...,
+             index   : ColumnType | ColumnsType | None = ...,
+             columns : ColumnType | ColumnsType | None = ...,
+             level   : int | None                      = ...,
+             inplace : Literal[False]                  = ...,
+             errors  : str                             = "raise",
              ) -> PrivDataFrame: ...
 
     @egrpc.method
     def drop(self,
-             labels  : str | list[str] | None = None,
+             labels  : ColumnType | ColumnsType | None = None,
              *,
-             axis    : int | str              = 0, # 0, 1, "index", "columns"
-             index   : str | list[str] | None = None,
-             columns : str | list[str] | None = None,
-             level   : int | None             = None,
-             inplace : bool                   = False,
-             errors  : str                    = "raise", # "raise" | "ignore"
+             axis    : int | str                       = 0, # 0, 1, "index", "columns"
+             index   : ColumnType | ColumnsType | None = None,
+             columns : ColumnType | ColumnsType | None = None,
+             level   : int | None                      = None,
+             inplace : bool                            = False,
+             errors  : str                             = "raise", # "raise" | "ignore"
              ) -> PrivDataFrame | None:
         if axis not in (1, "columns") or index is not None:
             raise DPError("Rows cannot be dropped")
 
-        if isinstance(labels, str):
+        if isinstance(labels, ColumnType):
             drop_columns = [labels]
-        elif isinstance(labels, list):
-            drop_columns = labels
+        elif isinstance(labels, Sequence):
+            drop_columns = list(labels)
         else:
             raise TypeError
 
@@ -497,7 +498,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
     @overload
     def sort_values(self,
-                    by        : str | list[str],
+                    by        : ColumnType | ColumnsType,
                     *,
                     ascending : bool = ...,
                     inplace   : Literal[True],
@@ -505,7 +506,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
     @overload
     def sort_values(self,
-                    by        : str | list[str],
+                    by        : ColumnType | ColumnsType,
                     *,
                     ascending : bool = ...,
                     inplace   : Literal[False] = ...,
@@ -514,7 +515,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     # TODO: add test
     @egrpc.method
     def sort_values(self,
-                    by        : str | list[str],
+                    by        : ColumnType | ColumnsType,
                     *,
                     ascending : bool = True,
                     inplace   : bool = False,
@@ -641,13 +642,13 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                                  preserve_row  = True)
 
     def groupby(self,
-                by         : str | list[str],
-                level      : int | None      = None, # TODO: support multiindex?
-                as_index   : bool            = True,
-                sort       : bool            = True,
-                group_keys : bool            = True,
-                observed   : bool            = True,
-                dropna     : bool            = True,
+                by         : ColumnType | ColumnsType,
+                level      : int | None = None, # TODO: support multiindex?
+                as_index   : bool       = True,
+                sort       : bool       = True,
+                group_keys : bool       = True,
+                observed   : bool       = True,
+                dropna     : bool       = True,
                 ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
         from .groupby import _do_group_by
         return _do_group_by(self, by, level=level, as_index=as_index, sort=sort,
