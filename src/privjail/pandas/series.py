@@ -402,7 +402,7 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
             raise NotImplementedError("`copy` must be True in privjail to_numpy().")
 
         if not isinstance(self.domain, RealDomain):
-            raise DPError("PrivSeries.values requires to have RealDomain.")
+            raise DPError("Series must have RealDomain to be converted to NDArray.")
 
         array = self._value.to_numpy(dtype=float, copy=copy)
 
@@ -832,7 +832,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         try:
             array = self._value.to_numpy(dtype=float, copy=copy)
         except (TypeError, ValueError) as exc:
-            raise DPError("SensitiveSeries.values requires a numeric dtype.") from exc
+            raise DPError("Series must have RealDomain to be converted to NDArray.") from exc
 
         return SensitiveNDArray(value     = array,
                                 distance  = self.distance,

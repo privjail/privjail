@@ -388,7 +388,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             raise NotImplementedError("`copy` must be True in privjail to_numpy().")
 
         if not all(isinstance(domain, RealDomain) for domain in self.domains.values()):
-            raise DPError("PrivDataFrame.values requires all columns to have RealDomain.")
+            raise DPError("All columns must have RealDomain to be converted to NDArray.")
 
         array = self._value.to_numpy(dtype=float, copy=copy)
 
@@ -869,7 +869,7 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         try:
             array = self._value.to_numpy(dtype=float, copy=copy)
         except (TypeError, ValueError) as exc:
-            raise DPError("SensitiveDataFrame.values requires numeric dtypes.") from exc
+            raise DPError("All columns must have RealDomain to be converted to NDArray.") from exc
 
         return SensitiveNDArray(value     = array,
                                 distance  = self.distance,
