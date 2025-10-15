@@ -22,7 +22,7 @@ from ..util import ElementType
 from ..numpy.util import NDArrayPayload
 
 ColumnType = str
-ColumnsType = list[ColumnType] | tuple[ColumnType, ...]
+ColumnsType = list[ColumnType]
 
 @egrpc.dataclass
 class IndexPayload:
