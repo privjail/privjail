@@ -26,16 +26,17 @@ class NDArrayPayload:
     shape : tuple[int, ...]
     dtype : str
 
-def pack_ndarray(array: _npt.NDArray[Any]) -> NDArrayPayload:
-    if not array.flags.c_contiguous:
-        array = _np.ascontiguousarray(array)
-    return NDArrayPayload(data  = array.tobytes(),
-                          shape = array.shape,
-                          dtype = str(array.dtype))
+    @classmethod
+    def pack(cls, array: _npt.NDArray[Any]) -> NDArrayPayload:
+        if not array.flags.c_contiguous:
+            array = _np.ascontiguousarray(array)
+        return cls(data  = array.tobytes(),
+                   shape = array.shape,
+                   dtype = str(array.dtype))
 
-def unpack_ndarray(payload: NDArrayPayload) -> _npt.NDArray[Any]:
-    dtype = _np.dtype(payload.dtype)
-    arr = _np.frombuffer(payload.data, dtype=dtype)
-    return arr.reshape(payload.shape)
+    def unpack(self) -> _npt.NDArray[Any]:
+        dtype = _np.dtype(self.dtype)
+        arr = _np.frombuffer(self.data, dtype=dtype)
+        return arr.reshape(self.shape)
 
-egrpc.register_type(_np.ndarray, NDArrayPayload, pack_ndarray, unpack_ndarray)
+egrpc.register_type(_np.ndarray, NDArrayPayload)

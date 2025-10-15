@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from . import util # noqa: F401
 from .array import PrivNDArray, SensitiveNDArray
 from .domain import NDArrayDomain
 from . import linalg
-from . import serialization as _serialization # noqa: F401
 
 __all__ = [
     "PrivNDArray",

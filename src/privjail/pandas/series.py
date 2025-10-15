@@ -30,7 +30,6 @@ from ..realexpr import RealExpr, _max as dmax
 from ..accountants import Accountant
 from ..numpy import PrivNDArray, SensitiveNDArray, NDArrayDomain
 from .. import egrpc
-from .util import Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 
 T = TypeVar("T")
@@ -802,13 +801,9 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         else:
             raise ValueError("Unsupported distance_group_axes for SensitiveSeries.")
 
-    @property
-    def index(self) -> _pd.Index[ElementType]: # type: ignore
-        return self._get_index().to_pandas()
-
-    @egrpc.method
-    def _get_index(self) -> Index | MultiIndex:
-        return pack_pandas_index(self._value.index)
+    @egrpc.property
+    def index(self) -> _pd.Index:  # type: ignore
+        return self._value.index
 
     @egrpc.property
     def name(self) -> ElementType | None:

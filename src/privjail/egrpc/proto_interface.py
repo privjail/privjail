@@ -191,8 +191,8 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
     else:
         handler = get_handler_for_type(type_origin)
         if handler is not None:
-            surrogate = get_proto_field(proto_msg, param_name, handler.surrogate_type, allow_subclass=allow_subclass, on_server=on_server)
-            return handler.from_surrogate(surrogate)
+            payload = get_proto_field(proto_msg, param_name, handler, allow_subclass=allow_subclass, on_server=on_server)
+            return payload.unpack()
         else:
             raise TypeError(f"Type {type_origin} is not supported.")
 
@@ -270,8 +270,8 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
     else:
         handler = get_handler_for_type(type_origin)
         if handler is not None:
-            surrogate_obj = handler.to_surrogate(obj)
-            set_proto_field(proto_msg, param_name, handler.surrogate_type, surrogate_obj, allow_subclass=allow_subclass, on_server=on_server)
+            payload_obj = handler.pack(obj)
+            set_proto_field(proto_msg, param_name, handler, payload_obj, allow_subclass=allow_subclass, on_server=on_server)
         else:
             raise TypeError(f"Type {type_origin} is not supported.")
 

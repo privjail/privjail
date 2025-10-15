@@ -76,7 +76,7 @@ def resolve_custom_type(type_hint: TypeHint) -> TypeHint:
         return type_hint
 
     if handler is not None:
-        return handler.surrogate_type
+        return handler
     else:
         return type_hint
 

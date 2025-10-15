@@ -13,26 +13,26 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, Callable, NamedTuple, Type
+from typing import Any, Protocol, Type
+from typing import Self
 
 from .util import TypeHint
 
-class CustomTypeHandler(NamedTuple):
-    python_type    : Type[Any]
-    surrogate_type : Type[Any]
-    to_surrogate   : Callable[[Any], Any]
-    from_surrogate : Callable[[Any], Any]
+class PayloadType(Protocol):
+    @classmethod
+    def pack(cls, value: Any) -> Self:
+        ...
 
-_registry: dict[Type[Any], CustomTypeHandler] = {}
+    def unpack(self) -> Any:
+        ...
 
-def register_type(python_type    : Type[Any],
-                  surrogate_type : Type[Any],
-                  to_surrogate   : Callable[[Any], Any],
-                  from_surrogate : Callable[[Any], Any]) -> None:
+_registry: dict[Type[Any], Type[PayloadType]] = {}
+
+def register_type(python_type: Type[Any], payload_cls: Type[PayloadType]) -> None:
     global _registry
-    _registry[python_type] = CustomTypeHandler(python_type, surrogate_type, to_surrogate, from_surrogate)
+    _registry[python_type] = payload_cls
 
-def get_handler_for_type(type_hint: TypeHint) -> CustomTypeHandler | None:
+def get_handler_for_type(type_hint: TypeHint) -> Type[PayloadType] | None:
     global _registry
     for python_type, handler in _registry.items():
         if isinstance(type_hint, type) and issubclass(type_hint, python_type):

@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from . import util # noqa: F401
 from .domain import Domain, BoolDomain, RealDomain, StrDomain, CategoryDomain
 from .series import PrivSeries, SensitiveSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
 from .groupby import PrivDataFrameGroupBy, PrivDataFrameGroupByUser
 from .functions import read_csv, crosstab, cut
-from . import serialization # noqa: F401
 
 __all__ = [
     "Domain",

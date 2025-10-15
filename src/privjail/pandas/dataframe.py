@@ -28,7 +28,6 @@ from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..numpy import PrivNDArray, SensitiveNDArray, NDArrayDomain
-from .util import Index, MultiIndex, pack_pandas_index
 from .domain import Domain, BoolDomain, RealDomain, sum_sensitivity
 from .series import PrivSeries, SensitiveSeries
 
@@ -359,13 +358,9 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         return SensitiveInt(value=self._value.size, distance=self._eldp_distance() * len(self._value.columns), parents=[self])
 
     # TODO: define privjail's own Index[T] type
-    @property
-    def columns(self) -> _pd.Index[str]:
-        return _pd.Index(self._get_columns())
-
-    @egrpc.method
-    def _get_columns(self) -> list[str]:
-        return list(self._value.columns)
+    @egrpc.property
+    def columns(self) -> _pd.Index: # type: ignore
+        return self._value.columns
 
     # FIXME
     @property
@@ -833,27 +828,18 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         else:
             raise Exception
 
-    # TODO: define privjail's own Index[T] type
-    @property
-    def index(self) -> _pd.Index[ElementType]: # type: ignore
-        return self._get_index().to_pandas()
+    @egrpc.property
+    def index(self) -> _pd.Index: # type: ignore
+        return self._value.index
 
-    @egrpc.method
-    def _get_index(self) -> Index | MultiIndex:
-        return pack_pandas_index(self._value.index)
-
-    @property
-    def columns(self) -> _pd.Index[ElementType]: # type: ignore
-        return self._get_columns().to_pandas()
+    @egrpc.property
+    def columns(self) -> _pd.Index: # type: ignore
+        return self._value.columns
 
     # FIXME
     @property
     def dtypes(self) -> _pd.Series[Any]:
         return self._value.dtypes
-
-    @egrpc.method
-    def _get_columns(self) -> Index | MultiIndex:
-        return pack_pandas_index(self._value.columns)
 
     @egrpc.property
     def name(self) -> str | None:

@@ -19,25 +19,78 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import ElementType
+from ..numpy.util import NDArrayPayload
 
 @egrpc.dataclass
-class Index:
+class IndexPayload:
     values : Sequence[ElementType]
     name   : ElementType | None
 
-    def to_pandas(self) -> _pd.Index[Any]:
+    @classmethod
+    def pack(cls, value: _pd.Index[Any]) -> IndexPayload:
+        return cls(value.tolist(), value.name)
+
+    def unpack(self) -> _pd.Index[Any]:
         return _pd.Index(self.values, name=self.name)
 
+egrpc.register_type(_pd.Index, IndexPayload)
+
 @egrpc.dataclass
-class MultiIndex:
+class MultiIndexPayload:
     values : Sequence[tuple[ElementType, ...]]
     names  : Sequence[ElementType | None]
 
-    def to_pandas(self) -> _pd.MultiIndex:
+    @classmethod
+    def pack(cls, value: _pd.MultiIndex) -> MultiIndexPayload:
+        return cls(value.tolist(), list(value.names))
+
+    def unpack(self) -> _pd.MultiIndex:
         return _pd.MultiIndex.from_tuples(self.values, names=list(self.names))
 
-def pack_pandas_index(index: _pd.Index[Any]) -> Index | MultiIndex:
+egrpc.register_type(_pd.MultiIndex, MultiIndexPayload)
+
+def pack_pandas_index(index: _pd.Index[Any] | _pd.MultiIndex) -> IndexPayload | MultiIndexPayload:
     if isinstance(index, _pd.MultiIndex):
-        return MultiIndex(index.tolist(), list(index.names))
+        return MultiIndexPayload.pack(index)
+    elif isinstance(index, _pd.Index):
+        return IndexPayload.pack(index)
     else:
-        return Index(index.tolist(), index.name)
+        raise TypeError
+
+@egrpc.dataclass
+class SeriesPayload:
+    values : NDArrayPayload
+    index  : IndexPayload | MultiIndexPayload
+    name   : ElementType | None
+
+    @classmethod
+    def pack(cls, value: _pd.Series[Any]) -> SeriesPayload:
+        return cls(values = NDArrayPayload.pack(value.to_numpy()),
+                   index  = pack_pandas_index(value.index),
+                   name   = value.name) # type: ignore
+
+    def unpack(self) -> _pd.Series[Any]:
+        return _pd.Series(data  = self.values.unpack(),
+                          index = self.index.unpack(),
+                          name  = self.name)
+
+egrpc.register_type(_pd.Series, SeriesPayload)
+
+@egrpc.dataclass
+class DataFramePayload:
+    values  : NDArrayPayload
+    index   : IndexPayload | MultiIndexPayload
+    columns : IndexPayload | MultiIndexPayload
+
+    @classmethod
+    def pack(cls, value: _pd.DataFrame) -> DataFramePayload:
+        return DataFramePayload(values  = NDArrayPayload.pack(value.to_numpy()),
+                                index   = pack_pandas_index(value.index),
+                                columns = pack_pandas_index(value.columns))
+
+    def unpack(self) -> _pd.DataFrame:
+        return _pd.DataFrame(data    = self.values.unpack(),
+                             index   = self.index.unpack(),
+                             columns = self.columns.unpack())
+
+egrpc.register_type(_pd.DataFrame, DataFramePayload)
