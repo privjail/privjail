@@ -279,8 +279,8 @@ def _is_sequence(value: Any) -> TypeGuard[Sequence[Any]]:
 
 @egrpc.function
 def histogram(a     : PrivNDArray,
-              bins  : int | Sequence[float]      = 10,
-              range : tuple[float, float] | None = None,
+              bins  : int | Sequence[realnum]        = 10,
+              range : tuple[realnum, realnum] | None = None,
               ) -> tuple[SensitiveNDArray, _npt.NDArray[_np.floating[Any]]]:
     if a.ndim != 1:
         if not all(dim == 1 for dim in a._value.shape[1:]):
@@ -293,7 +293,7 @@ def histogram(a     : PrivNDArray,
         if range is None:
             raise DPError("`range` must be specified when bins are given as counts.")
 
-    hist, edges = _np.histogram(a._value, bins=bins, range=range)
+    hist, edges = _np.histogram(a._value, bins=bins, range=range) # type: ignore
 
     sensitive_hist = SensitiveNDArray(value     = hist,
                                       distance  = a.distance,
@@ -304,8 +304,8 @@ def histogram(a     : PrivNDArray,
 
 @egrpc.function
 def histogramdd(sample : PrivNDArray,
-                bins   : int | Sequence[int] | Sequence[Sequence[float]] = 10,
-                range  : Sequence[tuple[float, float]] | None            = None,
+                bins   : int | Sequence[int] | Sequence[Sequence[realnum]] = 10,
+                range  : Sequence[tuple[realnum, realnum]] | None          = None,
                 ) -> tuple[SensitiveNDArray, tuple[_npt.NDArray[_np.floating[Any]], ...]]:
     if sample.ndim == 1:
         dim = 1
