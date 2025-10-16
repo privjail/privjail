@@ -20,6 +20,9 @@ from .util import Accountant, ParallelAccountant
 DummyBudgetType = None
 
 class DummyAccountant(Accountant[None]):
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs, register=False)
+
     @staticmethod
     def family_name() -> str:
         return "dummy"
@@ -52,6 +55,9 @@ class DummyAccountant(Accountant[None]):
         return DummyParallelAccountant
 
 class DummyParallelAccountant(ParallelAccountant[None]):
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs, register=False)
+
     @staticmethod
     def family_name() -> str:
         return "dummy"

@@ -20,7 +20,7 @@ import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating
 from .realexpr import RealExpr, _max as dmax
-from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, get_lsca_of_same_family, BudgetType, PureBudgetType, ApproxBudgetType, zCDPBudgetType, get_all_root_accountants
+from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, get_lsca_of_same_family, PureBudgetType, ApproxBudgetType, zCDPBudgetType
 from . import egrpc
 
 T = TypeVar("T")
@@ -377,11 +377,6 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
         result = min2(result, x)
 
     return result
-
-@egrpc.function
-def budgets_spent() -> dict[str, tuple[str, BudgetType]]:
-    return {name: (type(accountant).family_name(), accountant.budget_spent())
-            for name, accountant in get_all_root_accountants().items()}
 
 @contextlib.contextmanager
 def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) -> Iterator[Prisoner[Any]]:

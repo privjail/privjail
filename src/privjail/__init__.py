@@ -14,8 +14,8 @@
 
 from . import pandas
 from .util import DPError
-from .accountants import Accountant, PureAccountant, ApproxAccountant, zCDPAccountant
-from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as max, _min as min, budgets_spent, pureDP, approxDP, zCDP
+from .accountants import Accountant, PureAccountant, ApproxAccountant, zCDPAccountant, AccountantState, accountant_state, budgets_spent
+from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as max, _min as min, pureDP, approxDP, zCDP
 from .realexpr import RealExpr
 from .mechanism import laplace_mechanism, gaussian_mechanism, exponential_mechanism, argmax, argmin
 from .egrpc import serve, connect, disconnect, proto_file_content
@@ -27,13 +27,15 @@ __all__ = [
     "PureAccountant",
     "ApproxAccountant",
     "zCDPAccountant",
+    "AccountantState",
+    "accountant_state",
+    "budgets_spent",
     "Prisoner",
     "SensitiveInt",
     "SensitiveFloat",
     "max",
     "min",
     "RealExpr",
-    "budgets_spent",
     "pureDP",
     "approxDP",
     "zCDP",

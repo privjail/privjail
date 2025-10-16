@@ -248,15 +248,16 @@ def compile_dataclass(cls: Type[T]) -> None:
     def do_compile() -> None:
         proto_msgname = names.proto_dataclass_name(cls)
 
+        # Register beforehand so recursive references can resolve
+        global proto_dataclass_type_mapping
+        proto_dataclass_type_mapping[cls] = proto_msgname
+
         proto_def = gen_proto_msg_def(proto_msgname, get_class_typed_members(cls))
 
         global proto_content
         proto_content += "\n"
         proto_content += "\n".join(proto_def)
         proto_content += "\n"
-
-        global proto_dataclass_type_mapping
-        proto_dataclass_type_mapping[cls] = proto_msgname
 
     defer(do_compile)
 

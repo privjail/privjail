@@ -79,6 +79,7 @@ def train(max_depth=5, n_bins=20, eps=1.0):
     dtree = build_decision_tree(df_train, attributes, target_attr, max_depth, eps_each)
 
     print("Decision tree constructed.")
+    print(pj.budgets_spent())
 
     return dict(n_bins=n_bins, domains=original_domains, tree=dtree)
 
@@ -129,8 +130,6 @@ def tree_stats(dtree, depth=1):
 
 def main():
     dtree = train()
-
-    print(pj.budgets_spent())
 
     # import pprint
     # pprint.pprint(dtree)

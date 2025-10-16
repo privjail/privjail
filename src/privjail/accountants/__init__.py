@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_of_same_family, get_root_accountant, get_all_root_accountants
+from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_of_same_family
 from .dummy import DummyAccountant, DummyParallelAccountant
 from .pure import PureAccountant, PureParallelAccountant, PureBudgetType
 from .approx import ApproxAccountant, ApproxParallelAccountant, ApproxBudgetType
 from .zcdp import zCDPAccountant, zCDPParallelAccountant, zCDPBudgetType
-
-BudgetType = PureBudgetType | ApproxBudgetType | zCDPBudgetType
+from .state import BudgetType, AccountantState, accountant_state, budgets_spent
 
 __all__ = [
     "BudgetExceededError",
@@ -33,10 +32,11 @@ __all__ = [
     "zCDPAccountant",
     "zCDPParallelAccountant",
     "get_lsca_of_same_family",
-    "get_root_accountant",
-    "get_all_root_accountants",
-    "BudgetType",
     "PureBudgetType",
     "ApproxBudgetType",
     "zCDPBudgetType",
+    "BudgetType",
+    "AccountantState",
+    "accountant_state",
+    "budgets_spent",
 ]
