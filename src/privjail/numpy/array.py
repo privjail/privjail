@@ -19,7 +19,7 @@ import numpy as _np
 import numpy.typing as _npt
 
 from .. import egrpc
-from ..util import DPError, realnum
+from ..util import DPError, floating, realnum
 from ..array_base import PrivArrayBase
 from ..realexpr import RealExpr
 from ..accountants import Accountant
@@ -251,18 +251,24 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
 
     def reveal(self,
                *,
-               eps   : float | None = None,
-               delta : float | None = None,
-               rho   : float | None = None,
-               scale : float | None = None,
-               mech  : str          = "laplace",
+               eps   : floating | None = None,
+               delta : floating | None = None,
+               rho   : floating | None = None,
+               scale : floating | None = None,
+               mech  : str             = "laplace",
                ) -> _npt.NDArray[_np.floating[Any]]:
         if mech == "laplace":
             from ..mechanism import laplace_mechanism
-            return laplace_mechanism(self, eps=eps, scale=scale)
+            return laplace_mechanism(self,
+                                     eps   = float(eps)   if eps   is not None else None,
+                                     scale = float(scale) if scale is not None else None)
         elif mech == "gaussian":
             from ..mechanism import gaussian_mechanism
-            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
+            return gaussian_mechanism(self,
+                                      eps   = float(eps)   if eps   is not None else None,
+                                      delta = float(delta) if delta is not None else None,
+                                      rho   = float(rho)   if rho   is not None else None,
+                                      scale = float(scale) if scale is not None else None)
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
 

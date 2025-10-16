@@ -875,9 +875,15 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
                ) -> _pd.Series: # type: ignore
         if mech == "laplace":
             from ..mechanism import laplace_mechanism
-            return laplace_mechanism(self, eps=eps, scale=scale)
+            return laplace_mechanism(self,
+                                     eps   = float(eps)   if eps   is not None else None,
+                                     scale = float(scale) if scale is not None else None)
         elif mech == "gaussian":
             from ..mechanism import gaussian_mechanism
-            return gaussian_mechanism(self, eps=eps, delta=delta, rho=rho, scale=scale)
+            return gaussian_mechanism(self,
+                                      eps   = float(eps)   if eps   is not None else None,
+                                      delta = float(delta) if delta is not None else None,
+                                      rho   = float(rho)   if rho   is not None else None,
+                                      scale = float(scale) if scale is not None else None)
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")

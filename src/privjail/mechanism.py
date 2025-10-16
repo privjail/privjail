@@ -158,29 +158,29 @@ def resolve_gaussian_params_zcdp(sensitivity : float,
 @overload
 def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                       *,
-                      eps      : floating | None = ...,
-                      scale    : floating | None = ...,
+                      eps      : float | None = ...,
+                      scale    : float | None = ...,
                       ) -> float: ...
 
 @overload
 def laplace_mechanism(prisoner : SensitiveSeries[Any],
                       *,
-                      eps      : floating | None = ...,
-                      scale    : floating | None = ...,
+                      eps      : float | None = ...,
+                      scale    : float | None = ...,
                       ) -> _pd.Series: ... # type: ignore[type-arg]
 
 @overload
 def laplace_mechanism(prisoner : SensitiveDataFrame,
                       *,
-                      eps      : floating | None = ...,
-                      scale    : floating | None = ...,
+                      eps      : float | None = ...,
+                      scale    : float | None = ...,
                       ) -> _pd.DataFrame: ...
 
 @overload
 def laplace_mechanism(prisoner : SensitiveNDArray,
                       *,
-                      eps      : floating | None = ...,
-                      scale    : floating | None = ...,
+                      eps      : float | None = ...,
+                      scale    : float | None = ...,
                       ) -> _npt.NDArray[Any]: ...
 
 @egrpc.multifunction
@@ -329,37 +329,37 @@ def _(prisoner : SensitiveNDArray,
 @overload
 def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                        *,
-                       eps      : floating | None = ...,
-                       delta    : floating | None = ...,
-                       rho      : floating | None = ...,
-                       scale    : floating | None = ...,
+                       eps      : float | None = ...,
+                       delta    : float | None = ...,
+                       rho      : float | None = ...,
+                       scale    : float | None = ...,
                        ) -> float: ...
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveSeries[Any],
                        *,
-                       eps      : floating | None = ...,
-                       delta    : floating | None = ...,
-                       rho      : floating | None = ...,
-                       scale    : floating | None = ...,
+                       eps      : float | None = ...,
+                       delta    : float | None = ...,
+                       rho      : float | None = ...,
+                       scale    : float | None = ...,
                        ) -> _pd.Series: ... # type: ignore[type-arg]
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveDataFrame,
                        *,
-                       eps      : floating | None = ...,
-                       delta    : floating | None = ...,
-                       rho      : floating | None = ...,
-                       scale    : floating | None = ...,
+                       eps      : float | None = ...,
+                       delta    : float | None = ...,
+                       rho      : float | None = ...,
+                       scale    : float | None = ...,
                        ) -> _pd.DataFrame: ...
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveNDArray,
                        *,
-                       eps      : floating | None = ...,
-                       delta    : floating | None = ...,
-                       rho      : floating | None = ...,
-                       scale    : floating | None = ...,
+                       eps      : float | None = ...,
+                       delta    : float | None = ...,
+                       rho      : float | None = ...,
+                       scale    : float | None = ...,
                        ) -> _npt.NDArray[Any]: ...
 
 @egrpc.multifunction
