@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import sys
+import argparse
 import numpy as np
 import privjail as pj
-from privjail import pandas as ppd
+import privjail.pandas as ppd
 
 from bokeh.plotting import figure, show
 from bokeh.models import LogColorMapper, ColorBar, LogTicker
@@ -26,24 +27,12 @@ from bokeh.palettes import Magma256
 LAT_MIN, LAT_MAX = 39.7, 40.2
 LON_MIN, LON_MAX = 116.2, 116.7
 
-# G = 0.04
-# G = 0.01
-G = 0.004
-# G = 0.001
-
-M = 4
-# M = 10
-
-# eps = 1.0
-eps = 2.0
-# eps = 4.0
-# eps = 10.0
-# eps = 1000.0
-
-def main():
+def main(args):
     df = ppd.read_csv("data/tdrive.csv", "schema/tdrive.json")
 
     print("Dataset loaded.")
+
+    G = args.grid_size
 
     # binning for lat, lon
     lat_bins = np.arange(np.floor(LAT_MIN / G), np.floor(LAT_MAX / G) + 1) * G
@@ -57,7 +46,7 @@ def main():
     print("Binning done.")
 
     # bound user contribution
-    df = df.sample(frac=1).groupby("taxi_id").head(M)
+    df = df.sample(frac=1).groupby("taxi_id").head(args.max_freq)
 
     print("User contribution bounded.")
 
@@ -66,7 +55,7 @@ def main():
     print("Counts calculated.")
 
     # add noise
-    noisy_counts = counts.reveal(eps=eps)
+    noisy_counts = counts.reveal(eps=args.eps)
     print("Counts revealed.")
 
     visualize(noisy_counts)
@@ -115,23 +104,16 @@ def visualize(ser):
     show(p)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        mode = "local"
-    else:
-        mode = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--remote", action="store_true")
+    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--port", type=int, default=12345)
+    parser.add_argument("--eps", type=float, default=2.0)
+    parser.add_argument("--max-freq", type=int, default=4)
+    parser.add_argument("--grid-size", type=float, default=0.004)
+    args = parser.parse_args()
 
-    if mode == "local":
-        main()
+    if args.remote:
+        pj.connect(args.host, args.port)
 
-    elif mode == "client":
-        if len(sys.argv) < 4:
-            raise ValueError(f"Usage: {sys.argv[0]} {mode} <host> <port>")
-
-        host = sys.argv[2]
-        port = int(sys.argv[3])
-        pj.connect(host, port)
-
-        main()
-
-    else:
-        raise ValueError(f"Usage: {sys.argv[0]} [local|client] [host] [port]")
+    main(args)

@@ -13,62 +13,55 @@
 # limitations under the License.
 
 import sys
+import argparse
 import privjail as pj
-from privjail import pandas as ppd
+import privjail.pandas as ppd
 
-def main():
+def main(args):
     df = ppd.read_csv("data/adult_train.csv", "schema/adult.json").dropna()
 
     n = 1000
+    eps = args.eps
 
     print()
     print("Income stats of younger age groups:")
-    print(df.sort_values("age").head(n)["income"].value_counts(sort=False).reveal(eps=1.0))
+    print(df.sort_values("age").head(n)["income"].value_counts(sort=False).reveal(eps=eps))
 
     print()
     print("Income stats of older age groups:")
-    print(df.sort_values("age").tail(n)["income"].value_counts(sort=False).reveal(eps=1.0))
+    print(df.sort_values("age").tail(n)["income"].value_counts(sort=False).reveal(eps=eps))
 
     print()
     print("Average age by income:")
     for income, df_ in df.groupby("income"):
-        mean_age = df_["age"].mean(eps=1.0)
+        mean_age = df_["age"].mean(eps=eps)
         print(f"{income}: {mean_age}")
 
     print()
     print("Average age and hours-per-week by income:")
-    print(df.groupby("income")[["age", "hours-per-week"]].mean(eps=1.0))
+    print(df.groupby("income")[["age", "hours-per-week"]].mean(eps=eps))
 
     print()
     print("Crosstab between gender and income")
-    print(ppd.crosstab(df["gender"], df["income"]).reveal(eps=1.0))
+    print(ppd.crosstab(df["gender"], df["income"]).reveal(eps=eps))
 
     print()
     print("Sum of capital-gain and capital-loss of PhDs aged under 40")
-    print(df[(df["education"] == "Doctorate") & (df["age"] < 40)][["capital-gain", "capital-loss"]].sum().reveal(eps=1.0))
+    print(df[(df["education"] == "Doctorate") & (df["age"] < 40)][["capital-gain", "capital-loss"]].sum().reveal(eps=eps))
 
     print()
     print("Consumed Privacy Budget:")
     print(pj.budgets_spent())
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        mode = "local"
-    else:
-        mode = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--remote", action="store_true")
+    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--port", type=int, default=12345)
+    parser.add_argument("--eps", type=float, default=1.0)
+    args = parser.parse_args()
 
-    if mode == "local":
-        main()
+    if args.remote:
+        pj.connect(args.host, args.port)
 
-    elif mode == "client":
-        if len(sys.argv) < 4:
-            raise ValueError(f"Usage: {sys.argv[0]} {mode} <host> <port>")
-
-        host = sys.argv[2]
-        port = int(sys.argv[3])
-        pj.connect(host, port)
-
-        main()
-
-    else:
-        raise ValueError(f"Usage: {sys.argv[0]} [local|client] [host] [port]")
+    main(args)

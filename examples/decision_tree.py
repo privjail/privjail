@@ -13,12 +13,11 @@
 # limitations under the License.
 
 import sys
-import privjail as pj
-from privjail import pandas as ppd
+import argparse
 import numpy as np
 import pandas as pd
-
-np.random.seed(0)
+import privjail as pj
+import privjail.pandas as ppd
 
 def calc_gain(df, split_attr, target_attr):
     s = 0
@@ -27,7 +26,7 @@ def calc_gain(df, split_attr, target_attr):
     return s
 
 def noisy_count(df, eps):
-    return max(0, pj.laplace_mechanism(df.shape[0], eps=eps))
+    return max(0, df.shape[0].reveal(eps=eps))
 
 def best_split(df, attributes, target_attr, eps):
     gains = [calc_gain(df, attr, target_attr) for attr in attributes]
@@ -128,8 +127,8 @@ def tree_stats(dtree, depth=1):
 
     return node_count, leaf_count, max_depth
 
-def main():
-    dtree = train()
+def main(args):
+    dtree = train(eps=args.eps)
 
     # import pprint
     # pprint.pprint(dtree)
@@ -140,23 +139,14 @@ def main():
     test(dtree)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        mode = "local"
-    else:
-        mode = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--remote", action="store_true")
+    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--port", type=int, default=12345)
+    parser.add_argument("--eps", type=float, default=1.0)
+    args = parser.parse_args()
 
-    if mode == "local":
-        main()
+    if args.remote:
+        pj.connect(args.host, args.port)
 
-    elif mode == "client":
-        if len(sys.argv) < 4:
-            raise ValueError(f"Usage: {sys.argv[0]} {mode} <host> <port>")
-
-        host = sys.argv[2]
-        port = int(sys.argv[3])
-        pj.connect(host, port)
-
-        main()
-
-    else:
-        raise ValueError(f"Usage: {sys.argv[0]} [local|client] [host] [port]")
+    main(args)
