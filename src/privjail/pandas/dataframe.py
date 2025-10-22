@@ -128,7 +128,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
     @__getitem__.register
     def _(self, key: ColumnsType) -> PrivDataFrame:
-        new_domains = {c: d for c, d in self.domains.items() if c in key}
+        new_domains = {c: self.domains[c] for c in key}
         user_key_included = self._user_key in key
         return PrivDataFrame(data          = self._value.__getitem__(key),
                              domains       = new_domains,
