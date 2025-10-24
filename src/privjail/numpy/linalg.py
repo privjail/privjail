@@ -24,6 +24,9 @@ from .array import PrivNDArray, SensitiveNDArray
 # TODO: support `axis` parameter
 @egrpc.multifunction
 def norm(x: PrivNDArray, ord: int | None = None) -> SensitiveFloat:
+    if x.ndim != 1:
+        raise NotImplementedError("linalg.norm() works only for 1D array.")
+
     ord_value = 2 if ord is None else ord
     if ord_value not in (1, 2):
         raise NotImplementedError("Only ord=1 or ord=2 (or None) are supported.")
@@ -33,6 +36,7 @@ def norm(x: PrivNDArray, ord: int | None = None) -> SensitiveFloat:
         raise DPError("Domain norm type is not L1. Call clip_norm with ord=1 first.")
     if ord_value == 2 and domain.norm_type not in ("l2", "l1"):
         raise DPError("Domain norm type is neither L2 nor L1; cannot compute L2 norm.")
+
     bound = domain.norm_bound
     if bound is None:
         raise DPError("Norm bound is not set. Use clip_norm() before calling norm().")
@@ -45,6 +49,9 @@ def norm(x: PrivNDArray, ord: int | None = None) -> SensitiveFloat:
 
 @norm.register
 def _(x: SensitiveNDArray, ord: int | None = None) -> SensitiveFloat:
+    if x.ndim != 1:
+        raise NotImplementedError("linalg.norm() works only for 1D array.")
+
     ord_value = 2 if ord is None else ord
     if ord_value not in (1, 2):
         raise NotImplementedError("Only ord=1 or ord=2 (or None) are supported.")

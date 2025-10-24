@@ -20,7 +20,7 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError, ElementType, realnum
-from ..alignment import assert_axis_signature
+from ..alignment import assert_distance_axis
 from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureAccountant, ApproxAccountant
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
@@ -127,7 +127,7 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
     #     # TODO: consider handling for pd.NA
     #     warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
 
-    assert_axis_signature(index, columns)
+    assert_distance_axis(index, columns)
 
     counts = _pd.crosstab(index._value, columns._value,
                           values=None, rownames=rownames, colnames=colnames,
@@ -139,10 +139,10 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
                    .reindex(list(colvalues), axis="columns") \
                    .fillna(0).astype(int)
 
-    return SensitiveDataFrame(counts,
-                              distance_group_axes=None,
-                              distance=index.distance,
-                              parents=[index, columns])
+    return SensitiveDataFrame(data                = counts,
+                              distance_group_axes = None,
+                              distance            = index.distance,
+                              parents             = [index, columns])
 
 # TODO: change multifunction -> function by type checking in egrpc.function
 @egrpc.multifunction
@@ -161,4 +161,8 @@ def cut(x              : PrivSeries[Any],
 
     new_domain = CategoryDomain(categories=list(ser.dtype.categories))
 
-    return PrivSeries[Any](ser, domain=new_domain, distance=x.distance, parents=[x], preserve_row=True)
+    return PrivSeries[Any](data                   = ser,
+                           domain                 = new_domain,
+                           distance               = x.distance,
+                           parents                = [x],
+                           inherit_axis_signature = True)

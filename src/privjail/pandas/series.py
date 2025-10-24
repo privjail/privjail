@@ -24,7 +24,7 @@ import pandas as _pd
 
 from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum, realnum
 from ..array_base import PrivArrayBase
-from ..alignment import assert_axis_signature
+from ..alignment import assert_distance_axis
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr, _max as dmax
 from ..accountants import Accountant
@@ -48,21 +48,26 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
     _user_max_freq : RealExpr
 
     def __init__(self,
-                 data          : Any,
-                 domain        : Domain,
-                 distance      : RealExpr,
-                 is_user_key   : bool                         = False,
-                 user_max_freq : RealExpr                     = RealExpr.INF,
+                 data                   : Any,
+                 domain                 : Domain,
+                 distance               : RealExpr,
+                 is_user_key            : bool                         = False,
+                 user_max_freq          : RealExpr                     = RealExpr.INF,
                  *,
-                 parents       : Sequence[PrivArrayBase[Any]] = [],
-                 accountant    : Accountant[Any] | None       = None,
-                 preserve_row  : bool | None                  = None,
+                 parents                : Sequence[PrivArrayBase[Any]] = [],
+                 accountant             : Accountant[Any] | None       = None,
+                 inherit_axis_signature : bool                         = False,
                  ):
         self._domain = domain
         self._is_user_key = is_user_key
         self._user_max_freq = user_max_freq
         ser = _pd.Series(data)
-        super().__init__(value=ser, distance=distance, parents=parents, accountant=accountant, preserve_row=preserve_row)
+        super().__init__(value                  = ser,
+                         distance               = distance,
+                         distance_axis          = 0,
+                         parents                = parents,
+                         accountant             = accountant,
+                         inherit_axis_signature = inherit_axis_signature)
 
     def _is_eldp(self) -> bool:
         return not self._is_user_key
@@ -100,269 +105,269 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
 
     @egrpc.multimethod
     def __getitem__(self, key: PrivSeries[bool]) -> PrivSeries[T]:
-        assert_axis_signature(self, key)
-        return PrivSeries[T](data          = self._value.__getitem__(key._value),
-                             domain        = self.domain,
-                             distance      = self.distance,
-                             is_user_key   = self._is_user_key,
-                             user_max_freq = self._user_max_freq,
-                             parents       = [self],
-                             preserve_row  = False)
+        assert_distance_axis(self, key)
+        return PrivSeries[T](data                   = self._value.__getitem__(key._value),
+                             domain                 = self.domain,
+                             distance               = self.distance,
+                             is_user_key            = self._is_user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     @egrpc.multimethod
     def __setitem__(self, key: PrivSeries[bool], value: ElementType) -> None:
-        assert_axis_signature(self, key)
+        assert_distance_axis(self, key)
         self._assert_not_uldp()
         self._value[key._value] = value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value == other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value == other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__eq__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value == other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value == other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __ne__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value != other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value != other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__ne__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value != other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value != other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __lt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value < other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value < other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__lt__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value < other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value < other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __le__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value <= other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value <= other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__le__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value <= other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value <= other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __gt__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value > other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value > other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__gt__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value > other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value > other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __ge__(self, other: PrivSeries[ElementType]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value >= other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value >= other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__ge__.register
     def _(self, other: ElementType) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value >= other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value >= other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __and__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value & other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value & other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__and__.register
     def _(self, other: bool) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value & other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value & other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __rand__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = other._value & self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = other._value & self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__rand__.register
     def _(self, other: bool) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = other & self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = other & self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __or__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value | other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value | other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__or__.register
     def _(self, other: bool) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value | other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value | other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __ror__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = other._value | self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = other._value | self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__ror__.register
     def _(self, other: bool) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = other | self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = other | self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __xor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value ^ other._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value ^ other._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__xor__.register
     def _(self, other: bool) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = self._value ^ other,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = self._value ^ other,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __rxor__(self, other: PrivSeries[bool]) -> PrivSeries[bool]: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivSeries[bool](data         = other._value ^ self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self, other],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = other._value ^ self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self, other],
+                                inherit_axis_signature = True)
 
     @__rxor__.register
     def _(self, other: bool) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = other ^ self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = other ^ self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.method
     def __invert__(self) -> PrivSeries[bool]:
         self._assert_not_uldp()
-        return PrivSeries[bool](data         = ~self._value,
-                                domain       = BoolDomain(),
-                                distance     = self.distance,
-                                parents      = [self],
-                                preserve_row = True)
+        return PrivSeries[bool](data                   = ~self._value,
+                                domain                 = BoolDomain(),
+                                distance               = self.distance,
+                                parents                = [self],
+                                inherit_axis_signature = True)
 
     @egrpc.property
     def shape(self) -> tuple[SensitiveInt]:
@@ -412,11 +417,12 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         l1_norm_max = max(lower_abs, upper_abs)
 
         new_domain = NDArrayDomain(norm_type="l1", norm_bound=l1_norm_max if l1_norm_max != math.inf else None)
-        return PrivNDArray(value        = array,
-                           distance     = self.distance,
-                           domain       = new_domain,
-                           parents      = [self],
-                           preserve_row = True)
+        return PrivNDArray(value                  = array,
+                           distance               = self.distance,
+                           distance_axis          = 0,
+                           domain                 = new_domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
 
     @property
     def values(self) -> PrivNDArray:
@@ -426,21 +432,21 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
     @egrpc.method
     def head(self, n: int = 5) -> PrivSeries[T]:
         self._assert_not_uldp()
-        return PrivSeries[T](data         = self._value.head(n),
-                             domain       = self.domain,
-                             distance     = self.distance * 2,
-                             parents      = [self],
-                             preserve_row = False)
+        return PrivSeries[T](data                   = self._value.head(n),
+                             domain                 = self.domain,
+                             distance               = self.distance * 2,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     # TODO: add test
     @egrpc.method
     def tail(self, n: int = 5) -> PrivSeries[T]:
         self._assert_not_uldp()
-        return PrivSeries[T](data         = self._value.tail(n),
-                             domain       = self.domain,
-                             distance     = self.distance * 2,
-                             parents      = [self],
-                             preserve_row = False)
+        return PrivSeries[T](data                   = self._value.tail(n),
+                             domain                 = self.domain,
+                             distance               = self.distance * 2,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     @overload
     def sort_values(self,
@@ -468,13 +474,14 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
             self.renew_axis_signature()
             return None
         else:
-            return PrivSeries[T](data          = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable"),
-                                 domain        = self.domain,
-                                 distance      = self.distance,
-                                 is_user_key   = self._is_user_key,
-                                 user_max_freq = self._user_max_freq,
-                                 parents       = [self],
-                                 preserve_row  = False)
+            ser = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable")
+            return PrivSeries[T](data                   = ser,
+                                 domain                 = self.domain,
+                                 distance               = self.distance,
+                                 is_user_key            = self._is_user_key,
+                                 user_max_freq          = self._user_max_freq,
+                                 parents                = [self],
+                                 inherit_axis_signature = False)
 
     @overload
     def replace(self,
@@ -529,11 +536,12 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data         = self._value.replace(to_replace, value, inplace=inplace), # type: ignore[arg-type]
-                                 domain       = new_domain,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = True)
+            ser = self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
+            return PrivSeries[T](data                   = ser,
+                                 domain                 = new_domain,
+                                 distance               = self.distance,
+                                 parents                = [self],
+                                 inherit_axis_signature = True)
 
     @overload
     def dropna(self,
@@ -569,13 +577,14 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data          = self._value.dropna(inplace=inplace),
-                                 domain        = new_domain,
-                                 distance      = self.distance,
-                                 is_user_key   = self._is_user_key,
-                                 user_max_freq = self._user_max_freq,
-                                 parents       = [self],
-                                 preserve_row  = True)
+            ser = self._value.dropna(inplace=inplace)
+            return PrivSeries[T](data                   = ser,
+                                 domain                 = new_domain,
+                                 distance               = self.distance,
+                                 is_user_key            = self._is_user_key,
+                                 user_max_freq          = self._user_max_freq,
+                                 parents                = [self],
+                                 inherit_axis_signature = True)
 
     @overload
     def clip(self,
@@ -616,11 +625,12 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
             self._domain = new_domain
             return None
         else:
-            return PrivSeries[T](data         = self._value.clip(lower, upper, inplace=inplace), # type: ignore[arg-type]
-                                 domain       = new_domain,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = True)
+            ser = self._value.clip(lower, upper, inplace=inplace) # type: ignore[arg-type]
+            return PrivSeries[T](data                   = ser,
+                                 domain                 = new_domain,
+                                 distance               = self.distance,
+                                 parents                = [self],
+                                 inherit_axis_signature = True)
 
     @egrpc.method
     def sum(self) -> SensitiveInt | SensitiveFloat:

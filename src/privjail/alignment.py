@@ -28,8 +28,14 @@ def new_axis_signature() -> AxisSignature:
 
 @runtime_checkable
 class AxisAligned(Protocol):
-    _axis_signature: AxisSignature
+    _distance_axis  : int
+    _axis_signature : AxisSignature
 
 def assert_axis_signature(*arrays: AxisAligned) -> None:
     if len(arrays) > 0 and not all(arrays[0]._axis_signature == arr._axis_signature for arr in arrays):
         raise DPError("Axis signatures do not match")
+
+def assert_distance_axis(*arrays: AxisAligned) -> None:
+    if len(arrays) > 0 and not all(arrays[0]._distance_axis == arr._distance_axis for arr in arrays):
+        raise DPError("Distance axes do not match")
+    assert_axis_signature(*arrays)

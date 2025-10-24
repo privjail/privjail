@@ -23,7 +23,7 @@ import pandas as _pd
 from .. import egrpc
 from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum
 from ..array_base import PrivArrayBase
-from ..alignment import assert_axis_signature
+from ..alignment import assert_distance_axis
 from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr
 from ..accountants import Accountant
@@ -49,26 +49,31 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     _user_max_freq : RealExpr
 
     def __init__(self,
-                 data          : Any,
-                 domains       : Mapping[str, Domain],
-                 distance      : RealExpr,
-                 user_key      : str | None                   = None,
-                 user_max_freq : RealExpr                     = RealExpr.INF,
-                 index         : Any                          = None,
-                 columns       : Any                          = None,
-                 dtype         : Any                          = None,
-                 copy          : bool                         = False,
+                 data                   : Any,
+                 domains                : Mapping[str, Domain],
+                 distance               : RealExpr,
+                 user_key               : str | None                   = None,
+                 user_max_freq          : RealExpr                     = RealExpr.INF,
+                 index                  : Any                          = None,
+                 columns                : Any                          = None,
+                 dtype                  : Any                          = None,
+                 copy                   : bool                         = False,
                  *,
-                 parents       : Sequence[PrivArrayBase[Any]] = [],
-                 accountant    : Accountant[Any] | None       = None,
-                 preserve_row  : bool | None                  = None,
+                 parents                : Sequence[PrivArrayBase[Any]] = [],
+                 accountant             : Accountant[Any] | None       = None,
+                 inherit_axis_signature : bool                         = False,
                  ):
         self._domains = domains
         self._user_key = user_key
         self._user_max_freq = user_max_freq
         df = _pd.DataFrame(data, index, columns, dtype, copy)
         assert user_key is None or user_key in df.columns
-        super().__init__(value=df, distance=distance, parents=parents, accountant=accountant, preserve_row=preserve_row)
+        super().__init__(value                  = df,
+                         distance               = distance,
+                         distance_axis          = 0,
+                         parents                = parents,
+                         accountant             = accountant,
+                         inherit_axis_signature = inherit_axis_signature)
 
     def _is_eldp(self) -> bool:
         return self._user_key is None
@@ -118,36 +123,36 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         value_type = self.domains[key].type()
         user_key_included = self._user_key == key
         # TODO: how to pass `value_type` from server to client via egrpc?
-        return PrivSeries[value_type](data          = self._value.__getitem__(key), # type: ignore[valid-type]
-                                      domain        = self.domains[key],
-                                      distance      = self.distance if user_key_included else self._eldp_distance(),
-                                      is_user_key   = user_key_included,
-                                      user_max_freq = self._user_max_freq if user_key_included else RealExpr.INF,
-                                      parents       = [self],
-                                      preserve_row  = True)
+        return PrivSeries[value_type](data                   = self._value.__getitem__(key), # type: ignore[valid-type]
+                                      domain                 = self.domains[key],
+                                      distance               = self.distance if user_key_included else self._eldp_distance(),
+                                      is_user_key            = user_key_included,
+                                      user_max_freq          = self._user_max_freq if user_key_included else RealExpr.INF,
+                                      parents                = [self],
+                                      inherit_axis_signature = True)
 
     @__getitem__.register
     def _(self, key: ColumnsType) -> PrivDataFrame:
         new_domains = {c: self.domains[c] for c in key}
         user_key_included = self._user_key in key
-        return PrivDataFrame(data          = self._value.__getitem__(key),
-                             domains       = new_domains,
-                             distance      = self.distance if user_key_included else self._eldp_distance(),
-                             user_key      = self._user_key if user_key_included else None,
-                             user_max_freq = self._user_max_freq if user_key_included else RealExpr.INF,
-                             parents       = [self],
-                             preserve_row  = True)
+        return PrivDataFrame(data                   = self._value.__getitem__(key),
+                             domains                = new_domains,
+                             distance               = self.distance if user_key_included else self._eldp_distance(),
+                             user_key               = self._user_key if user_key_included else None,
+                             user_max_freq          = self._user_max_freq if user_key_included else RealExpr.INF,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @__getitem__.register
     def _(self, key: PrivSeries[bool]) -> PrivDataFrame:
-        assert_axis_signature(self, key)
-        return PrivDataFrame(data          = self._value.__getitem__(key._value),
-                             domains       = self.domains,
-                             distance      = self.distance,
-                             user_key      = self._user_key,
-                             user_max_freq = self._user_max_freq,
-                             parents       = [self, key],
-                             preserve_row  = False)
+        assert_distance_axis(self, key)
+        return PrivDataFrame(data                   = self._value.__getitem__(key._value),
+                             domains                = self.domains,
+                             distance               = self.distance,
+                             user_key               = self._user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self, key],
+                             inherit_axis_signature = False)
 
     @egrpc.multimethod
     def __setitem__(self, key: ColumnType, value: ElementType) -> None:
@@ -173,7 +178,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
     @__setitem__.register
     def _(self, key: ColumnType, value: PrivNDArray) -> None:
-        assert_axis_signature(self, value)
+        assert_distance_axis(self, value)
 
         if value.ndim != 1:
             raise ValueError("Only 1D arrays can be assigned as a column.")
@@ -209,144 +214,144 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: ElementType) -> None:
         # TODO: consider domain transform
-        assert_axis_signature(self, key)
+        assert_distance_axis(self, key)
         self._assert_not_uldp()
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: Sequence[ElementType]) -> None:
         # TODO: consider domain transform
-        assert_axis_signature(self, key)
+        assert_distance_axis(self, key)
         self._assert_not_uldp()
         self._value[key._value] = value
 
     @__setitem__.register
     def _(self, key: PrivSeries[bool], value: PrivDataFrame) -> None:
         # TODO: consider domain transform
-        assert_axis_signature(self, key)
+        assert_distance_axis(self, key)
         self._assert_not_uldp()
         value._assert_not_uldp()
         self._value[key._value] = value._value
 
     @egrpc.multimethod
     def __eq__(self, other: PrivDataFrame) -> PrivDataFrame:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivDataFrame(data         = self._value == other._value,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self, other],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value == other._value,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self, other],
+                             inherit_axis_signature = True)
 
     @__eq__.register
     def _(self, other: ElementType) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value == other,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value == other,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __ne__(self, other: PrivDataFrame) -> PrivDataFrame:
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivDataFrame(data         = self._value != other._value,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self, other],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value != other._value,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self, other],
+                             inherit_axis_signature = True)
 
     @__ne__.register
     def _(self, other: ElementType) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value != other,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value != other,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __lt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivDataFrame(data         = self._value < other._value,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self, other],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value < other._value,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self, other],
+                             inherit_axis_signature = True)
 
     @__lt__.register
     def _(self, other: ElementType) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value < other,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value < other,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __le__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivDataFrame(data         = self._value <= other._value,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self, other],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value <= other._value,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self, other],
+                             inherit_axis_signature = True)
 
     @__le__.register
     def _(self, other: ElementType) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value <= other,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value <= other,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __gt__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivDataFrame(data         = self._value > other._value,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self, other],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value > other._value,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self, other],
+                             inherit_axis_signature = True)
 
     @__gt__.register
     def _(self, other: ElementType) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value > other,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value > other,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __ge__(self, other: PrivDataFrame) -> PrivDataFrame: # type: ignore
-        assert_axis_signature(self, other)
+        assert_distance_axis(self, other)
         self._assert_not_uldp()
         other._assert_not_uldp()
-        return PrivDataFrame(data         = self._value >= other._value,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self, other],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value >= other._value,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self, other],
+                             inherit_axis_signature = True)
 
     @__ge__.register
     def _(self, other: ElementType) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value >= other,
-                             domains      = {c: BoolDomain() for c in self.domains},
-                             distance     = self.distance,
-                             parents      = [self],
-                             preserve_row = True)
+        return PrivDataFrame(data                   = self._value >= other,
+                             domains                = {c: BoolDomain() for c in self.domains},
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.property
     def shape(self) -> tuple[SensitiveInt, int]:
@@ -401,11 +406,12 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             l1_norm_max += max(lower_abs, upper_abs)
 
         new_domain = NDArrayDomain(norm_type="l1", norm_bound=l1_norm_max if l1_norm_max != math.inf else None)
-        return PrivNDArray(value        = array,
-                           distance     = self.distance,
-                           domain       = new_domain,
-                           parents      = [self],
-                           preserve_row = True)
+        return PrivNDArray(value                  = array,
+                           distance               = self.distance,
+                           distance_axis          = 0,
+                           domain                 = new_domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
 
     @property
     def values(self) -> PrivNDArray:
@@ -415,21 +421,21 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     @egrpc.method
     def head(self, n: int = 5) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value.head(n),
-                             domains      = self.domains,
-                             distance     = self.distance * 2,
-                             parents      = [self],
-                             preserve_row = False)
+        return PrivDataFrame(data                   = self._value.head(n),
+                             domains                = self.domains,
+                             distance               = self.distance * 2,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     # TODO: add test
     @egrpc.method
     def tail(self, n: int = 5) -> PrivDataFrame:
         self._assert_not_uldp()
-        return PrivDataFrame(data         = self._value.tail(n),
-                             domains      = self.domains,
-                             distance     = self.distance * 2,
-                             parents      = [self],
-                             preserve_row = False)
+        return PrivDataFrame(data                   = self._value.tail(n),
+                             domains                = self.domains,
+                             distance               = self.distance * 2,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     @overload
     def drop(self,
@@ -488,13 +494,14 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                 self._user_max_freq = RealExpr.INF
             return None
         else:
-            return PrivDataFrame(data          = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors), # type: ignore
-                                 domains       = new_domains,
-                                 distance      = self.distance if user_key_included else self._eldp_distance(),
-                                 user_key      = self._user_key if user_key_included else None,
-                                 user_max_freq = self._user_max_freq if user_key_included else RealExpr.INF,
-                                 parents       = [self],
-                                 preserve_row  = True)
+            df = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors) # type: ignore
+            return PrivDataFrame(data                   = df,
+                                 domains                = new_domains,
+                                 distance               = self.distance if user_key_included else self._eldp_distance(),
+                                 user_key               = self._user_key if user_key_included else None,
+                                 user_max_freq          = self._user_max_freq if user_key_included else RealExpr.INF,
+                                 parents                = [self],
+                                 inherit_axis_signature = True)
 
     @overload
     def sort_values(self,
@@ -525,13 +532,14 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             self.renew_axis_signature()
             return None
         else:
-            return PrivDataFrame(data          = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable"),
-                                 domains       = self.domains,
-                                 distance      = self.distance,
-                                 user_key      = self._user_key,
-                                 user_max_freq = self._user_max_freq,
-                                 parents       = [self],
-                                 preserve_row  = False)
+            df = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
+            return PrivDataFrame(data                   = df,
+                                 domains                = self.domains,
+                                 distance               = self.distance,
+                                 user_key               = self._user_key,
+                                 user_max_freq          = self._user_max_freq,
+                                 parents                = [self],
+                                 inherit_axis_signature = False)
 
     @overload
     def replace(self,
@@ -590,11 +598,12 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data         = self._value.replace(to_replace, value, inplace=inplace), # type: ignore[arg-type]
-                                 domains      = new_domains,
-                                 distance     = self.distance,
-                                 parents      = [self],
-                                 preserve_row = True)
+            df = self._value.replace(to_replace, value, inplace=inplace)# type: ignore[arg-type]
+            return PrivDataFrame(data                   = df,
+                                 domains                = new_domains,
+                                 distance               = self.distance,
+                                 parents                = [self],
+                                 inherit_axis_signature = True)
 
     @overload
     def dropna(self,
@@ -633,13 +642,14 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             self._domains = new_domains
             return None
         else:
-            return PrivDataFrame(data          = self._value.dropna(inplace=inplace),
-                                 domains       = new_domains,
-                                 distance      = self.distance,
-                                 user_key      = self._user_key,
-                                 user_max_freq = self._user_max_freq,
-                                 parents       = [self],
-                                 preserve_row  = True)
+            df = self._value.dropna(inplace=inplace)
+            return PrivDataFrame(data                   = df,
+                                 domains                = new_domains,
+                                 distance               = self.distance,
+                                 user_key               = self._user_key,
+                                 user_max_freq          = self._user_max_freq,
+                                 parents                = [self],
+                                 inherit_axis_signature = True)
 
     def groupby(self,
                 by         : ColumnType | ColumnsType,
@@ -685,13 +695,13 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         assert frac is not None
         assert frac <= 1
         assert not replace
-        return PrivDataFrame(data          = self._value.sample(frac=frac),
-                             domains       = self.domains,
-                             distance      = self.distance,
-                             user_key      = self._user_key,
-                             user_max_freq = self._user_max_freq,
-                             parents       = [self],
-                             preserve_row  = False)
+        return PrivDataFrame(data                   = self._value.sample(frac=frac),
+                             domains                = self.domains,
+                             distance               = self.distance,
+                             user_key               = self._user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
 @egrpc.remoteclass
 class SensitiveDataFrame(Prisoner[_pd.DataFrame]):

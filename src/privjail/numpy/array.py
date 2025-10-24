@@ -31,13 +31,14 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
     _domain: NDArrayDomain
 
     def __init__(self,
-                 value        : Any,
-                 distance     : RealExpr,
-                 domain       : NDArrayDomain | None         = None,
+                 value                  : Any,
+                 distance               : RealExpr,
+                 distance_axis          : int,
+                 domain                 : NDArrayDomain | None         = None,
                  *,
-                 parents      : Sequence[PrivArrayBase[Any]] = [],
-                 accountant   : Accountant[Any] | None       = None,
-                 preserve_row : bool | None                  = None,
+                 parents                : Sequence[PrivArrayBase[Any]] = [],
+                 accountant             : Accountant[Any] | None       = None,
+                 inherit_axis_signature : bool                         = False,
                  ) -> None:
         array = _np.asarray(value)
         if not _np.issubdtype(array.dtype, _np.number):
@@ -45,18 +46,22 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
 
         self._domain = domain if domain is not None else NDArrayDomain()
 
-        super().__init__(value        = array,
-                         distance     = distance,
-                         parents      = list(parents),
-                         accountant   = accountant,
-                         preserve_row = preserve_row)
+        if distance_axis < 0:
+            distance_axis += array.ndim
+        if not 0 <= distance_axis < array.ndim:
+            raise ValueError("distance_axis is out of bounds for the array dimension.")
+
+        super().__init__(value                  = array,
+                         distance               = distance,
+                         distance_axis          = distance_axis,
+                         parents                = list(parents),
+                         accountant             = accountant,
+                         inherit_axis_signature = inherit_axis_signature)
 
     @egrpc.property
     def shape(self) -> tuple[SensitiveInt | int, ...]:
-        dims = self._value.shape
-        assert len(dims) > 0
-        nrows = SensitiveInt(value=dims[0], distance=self.distance, parents=[self])
-        return (nrows, *dims[1:])
+        return tuple(SensitiveInt(value=int(dim), distance=self.distance, parents=[self]) if i == self.distance_axis else int(dim)
+                     for i, dim in enumerate(self._value.shape))
 
     @egrpc.property
     def ndim(self) -> int:
@@ -66,6 +71,50 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
     def domain(self) -> NDArrayDomain:
         return self._domain
 
+    @egrpc.property
+    def T(self) -> PrivNDArray:
+        return self.transpose()
+
+    @egrpc.method
+    def transpose(self, axes: tuple[int, ...] | list[int] | None = None) -> PrivNDArray:
+        if axes is None:
+            axes_tuple = tuple(reversed(range(self.ndim)))
+        else:
+            axes_tuple = tuple(axes)
+            if len(axes_tuple) != self.ndim:
+                raise ValueError("axes tuple must include each axis exactly once.")
+
+        if sorted(axes_tuple) != list(range(self.ndim)):
+            raise ValueError("axes must be a permutation of current axes.")
+
+        return PrivNDArray(value                  = self._value.transpose(axes_tuple),
+                           distance               = self.distance,
+                           distance_axis          = axes_tuple.index(self.distance_axis),
+                           domain                 = self._domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def swapaxes(self, axis1: int, axis2: int) -> PrivNDArray:
+        axis1 = axis1 + self.ndim if axis1 < 0 else axis1
+        axis2 = axis2 + self.ndim if axis2 < 0 else axis2
+        if not (0 <= axis1 < self.ndim) or not (0 <= axis2 < self.ndim):
+            raise ValueError("axis index out of bounds.")
+
+        if axis1 == self.distance_axis:
+            new_distance_axis = axis2
+        elif axis2 == self.distance_axis:
+            new_distance_axis = axis1
+        else:
+            new_distance_axis = self.distance_axis
+
+        return PrivNDArray(value                  = self._value.swapaxes(axis1, axis2),
+                           distance               = self.distance,
+                           distance_axis          = new_distance_axis,
+                           domain                 = self._domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
     @egrpc.method
     def clip_norm(self, bound: realnum, ord: int | None = None) -> PrivNDArray:
         if bound <= 0:
@@ -74,6 +123,9 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         ord_value = 2 if ord is None else ord
         if ord_value not in (1, 2):
             raise ValueError("`ord` must be 1, 2, or None.")
+
+        # FIXME: support for distance_axis > 0
+        assert self.distance_axis == 0
 
         value_array = _np.asarray(self._value, dtype=float)
 
@@ -92,24 +144,25 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
 
         norm_label = "l1" if ord_value == 1 else "l2"
         new_domain = NDArrayDomain(norm_type=norm_label, norm_bound=float(bound))
-        return PrivNDArray(value        = clipped,
-                           distance     = self.distance,
-                           domain       = new_domain,
-                           parents      = [self],
-                           preserve_row = True)
+        return PrivNDArray(value                  = clipped,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = new_domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
 
     @egrpc.method
     def sum(self, axis: int | None = None) -> SensitiveFloat | SensitiveNDArray:
-        if axis != 0:
-            raise NotImplementedError("sum() currently supports axis=0 only.")
+        if not ((axis is None and self.ndim == 1) or axis == self.distance_axis):
+            raise NotImplementedError("sum() currently supports summing along the distance axis only.")
 
         if self._domain.norm_bound is None:
-            raise DPError("Norm bound is not set. Use clip_norm() before summing along axis 0.")
+            raise DPError("Norm bound is not set. Use clip_norm() before summing along the distance axis.")
 
         new_distance = self.distance * float(self._domain.norm_bound)
-        result = self._value.sum(axis=0)
+        result = self._value.sum(axis=axis)
 
-        if self._value.ndim == 1:
+        if self.ndim == 1:
             return SensitiveFloat(float(result), distance=new_distance, parents=[self])
         else:
             return SensitiveNDArray(value     = result,

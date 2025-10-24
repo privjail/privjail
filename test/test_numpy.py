@@ -33,8 +33,9 @@ def test_gaussian_mechanism_over_rows(accountant: pj.ApproxAccountant) -> None:
                            [2.0, -2.0, 1.0],
                            [3.0, -3.0, 1.5],
                            [0.0,  2.0, 1.2]],
-                          distance   = pj.RealExpr(1),
-                          accountant = accountant)
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
 
     assert arr.ndim == 2
     assert isinstance(arr.shape[0], pj.SensitiveInt)
@@ -70,10 +71,56 @@ def test_gaussian_mechanism_over_rows(accountant: pj.ApproxAccountant) -> None:
     assert spent_kind == "approx"
     assert spent_budget == pytest.approx((1.0, 1e-5))
 
+def test_transpose(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                           [4.0, 5.0, 6.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+
+    arr_t = arr.transpose((1, 0))
+
+    assert arr_t.distance_axis == 1
+    assert arr_t.axis_signature == arr.axis_signature
+    assert arr_t._value.tolist() == [[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]
+
+    arr_tt = arr_t.T
+
+    assert arr_tt.distance_axis == 0
+    assert arr_tt.axis_signature == arr.axis_signature
+    assert arr_tt._value.tolist() == [[1.0, 2.0, 3.0],
+                                      [4.0, 5.0, 6.0]]
+
+def test_swapaxes(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0]],
+                           [[5.0, 6.0], [7.0, 8.0]]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+
+    swapped_02 = arr.swapaxes(0, 2)
+
+    assert swapped_02.distance_axis == 2
+    assert swapped_02.axis_signature == arr.axis_signature
+    assert swapped_02._value.tolist() == [[[1.0, 5.0], [3.0, 7.0]],
+                                          [[2.0, 6.0], [4.0, 8.0]]]
+
+    swapped_11 = arr.swapaxes(1, 1)
+    assert swapped_11.distance_axis == 0
+    assert swapped_11.axis_signature == arr.axis_signature
+    assert swapped_11._value.tolist() == arr._value.tolist()
+
+    swapped_12 = arr.swapaxes(1, 2)
+    assert swapped_12.distance_axis == 0
+    assert swapped_12.axis_signature == arr.axis_signature
+    assert swapped_12._value.tolist() == [[[1.0, 3.0], [2.0, 4.0]],
+                                          [[5.0, 7.0], [6.0, 8.0]]]
+
 def test_clip_norm_scalar_rows(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([1.0, -2.5, 0.5, 4.0, -6.0],
-                          distance   = pj.RealExpr(1),
-                          accountant = accountant)
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
 
     bound = 2.0
     clipped = arr.clip_norm(bound=bound, ord=2)
@@ -86,8 +133,9 @@ def test_clip_norm_matrix_rows(accountant: pj.ApproxAccountant) -> None:
                            [ 0.0, 0.0,  0.0],
                            [ 6.0, 8.0,  2.0],
                            [-1.0, 2.0, -2.0]],
-                          distance   = pj.RealExpr(1),
-                          accountant = accountant)
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
 
     bound = 5.0
     clipped = arr.clip_norm(bound=bound, ord=2)
@@ -105,8 +153,9 @@ def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([[[ 3.0, 0.0, -4.0], [0.0,  0.0,  0.0]],
                            [[-5.0, 0.0,  0.0], [0.0, 12.0,  0.0]],
                            [[ 0.0, 0.0,  0.0], [8.0,  0.0, 15.0]]],
-                          distance   = pj.RealExpr(1),
-                          accountant = accountant)
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
 
     bound = 6.0
     clipped = arr.clip_norm(bound=bound, ord=2)
@@ -132,10 +181,30 @@ def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
                 [[ 0.0, 0.0,  0.0], [8.0,  0.0, 15.0]]]
     assert arr._value.tolist() == expected
 
+# def test_clip_norm_axis_argument(accountant: pj.ApproxAccountant) -> None:
+#     arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+#                           distance      = pj.RealExpr(1),
+#                           distance_axis = 0,
+#                           accountant    = accountant)
+
+#     clipped = arr.clip_norm(bound=2.5, ord=2, axis=0)
+#     clipped_t = arr.T.clip_norm(bound=2.5, ord=2, axis=1)
+
+#     assert clipped.domain.norm_type == "l2"
+#     assert clipped.domain.norm_bound == 2.5
+#     assert clipped_t.domain.norm_type == "l2"
+#     assert clipped_t.domain.norm_bound == 2.5
+
+#     assert _np.allclose(clipped._value, clipped_t.T._value)
+
+#     with pytest.raises(pj.DPError):
+#         arr.clip_norm(bound=2.5, ord=2, axis=1)
+
 def test_sum_returns_sensitive_float(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([1.0, -1.5, 0.5, 2.0],
-                          distance   = pj.RealExpr(1),
-                          accountant = accountant)
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
 
     bound = 2.0
     clipped = arr.clip_norm(bound=bound, ord=1)
@@ -149,8 +218,9 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0,  2.0, -1.5],
                            [0.5, -4.0,  3.0],
                            [2.0,  1.0, -0.5]],
-                          distance   = pj.RealExpr(1),
-                          accountant = accountant)
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
 
     bound = 3.0
     clipped = arr.clip_norm(bound=bound, ord=1)
@@ -163,6 +233,19 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
     expected = _np.asarray(clipped._value.sum(axis=0), dtype=float)
     assert summed._value.tolist() == pytest.approx(expected.tolist())
     assert summed.max_distance == pytest.approx(bound)
+
+def test_linalg_norm(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([10.0, -20.0, 30.0, 40.0],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+
+    clipped = arr.clip_norm(bound=5.0, ord=1)
+    l1norm = pnp.linalg.norm(clipped, ord=1)
+
+    assert isinstance(l1norm, pj.SensitiveFloat)
+    assert l1norm._value == pytest.approx(20.0)
+    assert l1norm.max_distance == pytest.approx(5.0)
 
 def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
     arr1 = pnp.SensitiveNDArray([4.0, 6.0],
@@ -237,8 +320,9 @@ def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
 
 def test_histogram_basic(accountant: pj.ApproxAccountant) -> None:
     samples = pnp.PrivNDArray([0.1, 0.4, 0.8],
-                              distance   = pj.RealExpr(1.0),
-                              accountant = accountant)
+                              distance      = pj.RealExpr(1.0),
+                              distance_axis = 0,
+                              accountant    = accountant)
 
     hist, edges = pnp.histogram(samples, bins=3, range=(0.0, 0.9))
     expected_hist, expected_edges = _np.histogram([0.1, 0.4, 0.8], bins=3, range=(0.0, 0.9))
@@ -265,8 +349,9 @@ def test_histogramdd_basic(accountant: pj.ApproxAccountant) -> None:
     samples = pnp.PrivNDArray([[0.1, 0.2 ],
                                [0.4, 0.8 ],
                                [0.9, 0.05]],
-                              distance   = pj.RealExpr(1.0),
-                              accountant = accountant)
+                              distance      = pj.RealExpr(1.0),
+                              distance_axis = 0,
+                              accountant    = accountant)
 
     hist, edges = pnp.histogramdd(samples,
                                   bins  = [2, 2],
