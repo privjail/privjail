@@ -28,6 +28,7 @@ from .domain import NDArrayDomain
 
 @egrpc.remoteclass
 class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
+    __array_priority__ = 1000  # To prevent NumPy from treating PrivNDArray as a scalar operand
     _domain: NDArrayDomain
 
     def __init__(self,
@@ -169,6 +170,42 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                                     distance  = new_distance,
                                     norm_type = self._domain.norm_type,
                                     parents   = [self])
+
+    @egrpc.method
+    def __matmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray:
+        if self.ndim != 2 or other.ndim != 2:
+            raise NotImplementedError("matmul currently supports 2D operands only.")
+
+        if self.distance_axis != 0:
+            raise DPError("Matmul would contract the distance axis.")
+
+        if self.shape[1] != other.shape[0]:
+            raise ValueError("Shape mismatch for matrix multiplication.")
+
+        return PrivNDArray(value                  = self._value @ other,
+                           distance               = self.distance,
+                           domain                 = NDArrayDomain(),
+                           parents                = [self],
+                           distance_axis          = self.distance_axis,
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def __rmatmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray: # type: ignore[misc]
+        if self.ndim != 2 or other.ndim != 2:
+            raise NotImplementedError("matmul currently supports 2D operands only.")
+
+        if self.distance_axis != 1:
+            raise DPError("Matmul would contract the distance axis.")
+
+        if self.shape[0] != other.shape[1]:
+            raise ValueError("Shape mismatch for matrix multiplication.")
+
+        return PrivNDArray(value                  = other @ self._value,
+                           distance               = self.distance,
+                           domain                 = NDArrayDomain(),
+                           parents                = [self],
+                           distance_axis          = self.distance_axis,
+                           inherit_axis_signature = True)
 
 @egrpc.remoteclass
 class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):

@@ -247,6 +247,55 @@ def test_linalg_norm(accountant: pj.ApproxAccountant) -> None:
     assert l1norm._value == pytest.approx(20.0)
     assert l1norm.max_distance == pytest.approx(5.0)
 
+def test_matmul_priv_left(accountant: pj.ApproxAccountant) -> None:
+    priv = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                            [4.0, 5.0, 6.0]],
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 0,
+                           accountant    = accountant)
+
+    other = _np.array([[1.0, 0.0, 1.0, 0.0],
+                       [0.0, 1.0, 1.0, 1.0],
+                       [1.0, 1.0, 1.0, 0.0]])
+
+    result = priv @ other
+
+    assert isinstance(result, pnp.PrivNDArray)
+    assert isinstance(result.shape[0], pj.SensitiveInt)
+    assert result.shape[0]._value == 2
+    assert result.shape[1] == 4
+    assert result.distance_axis == priv.distance_axis
+    assert result.axis_signature == priv.axis_signature
+    assert _np.allclose(result._value, priv._value @ other)
+
+    with pytest.raises(pj.DPError):
+        priv.T @ other
+
+def test_matmul_priv_right(accountant: pj.ApproxAccountant) -> None:
+    priv = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                            [4.0, 5.0, 6.0]],
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 1,
+                           accountant    = accountant)
+
+    other = _np.array([[1.0, 0.0],
+                       [0.0, 1.0],
+                       [1.0, 1.0],
+                       [2.0, 0.5]])
+
+    result = other @ priv
+
+    assert isinstance(result, pnp.PrivNDArray)
+    assert result.shape[0] == 4
+    assert isinstance(result.shape[1], pj.SensitiveInt)
+    assert result.shape[1]._value == 3
+    assert result.distance_axis == priv.distance_axis
+    assert result.axis_signature == priv.axis_signature
+    assert _np.allclose(result._value, other @ priv._value)
+
+    with pytest.raises(pj.DPError):
+        other @ priv.T
+
 def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
     arr1 = pnp.SensitiveNDArray([4.0, 6.0],
                                 distance   = pj.RealExpr(1.0),
