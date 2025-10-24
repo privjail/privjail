@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Sequence, Mapping, TYPE_CHECKING
+from typing import TypeVar, Any, Sequence, Mapping, TYPE_CHECKING
 import copy
 import math
 
@@ -437,30 +437,6 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                              parents                = [self],
                              inherit_axis_signature = False)
 
-    @overload
-    def drop(self,
-             labels  : ColumnType | ColumnsType | None = ...,
-             *,
-             axis    : int | str                       = ...,
-             index   : ColumnType | ColumnsType | None = ...,
-             columns : ColumnType | ColumnsType | None = ...,
-             level   : int | None                      = ...,
-             inplace : Literal[True],
-             errors  : str                             = "raise",
-             ) -> None: ...
-
-    @overload
-    def drop(self,
-             labels  : ColumnType | ColumnsType | None = ...,
-             *,
-             axis    : int | str                       = ...,
-             index   : ColumnType | ColumnsType | None = ...,
-             columns : ColumnType | ColumnsType | None = ...,
-             level   : int | None                      = ...,
-             inplace : Literal[False]                  = ...,
-             errors  : str                             = "raise",
-             ) -> PrivDataFrame: ...
-
     @egrpc.method
     def drop(self,
              labels  : ColumnType | ColumnsType | None = None,
@@ -469,9 +445,8 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
              index   : ColumnType | ColumnsType | None = None,
              columns : ColumnType | ColumnsType | None = None,
              level   : int | None                      = None,
-             inplace : bool                            = False,
              errors  : str                             = "raise", # "raise" | "ignore"
-             ) -> PrivDataFrame | None:
+             ) -> PrivDataFrame:
         if axis not in (1, "columns") or index is not None:
             raise DPError("Rows cannot be dropped")
 
@@ -485,39 +460,14 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
         new_domains = {k: v for k, v in self.domains.items() if k not in drop_columns}
         user_key_included = self._is_uldp() and self._user_key not in drop_columns
 
-        if inplace:
-            self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors) # type: ignore
-            self._domains = new_domains
-            if not user_key_included:
-                self._distance = self._eldp_distance()
-                self._user_key = None
-                self._user_max_freq = RealExpr.INF
-            return None
-        else:
-            df = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors) # type: ignore
-            return PrivDataFrame(data                   = df,
-                                 domains                = new_domains,
-                                 distance               = self.distance if user_key_included else self._eldp_distance(),
-                                 user_key               = self._user_key if user_key_included else None,
-                                 user_max_freq          = self._user_max_freq if user_key_included else RealExpr.INF,
-                                 parents                = [self],
-                                 inherit_axis_signature = True)
-
-    @overload
-    def sort_values(self,
-                    by        : ColumnType | ColumnsType,
-                    *,
-                    ascending : bool = ...,
-                    inplace   : Literal[True],
-                    ) -> None: ...
-
-    @overload
-    def sort_values(self,
-                    by        : ColumnType | ColumnsType,
-                    *,
-                    ascending : bool = ...,
-                    inplace   : Literal[False] = ...,
-                    ) -> PrivDataFrame: ...
+        df = self._value.drop(labels, axis=axis, index=index, columns=columns, level=level, errors=errors) # type: ignore
+        return PrivDataFrame(data                   = df,
+                             domains                = new_domains,
+                             distance               = self.distance if user_key_included else self._eldp_distance(),
+                             user_key               = self._user_key if user_key_included else None,
+                             user_max_freq          = self._user_max_freq if user_key_included else RealExpr.INF,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     # TODO: add test
     @egrpc.method
@@ -525,45 +475,21 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
                     by        : ColumnType | ColumnsType,
                     *,
                     ascending : bool = True,
-                    inplace   : bool = False,
-                    ) -> PrivDataFrame | None:
-        if inplace:
-            self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
-            self.renew_axis_signature()
-            return None
-        else:
-            df = self._value.sort_values(by, ascending=ascending, inplace=inplace, kind="stable")
-            return PrivDataFrame(data                   = df,
-                                 domains                = self.domains,
-                                 distance               = self.distance,
-                                 user_key               = self._user_key,
-                                 user_max_freq          = self._user_max_freq,
-                                 parents                = [self],
-                                 inherit_axis_signature = False)
-
-    @overload
-    def replace(self,
-                to_replace : ElementType | None = ...,
-                value      : ElementType | None = ...,
-                *,
-                inplace    : Literal[True],
-                ) -> None: ...
-
-    @overload
-    def replace(self,
-                to_replace : ElementType | None = ...,
-                value      : ElementType | None = ...,
-                *,
-                inplace    : Literal[False] = ...,
-                ) -> PrivDataFrame: ...
+                    ) -> PrivDataFrame:
+        df = self._value.sort_values(by, ascending=ascending, kind="stable")
+        return PrivDataFrame(data                   = df,
+                             domains                = self.domains,
+                             distance               = self.distance,
+                             user_key               = self._user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     @egrpc.method
     def replace(self,
                 to_replace : ElementType | None = None,
                 value      : ElementType | None = None,
-                *,
-                inplace    : bool = False,
-                ) -> PrivDataFrame | None:
+                ) -> PrivDataFrame:
         self._assert_not_uldp()
 
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
@@ -593,38 +519,15 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             else:
                 new_domains[col] = domain
 
-        if inplace:
-            self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
-            self._domains = new_domains
-            return None
-        else:
-            df = self._value.replace(to_replace, value, inplace=inplace)# type: ignore[arg-type]
-            return PrivDataFrame(data                   = df,
-                                 domains                = new_domains,
-                                 distance               = self.distance,
-                                 parents                = [self],
-                                 inherit_axis_signature = True)
-
-    @overload
-    def dropna(self,
-               *,
-               inplace      : Literal[True],
-               ignore_index : bool = ...,
-               ) -> None: ...
-
-    @overload
-    def dropna(self,
-               *,
-               inplace      : Literal[False] = ...,
-               ignore_index : bool = ...,
-               ) -> PrivDataFrame: ...
+        df = self._value.replace(to_replace, value) # type: ignore[arg-type]
+        return PrivDataFrame(data                   = df,
+                             domains                = new_domains,
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.method
-    def dropna(self,
-               *,
-               inplace      : bool = False,
-               ignore_index : bool = False,
-               ) -> PrivDataFrame | None:
+    def dropna(self, *, ignore_index: bool = False) -> PrivDataFrame:
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
@@ -637,19 +540,13 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             else:
                 new_domains[col] = domain
 
-        if inplace:
-            self._value.dropna(inplace=inplace)
-            self._domains = new_domains
-            return None
-        else:
-            df = self._value.dropna(inplace=inplace)
-            return PrivDataFrame(data                   = df,
-                                 domains                = new_domains,
-                                 distance               = self.distance,
-                                 user_key               = self._user_key,
-                                 user_max_freq          = self._user_max_freq,
-                                 parents                = [self],
-                                 inherit_axis_signature = True)
+        return PrivDataFrame(data                   = self._value.dropna(),
+                             domains                = new_domains,
+                             distance               = self.distance,
+                             user_key               = self._user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     def groupby(self,
                 by         : ColumnType | ColumnsType,

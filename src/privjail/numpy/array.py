@@ -45,6 +45,8 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         if not _np.issubdtype(array.dtype, _np.number):
             raise TypeError("PrivNDArray requires a numeric dtype.")
 
+        array.setflags(write=False) # make it immutable to avoid unexpected write to the same view
+
         self._domain = domain if domain is not None else NDArrayDomain()
 
         if distance_axis < 0:

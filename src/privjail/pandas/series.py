@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import overload, TypeVar, Any, Literal, Generic, Sequence, Iterator
+from typing import TypeVar, Any, Generic, Sequence, Iterator
 import warnings
 import copy
 import functools
@@ -448,64 +448,23 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
                              parents                = [self],
                              inherit_axis_signature = False)
 
-    @overload
-    def sort_values(self,
-                    *,
-                    ascending : bool = ...,
-                    inplace   : Literal[True],
-                    ) -> None: ...
-
-    @overload
-    def sort_values(self,
-                    *,
-                    ascending : bool = ...,
-                    inplace   : Literal[False] = ...,
-                    ) -> PrivSeries[T]: ...
-
     # TODO: add test
     @egrpc.method
-    def sort_values(self,
-                    *,
-                    ascending : bool = True,
-                    inplace   : bool = False,
-                    ) -> PrivSeries[T] | None:
-        if inplace:
-            self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable")
-            self.renew_axis_signature()
-            return None
-        else:
-            ser = self._value.sort_values(ascending=ascending, inplace=inplace, kind="stable")
-            return PrivSeries[T](data                   = ser,
-                                 domain                 = self.domain,
-                                 distance               = self.distance,
-                                 is_user_key            = self._is_user_key,
-                                 user_max_freq          = self._user_max_freq,
-                                 parents                = [self],
-                                 inherit_axis_signature = False)
-
-    @overload
-    def replace(self,
-                to_replace : ElementType | None = ...,
-                value      : ElementType | None = ...,
-                *,
-                inplace    : Literal[True],
-                ) -> None: ...
-
-    @overload
-    def replace(self,
-                to_replace : ElementType | None = ...,
-                value      : ElementType | None = ...,
-                *,
-                inplace    : Literal[False] = ...,
-                ) -> PrivSeries[T]: ...
+    def sort_values(self, *, ascending: bool = True) -> PrivSeries[T]:
+        ser = self._value.sort_values(ascending=ascending, kind="stable")
+        return PrivSeries[T](data                   = ser,
+                             domain                 = self.domain,
+                             distance               = self.distance,
+                             is_user_key            = self._is_user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self],
+                             inherit_axis_signature = False)
 
     @egrpc.method
     def replace(self,
                 to_replace : ElementType | None = None,
                 value      : ElementType | None = None,
-                *,
-                inplace    : bool = False,
-                ) -> PrivSeries[T] | None:
+                ) -> PrivSeries[T]:
         self._assert_not_uldp()
 
         if (not is_realnum(to_replace)) or (not is_realnum(value)):
@@ -531,38 +490,15 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         else:
             new_domain = self.domain
 
-        if inplace:
-            self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
-            self._domain = new_domain
-            return None
-        else:
-            ser = self._value.replace(to_replace, value, inplace=inplace) # type: ignore[arg-type]
-            return PrivSeries[T](data                   = ser,
-                                 domain                 = new_domain,
-                                 distance               = self.distance,
-                                 parents                = [self],
-                                 inherit_axis_signature = True)
-
-    @overload
-    def dropna(self,
-               *,
-               inplace      : Literal[True],
-               ignore_index : bool = ...,
-               ) -> None: ...
-
-    @overload
-    def dropna(self,
-               *,
-               inplace      : Literal[False] = ...,
-               ignore_index : bool = ...,
-               ) -> PrivSeries[T]: ...
+        ser = self._value.replace(to_replace, value) # type: ignore[arg-type]
+        return PrivSeries[T](data                   = ser,
+                             domain                 = new_domain,
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.method
-    def dropna(self,
-               *,
-               inplace      : bool = False,
-               ignore_index : bool = False,
-               ) -> PrivSeries[T] | None:
+    def dropna(self, *, ignore_index: bool = False) -> PrivSeries[T]:
         if ignore_index:
             raise DPError("`ignore_index` must be False. Index cannot be reindexed with positions.")
 
@@ -572,43 +508,19 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         else:
             new_domain = self.domain
 
-        if inplace:
-            self._value.dropna(inplace=inplace)
-            self._domain = new_domain
-            return None
-        else:
-            ser = self._value.dropna(inplace=inplace)
-            return PrivSeries[T](data                   = ser,
-                                 domain                 = new_domain,
-                                 distance               = self.distance,
-                                 is_user_key            = self._is_user_key,
-                                 user_max_freq          = self._user_max_freq,
-                                 parents                = [self],
-                                 inherit_axis_signature = True)
-
-    @overload
-    def clip(self,
-             lower    : realnum | None = None,
-             upper    : realnum | None = None,
-             *,
-             inplace  : Literal[True],
-             ) -> None: ...
-
-    @overload
-    def clip(self,
-             lower    : realnum | None = None,
-             upper    : realnum | None = None,
-             *,
-             inplace  : Literal[False] = ...,
-             ) -> PrivSeries[T]: ...
+        return PrivSeries[T](data                   = self._value.dropna(),
+                             domain                 = new_domain,
+                             distance               = self.distance,
+                             is_user_key            = self._is_user_key,
+                             user_max_freq          = self._user_max_freq,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.method
     def clip(self,
-             lower    : realnum | None = None,
-             upper    : realnum | None = None,
-             *,
-             inplace  : bool = False,
-             ) -> PrivSeries[T] | None:
+             lower : realnum | None = None,
+             upper : realnum | None = None,
+             ) -> PrivSeries[T]:
         self._assert_not_uldp()
 
         if not isinstance(self.domain, RealDomain):
@@ -620,17 +532,12 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         new_b = b if upper is None else upper if b is None else min(b, upper) # type: ignore[type-var]
         new_domain.range = (new_a, new_b)
 
-        if inplace:
-            self._value.clip(lower, upper, inplace=inplace) # type: ignore[arg-type]
-            self._domain = new_domain
-            return None
-        else:
-            ser = self._value.clip(lower, upper, inplace=inplace) # type: ignore[arg-type]
-            return PrivSeries[T](data                   = ser,
-                                 domain                 = new_domain,
-                                 distance               = self.distance,
-                                 parents                = [self],
-                                 inherit_axis_signature = True)
+        ser = self._value.clip(lower, upper) # type: ignore[arg-type]
+        return PrivSeries[T](data                   = ser,
+                             domain                 = new_domain,
+                             distance               = self.distance,
+                             parents                = [self],
+                             inherit_axis_signature = True)
 
     @egrpc.method
     def sum(self) -> SensitiveInt | SensitiveFloat:

@@ -21,6 +21,8 @@ from .. import egrpc
 from ..util import ElementType
 from ..numpy.util import NDArrayPayload
 
+_pd.options.mode.copy_on_write = True # to avoid unexpected write to the same view
+
 ColumnType = str
 ColumnsType = list[ColumnType]
 

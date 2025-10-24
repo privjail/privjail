@@ -328,25 +328,17 @@ def test_priv_dataframe_replace() -> None:
     # Default behaviour
     assert (pdf.replace(4, 10)._value == df.replace(4, 10)).all().all()
 
-    # Special behaviour when `inplace=True`
-    assert pdf.replace(3, 10, inplace=True) is None
-    assert (pdf._value == df.replace(3, 10)).all().all()
-
 def test_priv_series_replace() -> None:
     pdf, df = load_dataframe()
 
     # Default behaviour
     assert (pdf["b"].replace(4, 10)._value == df["b"].replace(4, 10)).all()
 
-    # Special behaviour when `inplace=True`
-    assert pdf["b"].replace(3, 10, inplace=True) is None
-    assert (pdf["b"]._value == df["b"].replace(3, 10)).all()
-
 def test_priv_dataframe_dropna() -> None:
     pdf, df = load_dataframe()
 
-    pdf.replace(3, np.nan, inplace=True)
-    df.replace(3, np.nan, inplace=True)
+    pdf = pdf.replace(3, np.nan)
+    df = df.replace(3, np.nan)
 
     # Default behaviour
     assert (pdf.dropna()._value == df.dropna()).all().all()
@@ -355,15 +347,11 @@ def test_priv_dataframe_dropna() -> None:
     with pytest.raises(pj.DPError):
         pdf.dropna(ignore_index=True)
 
-    # Special behaviour when `inplace=True`
-    assert pdf.dropna(inplace=True) is None
-    assert (pdf._value == df.dropna()).all().all()
-
 def test_priv_series_dropna() -> None:
     pdf, df = load_dataframe()
 
-    pdf.replace(3, np.nan, inplace=True)
-    df.replace(3, np.nan, inplace=True)
+    pdf = pdf.replace(3, np.nan)
+    df = df.replace(3, np.nan)
 
     # Default behaviour
     assert (pdf["b"].dropna()._value == df["b"].dropna()).all()
@@ -371,11 +359,6 @@ def test_priv_series_dropna() -> None:
     # Should return an error with ignore_index=True
     with pytest.raises(pj.DPError):
         pdf["b"].dropna(ignore_index=True)
-
-    # TODO: this fails because of the original pandas bug?
-    # # Special behaviour when `inplace=True`
-    # assert pdf["b"].dropna(inplace=True) is None
-    # assert (pdf["b"]._value == df["b"].dropna()).all()
 
 def test_priv_series_value_counts() -> None:
     pdf, df = load_dataframe()
