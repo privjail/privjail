@@ -26,10 +26,9 @@ from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveFloat
 from .domain import NDArrayDomain
 
-def _infer_missing_dim(
-    input_shape  : tuple[int | SensitiveDimInt, ...],
-    output_shape : tuple[int | SensitiveDimInt, ...],
-) -> tuple[int | SensitiveDimInt, ...]:
+PrivShape = tuple[int | SensitiveDimInt, ...]
+
+def _infer_missing_dim(input_shape: PrivShape, output_shape: PrivShape) -> PrivShape:
     if -1 not in output_shape:
         return output_shape
 
@@ -199,7 +198,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                          inherit_axis_signature = inherit_axis_signature)
 
     @egrpc.property
-    def shape(self) -> tuple[SensitiveDimInt | int, ...]:
+    def shape(self) -> PrivShape:
         return tuple(
             SensitiveDimInt(value          = int(dim),
                             distance       = self.distance,
@@ -263,21 +262,21 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            inherit_axis_signature = True)
 
     def reshape(self,
-                *shape : int | SensitiveDimInt | tuple[int | SensitiveDimInt, ...],
+                *shape : int | SensitiveDimInt | PrivShape,
                 order  : str = "C",
                 ) -> PrivNDArray:
         if order != "C":
             raise ValueError("Only order='C' is supported for reshape.")
 
         if len(shape) == 1 and isinstance(shape[0], tuple):
-            shape_tuple: tuple[int | SensitiveDimInt, ...] = shape[0]
+            shape_tuple: PrivShape = shape[0]
         else:
             shape_tuple = tuple(d for d in shape if not isinstance(d, tuple))
 
         return self._reshape_impl(shape_tuple)
 
     @egrpc.method
-    def _reshape_impl(self, shape: tuple[int | SensitiveDimInt, ...]) -> PrivNDArray:
+    def _reshape_impl(self, shape: PrivShape) -> PrivNDArray:
         output_shape = _infer_missing_dim(self.shape, shape)
 
         priv_dims = [(i, d) for i, d in enumerate(output_shape) if isinstance(d, SensitiveDimInt)]
