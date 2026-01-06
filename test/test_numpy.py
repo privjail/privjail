@@ -335,6 +335,23 @@ def test_matmul_priv_right(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         other @ priv.T
 
+def test_matmul_priv_priv(accountant: pj.ApproxAccountant) -> None:
+    # x.T @ x where x is normalized: left has distance_axis=1, right has distance_axis=0
+    x = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                         [4.0, 5.0, 6.0],
+                         [7.0, 8.0, 9.0],
+                         [10.0, 11.0, 12.0]],
+                        distance      = pj.RealExpr(1),
+                        distance_axis = 0,
+                        accountant    = accountant)
+    x_norm = pj.normalize(x, ord=2)  # (4, 3), distance_axis=0, norm_bound=1.0
+    result = x_norm.T @ x_norm  # (3, 4) @ (4, 3) -> (3, 3)
+    assert isinstance(result, pnp.SensitiveNDArray)
+    assert result.shape == (3, 3)
+    assert result.norm_type == "l2"
+    assert result.max_distance == pytest.approx(1.0)
+    assert _np.allclose(result._value, x_norm._value.T @ x_norm._value)
+
 def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
     arr1 = pnp.SensitiveNDArray([4.0, 6.0],
                                 distance   = pj.RealExpr(1.0),

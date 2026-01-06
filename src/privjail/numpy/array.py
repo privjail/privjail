@@ -351,7 +351,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                                     norm_type = self._domain.norm_type,
                                     parents   = [self])
 
-    @egrpc.method
+    @egrpc.multimethod
     def __matmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray:
         if self.ndim != 2 or other.ndim != 2:
             raise NotImplementedError("matmul currently supports 2D operands only.")
@@ -368,6 +368,30 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            parents                = [self],
                            distance_axis          = self.distance_axis,
                            inherit_axis_signature = True)
+
+    @__matmul__.register
+    def _(self, other: PrivNDArray) -> SensitiveNDArray:
+        if self.ndim != 2 or other.ndim != 2:
+            raise NotImplementedError("matmul currently supports 2D operands only.")
+
+        if self.distance_axis != 1:
+            raise DPError("Left operand distance_axis must be 1 (the contracting axis).")
+        if other.distance_axis != 0:
+            raise DPError("Right operand distance_axis must be 0 (the contracting axis).")
+
+        if self.axis_signature != other.axis_signature:
+            raise DPError("axis_signature mismatch in PrivNDArray matmul.")
+
+        if self.domain.norm_bound is None:
+            raise DPError("Left operand norm_bound is not set.")
+        if other.domain.norm_bound is None:
+            raise DPError("Right operand norm_bound is not set.")
+
+        new_distance = self.distance * self.domain.norm_bound * other.domain.norm_bound
+        return SensitiveNDArray(value     = self._value @ other._value,
+                                distance  = new_distance,
+                                norm_type = "l2",
+                                parents   = [self, other])
 
     @egrpc.method
     def __rmatmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray: # type: ignore[misc]
