@@ -656,3 +656,116 @@ def test_reshape_errors(accountant: pj.ApproxAccountant) -> None:
     assert isinstance(n3, pj.SensitiveDimInt)
     with pytest.raises(pj.DPError):
         arr3.reshape((n3, 16))
+
+
+def test_privndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(0.0, 10.0)),
+                          accountant    = accountant)
+
+    # __neg__
+    neg = -arr
+    assert _np.allclose(neg._value, [[-1.0, -2.0], [-3.0, -4.0]])
+    assert neg.distance == arr.distance
+    assert neg._domain.value_range == (-10.0, 0.0)
+    assert neg.axis_signature == arr.axis_signature
+
+    # __add__ (scalar)
+    added = arr + 5
+    assert _np.allclose(added._value, [[6.0, 7.0], [8.0, 9.0]])
+    assert added.distance == arr.distance
+    assert added._domain.value_range == (5.0, 15.0)
+
+    # __radd__ (scalar)
+    radded = 5 + arr
+    assert _np.allclose(radded._value, [[6.0, 7.0], [8.0, 9.0]])
+
+    # __sub__ (scalar)
+    subbed = arr - 1
+    assert _np.allclose(subbed._value, [[0.0, 1.0], [2.0, 3.0]])
+    assert subbed._domain.value_range == (-1.0, 9.0)
+
+    # __rsub__ (scalar)
+    rsubbed = 10 - arr
+    assert _np.allclose(rsubbed._value, [[9.0, 8.0], [7.0, 6.0]])
+    assert rsubbed._domain.value_range == (0.0, 10.0)
+
+    # __mul__ (positive scalar)
+    mulled = arr * 2
+    assert _np.allclose(mulled._value, [[2.0, 4.0], [6.0, 8.0]])
+    assert mulled._domain.value_range == (0.0, 20.0)
+
+    # __mul__ (negative scalar)
+    mulled_neg = arr * -2
+    assert _np.allclose(mulled_neg._value, [[-2.0, -4.0], [-6.0, -8.0]])
+    assert mulled_neg._domain.value_range == (-20.0, 0.0)
+
+    # __rmul__ (scalar)
+    rmulled = 3 * arr
+    assert _np.allclose(rmulled._value, [[3.0, 6.0], [9.0, 12.0]])
+
+    # __truediv__ (positive scalar)
+    divided = arr / 2
+    assert _np.allclose(divided._value, [[0.5, 1.0], [1.5, 2.0]])
+    assert divided._domain.value_range == (0.0, 5.0)
+
+    # __truediv__ (negative scalar)
+    divided_neg = arr / -2
+    assert _np.allclose(divided_neg._value, [[-0.5, -1.0], [-1.5, -2.0]])
+    assert divided_neg._domain.value_range == (-5.0, 0.0)
+
+    # __truediv__ by zero
+    with pytest.raises(ZeroDivisionError):
+        arr / 0
+
+    # __rtruediv__ (scalar / arr) - arr range includes 0 at boundary
+    rdivided = 10 / arr
+    assert _np.allclose(rdivided._value, [[10.0, 5.0], [10/3, 2.5]])
+    assert rdivided._domain.value_range is None  # (0.0, 10.0) includes 0
+
+    # __rtruediv__ with strictly positive range
+    arr_positive = arr + 1  # range becomes (1.0, 11.0)
+    rdivided_pos = 10 / arr_positive
+    assert _np.allclose(rdivided_pos._value, [[5.0, 10/3], [2.5, 2.0]])
+    assert rdivided_pos._domain.value_range == (10/11, 10.0)
+
+    # PrivNDArray + PrivNDArray (same axis_signature)
+    arr2 = arr * 2  # same axis_signature
+    added_arr = arr + arr2
+    assert _np.allclose(added_arr._value, [[3.0, 6.0], [9.0, 12.0]])
+    assert added_arr.distance == arr.distance
+    assert added_arr._domain.value_range == (0.0, 30.0)
+    assert added_arr.axis_signature == arr.axis_signature
+
+    # PrivNDArray - PrivNDArray
+    subbed_arr = arr2 - arr
+    assert _np.allclose(subbed_arr._value, [[1.0, 2.0], [3.0, 4.0]])
+    assert subbed_arr._domain.value_range == (-10.0, 20.0)
+
+    # PrivNDArray * PrivNDArray
+    mulled_arr = arr * arr2
+    assert _np.allclose(mulled_arr._value, [[2.0, 8.0], [18.0, 32.0]])
+    assert mulled_arr._domain.value_range == (0.0, 200.0)
+
+    # PrivNDArray / PrivNDArray (divisor range includes 0 -> None)
+    divided_arr = arr2 / arr
+    assert _np.allclose(divided_arr._value, [[2.0, 2.0], [2.0, 2.0]])
+    assert divided_arr._domain.value_range is None  # arr range (0.0, 10.0) includes 0
+
+    # PrivNDArray / PrivNDArray (strictly positive divisor)
+    arr_pos = arr + 1  # range (1.0, 11.0)
+    arr2_pos = arr_pos * 2  # range (2.0, 22.0)
+    divided_pos = arr2_pos / arr_pos
+    assert _np.allclose(divided_pos._value, [[2.0, 2.0], [2.0, 2.0]])
+    assert divided_pos._domain.value_range == (2/11, 22.0)
+
+    # axis_signature mismatch (different source arrays)
+    other = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+                            distance      = pj.RealExpr(1),
+                            distance_axis = 0,
+                            domain        = pnp.NDArrayDomain(value_range=(0.0, 10.0)),
+                            accountant    = accountant)
+    with pytest.raises(pj.DPError):
+        arr + other

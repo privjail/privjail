@@ -70,6 +70,99 @@ def _infer_missing_dim(
 
     return tuple(resolved if dim == -1 else dim for dim in output_shape)
 
+ValueRange = tuple[float | None, float | None] | None
+
+def _negate_value_range(vr: ValueRange) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    new_lo = -hi if hi is not None else None
+    new_hi = -lo if lo is not None else None
+    return (new_lo, new_hi)
+
+def _shift_value_range(vr: ValueRange, c: float) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    new_lo = lo + c if lo is not None else None
+    new_hi = hi + c if hi is not None else None
+    return (new_lo, new_hi)
+
+def _rshift_value_range(c: float, vr: ValueRange) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    new_lo = c - hi if hi is not None else None
+    new_hi = c - lo if lo is not None else None
+    return (new_lo, new_hi)
+
+def _rdiv_value_range(c: float, vr: ValueRange) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    if lo is None or hi is None:
+        return None
+    if lo <= 0 <= hi:
+        return None
+    if c == 0:
+        return (0.0, 0.0)
+    val1 = c / lo
+    val2 = c / hi
+    return (min(val1, val2), max(val1, val2))
+
+def _scale_value_range(vr: ValueRange, c: float) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    if c >= 0:
+        new_lo = lo * c if lo is not None else None
+        new_hi = hi * c if hi is not None else None
+    else:
+        new_lo = hi * c if hi is not None else None
+        new_hi = lo * c if lo is not None else None
+    return (new_lo, new_hi)
+
+def _add_value_ranges(vr1: ValueRange, vr2: ValueRange) -> ValueRange:
+    if vr1 is None or vr2 is None:
+        return None
+    lo1, hi1 = vr1
+    lo2, hi2 = vr2
+    new_lo = lo1 + lo2 if lo1 is not None and lo2 is not None else None
+    new_hi = hi1 + hi2 if hi1 is not None and hi2 is not None else None
+    return (new_lo, new_hi)
+
+def _sub_value_ranges(vr1: ValueRange, vr2: ValueRange) -> ValueRange:
+    if vr1 is None or vr2 is None:
+        return None
+    lo1, hi1 = vr1
+    lo2, hi2 = vr2
+    new_lo = lo1 - hi2 if lo1 is not None and hi2 is not None else None
+    new_hi = hi1 - lo2 if hi1 is not None and lo2 is not None else None
+    return (new_lo, new_hi)
+
+def _mul_value_ranges(vr1: ValueRange, vr2: ValueRange) -> ValueRange:
+    if vr1 is None or vr2 is None:
+        return None
+    lo1, hi1 = vr1
+    lo2, hi2 = vr2
+    if lo1 is None or hi1 is None or lo2 is None or hi2 is None:
+        return None
+    products = [lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2]
+    return (min(products), max(products))
+
+def _div_value_ranges(vr1: ValueRange, vr2: ValueRange) -> ValueRange:
+    if vr1 is None or vr2 is None:
+        return None
+    lo1, hi1 = vr1
+    lo2, hi2 = vr2
+    if lo1 is None or hi1 is None or lo2 is None or hi2 is None:
+        return None
+    if lo2 <= 0 <= hi2:
+        return None
+    quotients = [lo1 / lo2, lo1 / hi2, hi1 / lo2, hi1 / hi2]
+    return (min(quotients), max(quotients))
+
+
 @egrpc.remoteclass
 class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
     __array_priority__ = 1000  # To prevent NumPy from treating PrivNDArray as a scalar operand
@@ -329,6 +422,148 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            domain                 = NDArrayDomain(),
                            parents                = [self],
                            distance_axis          = self.distance_axis,
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def __neg__(self) -> PrivNDArray:
+        new_vr = _negate_value_range(self._domain.value_range)
+        return PrivNDArray(value                  = -self._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    def _check_axis_aligned(self, other: PrivNDArray) -> None:
+        if self.axis_signature != other.axis_signature:
+            raise DPError("axis_signature mismatch in PrivNDArray operation.")
+        if self.distance_axis != other.distance_axis:
+            raise DPError("distance_axis mismatch in PrivNDArray operation.")
+
+    @egrpc.multimethod
+    def __add__(self, other: realnum) -> PrivNDArray:
+        new_vr = _shift_value_range(self._domain.value_range, float(other))
+        return PrivNDArray(value                  = self._value + other,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @__add__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        self._check_axis_aligned(other)
+        new_vr = _add_value_ranges(self._domain.value_range, other._domain.value_range)
+        return PrivNDArray(value                  = self._value + other._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self, other],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def __radd__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
+        new_vr = _shift_value_range(self._domain.value_range, float(other))
+        return PrivNDArray(value                  = other + self._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @egrpc.multimethod
+    def __sub__(self, other: realnum) -> PrivNDArray:
+        new_vr = _shift_value_range(self._domain.value_range, -float(other))
+        return PrivNDArray(value                  = self._value - other,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @__sub__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        self._check_axis_aligned(other)
+        new_vr = _sub_value_ranges(self._domain.value_range, other._domain.value_range)
+        return PrivNDArray(value                  = self._value - other._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self, other],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def __rsub__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
+        new_vr = _rshift_value_range(float(other), self._domain.value_range)
+        return PrivNDArray(value                  = other - self._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @egrpc.multimethod
+    def __mul__(self, other: realnum) -> PrivNDArray:
+        new_vr = _scale_value_range(self._domain.value_range, float(other))
+        return PrivNDArray(value                  = self._value * other,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @__mul__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        self._check_axis_aligned(other)
+        new_vr = _mul_value_ranges(self._domain.value_range, other._domain.value_range)
+        return PrivNDArray(value                  = self._value * other._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self, other],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def __rmul__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
+        new_vr = _scale_value_range(self._domain.value_range, float(other))
+        return PrivNDArray(value                  = other * self._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @egrpc.multimethod
+    def __truediv__(self, other: realnum) -> PrivNDArray:
+        if other == 0:
+            raise ZeroDivisionError("division by zero")
+        new_vr = _scale_value_range(self._domain.value_range, 1.0 / float(other))
+        return PrivNDArray(value                  = self._value / other,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @__truediv__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        self._check_axis_aligned(other)
+        new_vr = _div_value_ranges(self._domain.value_range, other._domain.value_range)
+        return PrivNDArray(value                  = self._value / other._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self, other],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def __rtruediv__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
+        new_vr = _rdiv_value_range(float(other), self._domain.value_range)
+        return PrivNDArray(value                  = other / self._value,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [self],
                            inherit_axis_signature = True)
 
 @egrpc.remoteclass
