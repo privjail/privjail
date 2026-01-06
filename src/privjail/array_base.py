@@ -18,8 +18,9 @@ from typing import Any, Generic, Sequence, TypeVar
 from . import egrpc
 from .alignment import AxisAligned, AxisSignature, assert_distance_axis, new_axis_signature
 from .accountants import Accountant
-from .prisoner import Prisoner
+from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .realexpr import RealExpr
+from .util import integer, floating
 
 T = TypeVar("T")
 
@@ -62,3 +63,113 @@ class PrivArrayBase(Generic[T], Prisoner[T], AxisAligned):
 
     def renew_axis_signature(self) -> None:
         self._axis_signature = new_axis_signature()
+
+@egrpc.remoteclass
+class SensitiveDimInt(SensitiveInt):
+    _axis_signature : AxisSignature
+    _scale          : int
+
+    def __init__(self,
+                 value          : integer,
+                 distance       : RealExpr,
+                 axis_signature : AxisSignature,
+                 scale          : int                      = 1,
+                 *,
+                 parents        : Sequence[Prisoner[Any]]  = [],
+                 accountant     : Accountant[Any] | None   = None,
+                 ) -> None:
+        self._axis_signature = axis_signature
+        self._scale = scale
+        super().__init__(value, distance, parents=parents, accountant=accountant)
+
+    @egrpc.property
+    def axis_signature(self) -> AxisSignature:
+        return self._axis_signature
+
+    @egrpc.property
+    def scale(self) -> int:
+        return self._scale
+
+    @egrpc.method
+    def __neg__(self) -> SensitiveDimInt:
+        return SensitiveDimInt(-self._value,
+                               distance       = self.distance,
+                               axis_signature = self._axis_signature,
+                               scale          = -self._scale,
+                               parents        = [self])
+
+    @egrpc.multimethod
+    def __add__(self, other: SensitiveDimInt) -> SensitiveDimInt | SensitiveInt:
+        if self._axis_signature == other._axis_signature:
+            return SensitiveDimInt(self._value + other._value,
+                                   distance       = self.distance + other.distance,
+                                   axis_signature = self._axis_signature,
+                                   scale          = self._scale + other._scale,
+                                   parents        = [self, other])
+        return super().__add__(other)  # type: ignore[no-any-return]
+
+    @__add__.register
+    def _(self, other: integer) -> SensitiveInt:
+        return super().__add__(other)  # type: ignore[no-any-return]
+
+    @__add__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return super().__add__(other)  # type: ignore[no-any-return]
+
+    @__add__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return super().__add__(other)  # type: ignore[no-any-return]
+
+    @__add__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return super().__add__(other)  # type: ignore[no-any-return]
+
+    @egrpc.multimethod
+    def __sub__(self, other: SensitiveDimInt) -> SensitiveDimInt | SensitiveInt:
+        if self._axis_signature == other._axis_signature:
+            return SensitiveDimInt(self._value - other._value,
+                                   distance       = self.distance + other.distance,
+                                   axis_signature = self._axis_signature,
+                                   scale          = self._scale - other._scale,
+                                   parents        = [self, other])
+        return super().__sub__(other)  # type: ignore[no-any-return]
+
+    @__sub__.register
+    def _(self, other: integer) -> SensitiveInt:
+        return super().__sub__(other)  # type: ignore[no-any-return]
+
+    @__sub__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return super().__sub__(other)  # type: ignore[no-any-return]
+
+    @__sub__.register
+    def _(self, other: SensitiveInt) -> SensitiveInt:
+        return super().__sub__(other)  # type: ignore[no-any-return]
+
+    @__sub__.register
+    def _(self, other: SensitiveFloat) -> SensitiveFloat:
+        return super().__sub__(other)  # type: ignore[no-any-return]
+
+    @egrpc.multimethod
+    def __mul__(self, other: integer) -> SensitiveDimInt:
+        return SensitiveDimInt(self._value * other,
+                               distance       = self.distance * abs(int(other)),
+                               axis_signature = self._axis_signature,
+                               scale          = self._scale * int(other),
+                               parents        = [self])
+
+    @__mul__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return super().__mul__(other)  # type: ignore[no-any-return]
+
+    @egrpc.multimethod
+    def __rmul__(self, other: integer) -> SensitiveDimInt:  # type: ignore[misc]
+        return SensitiveDimInt(other * self._value,
+                               distance       = self.distance * abs(int(other)),
+                               axis_signature = self._axis_signature,
+                               scale          = int(other) * self._scale,
+                               parents        = [self])
+
+    @__rmul__.register
+    def _(self, other: floating) -> SensitiveFloat:
+        return super().__rmul__(other)  # type: ignore[no-any-return]

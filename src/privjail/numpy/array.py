@@ -20,11 +20,55 @@ import numpy.typing as _npt
 
 from .. import egrpc
 from ..util import DPError, floating, realnum
-from ..array_base import PrivArrayBase
+from ..array_base import PrivArrayBase, SensitiveDimInt
 from ..realexpr import RealExpr
 from ..accountants import Accountant
-from ..prisoner import Prisoner, SensitiveFloat, SensitiveInt
+from ..prisoner import Prisoner, SensitiveFloat
 from .domain import NDArrayDomain
+
+def _infer_missing_dim(
+    input_shape  : tuple[int | SensitiveDimInt, ...],
+    output_shape : tuple[int | SensitiveDimInt, ...],
+) -> tuple[int | SensitiveDimInt, ...]:
+    if -1 not in output_shape:
+        return output_shape
+
+    input_priv_dim: SensitiveDimInt | None = None
+    for dim in input_shape:
+        if isinstance(dim, SensitiveDimInt):
+            input_priv_dim = dim
+            break
+    assert input_priv_dim is not None
+
+    output_priv_dim: SensitiveDimInt | None = None
+    for dim in output_shape:
+        if isinstance(dim, SensitiveDimInt):
+            output_priv_dim = dim
+            break
+
+    input_PQ = 1
+    for dim in input_shape:
+        if isinstance(dim, int):
+            input_PQ *= dim
+
+    output_known = 1
+    for dim in output_shape:
+        if isinstance(dim, int) and dim != -1:
+            output_known *= dim
+
+    resolved: int | SensitiveDimInt
+    if output_priv_dim is not None:
+        scale = output_priv_dim.scale
+        if scale * output_known <= 0 or input_PQ % (scale * output_known) != 0:
+            raise ValueError("Cannot infer dimension for -1.")
+        resolved = input_PQ // (scale * output_known)
+    else:
+        if input_PQ % output_known != 0:
+            raise ValueError("Cannot infer dimension for -1.")
+        scale = input_PQ // output_known
+        resolved = input_priv_dim * scale
+
+    return tuple(resolved if dim == -1 else dim for dim in output_shape)
 
 @egrpc.remoteclass
 class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
@@ -62,9 +106,16 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                          inherit_axis_signature = inherit_axis_signature)
 
     @egrpc.property
-    def shape(self) -> tuple[SensitiveInt | int, ...]:
-        return tuple(SensitiveInt(value=int(dim), distance=self.distance, parents=[self]) if i == self.distance_axis else int(dim)
-                     for i, dim in enumerate(self._value.shape))
+    def shape(self) -> tuple[SensitiveDimInt | int, ...]:
+        return tuple(
+            SensitiveDimInt(value          = int(dim),
+                            distance       = self.distance,
+                            axis_signature = self._axis_signature,
+                            scale          = 1,
+                            parents        = [self])
+            if i == self.distance_axis else int(dim)
+            for i, dim in enumerate(self._value.shape)
+        )
 
     @egrpc.property
     def ndim(self) -> int:
@@ -117,6 +168,77 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            domain                 = self._domain,
                            parents                = [self],
                            inherit_axis_signature = True)
+
+    def reshape(self,
+                *shape : int | SensitiveDimInt | tuple[int | SensitiveDimInt, ...],
+                order  : str = "C",
+                ) -> PrivNDArray:
+        if order != "C":
+            raise ValueError("Only order='C' is supported for reshape.")
+
+        if len(shape) == 1 and isinstance(shape[0], tuple):
+            shape_tuple: tuple[int | SensitiveDimInt, ...] = shape[0]
+        else:
+            shape_tuple = tuple(d for d in shape if not isinstance(d, tuple))
+
+        return self._reshape_impl(shape_tuple)
+
+    @egrpc.method
+    def _reshape_impl(self, shape: tuple[int | SensitiveDimInt, ...]) -> PrivNDArray:
+        output_shape = _infer_missing_dim(self.shape, shape)
+
+        priv_dims = [(i, d) for i, d in enumerate(output_shape) if isinstance(d, SensitiveDimInt)]
+        if len(priv_dims) != 1:
+            raise ValueError("Output shape must contain exactly one SensitiveDimInt.")
+        output_axis, output_priv_dim = priv_dims[0]
+
+        scale = output_priv_dim.scale
+        for d in output_shape:
+            val = d.scale if isinstance(d, SensitiveDimInt) else d
+            if val <= 0:
+                raise ValueError("All dimensions and scale must be positive for reshape.")
+
+        if output_priv_dim.axis_signature != self.axis_signature:
+            raise DPError("SensitiveDimInt's axis_signature does not match the array's axis_signature.")
+
+        input_axis = self.distance_axis
+
+        P_in = 1
+        for d in self.shape[:input_axis]:
+            assert isinstance(d, int)
+            P_in *= d
+
+        Q_in = 1
+        for d in self.shape[input_axis + 1:]:
+            assert isinstance(d, int)
+            Q_in *= d
+
+        P_out = 1
+        for d in output_shape[:output_axis]:
+            assert isinstance(d, int)
+            P_out *= d
+
+        Q_out = 1
+        for d in output_shape[output_axis + 1:]:
+            assert isinstance(d, int)
+            Q_out *= d
+
+        if not ((P_in == P_out and Q_in == Q_out * scale) or
+                (P_in == P_out * scale and Q_in == Q_out)):
+            raise DPError("Reshape would mix data across individuals.")
+
+        final_shape = tuple(
+            int(d._value) if isinstance(d, SensitiveDimInt) else d
+            for d in output_shape
+        )
+        reshaped_arr = self._value.reshape(final_shape, order="C")
+
+        return PrivNDArray(value                  = reshaped_arr,
+                           distance               = self.distance * scale,
+                           distance_axis          = output_axis,
+                           domain                 = self._domain,
+                           parents                = [self],
+                           inherit_axis_signature = (scale == 1))
 
     @egrpc.method
     def clip_norm(self, bound: realnum, ord: int | None = None) -> PrivNDArray:

@@ -429,3 +429,230 @@ def test_histogramdd_basic(accountant: pj.ApproxAccountant) -> None:
         pnp.histogramdd(samples,
                         bins  = grid,
                         range = [(0.0, 1.0), (0.0, 1.0)])
+
+def test_sensitive_dim_int_basic(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                           [4.0, 5.0, 6.0],
+                           [7.0, 8.0, 9.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+    arr2 = pnp.PrivNDArray([[1.0, 2.0]],
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 0,
+                           accountant    = accountant)
+
+    shape = arr.shape
+    assert isinstance(shape[0], pj.SensitiveDimInt)
+    assert isinstance(shape[1], int)
+    assert shape[0]._value == 3
+    assert shape[0].scale == 1
+    assert shape[0].axis_signature == arr.axis_signature
+    assert shape[1] == 3
+    n = shape[0]
+
+    # __neg__
+    neg_n = -n
+    assert isinstance(neg_n, pj.SensitiveDimInt)
+    assert neg_n._value == -3
+    assert neg_n.scale == -1
+    assert neg_n.axis_signature == n.axis_signature
+
+    # __mul__ / __rmul__
+    n2 = n * 2
+    assert isinstance(n2, pj.SensitiveDimInt)
+    assert n2._value == 6
+    assert n2.scale == 2
+    n2r = 2 * n
+    assert isinstance(n2r, pj.SensitiveDimInt)
+    assert n2r._value == 6
+    assert n2r.scale == 2
+    neg_mul = n * (-2)
+    assert isinstance(neg_mul, pj.SensitiveDimInt)
+    assert neg_mul._value == -6
+    assert neg_mul.scale == -2
+
+    # __add__ (same signature)
+    add_same = n + n2
+    assert isinstance(add_same, pj.SensitiveDimInt)
+    assert add_same._value == 3 + 6
+    assert add_same.scale == 1 + 2
+    assert add_same.axis_signature == n.axis_signature
+
+    # __add__ (different signature)
+    m = arr2.shape[0]
+    assert isinstance(m, pj.SensitiveDimInt)
+    assert n.axis_signature != m.axis_signature
+    add_diff = n + m
+    assert isinstance(add_diff, pj.SensitiveInt)
+    assert not isinstance(add_diff, pj.SensitiveDimInt)
+    assert add_diff._value == 3 + 1
+
+    # __sub__ (same signature)
+    sub_same = n2 - n
+    assert isinstance(sub_same, pj.SensitiveDimInt)
+    assert sub_same._value == 6 - 3
+    assert sub_same.scale == 2 - 1
+
+    # __sub__ (different signature)
+    sub_diff = n - m
+    assert isinstance(sub_diff, pj.SensitiveInt)
+    assert not isinstance(sub_diff, pj.SensitiveDimInt)
+    assert sub_diff._value == 3 - 1
+
+    # __add__ with int (fallback to SensitiveInt)
+    add_int = n + 10
+    assert isinstance(add_int, pj.SensitiveInt)
+    assert not isinstance(add_int, pj.SensitiveDimInt)
+    assert add_int._value == 3 + 10
+
+    # __sub__ with int (fallback to SensitiveInt)
+    sub_int = n - 1
+    assert isinstance(sub_int, pj.SensitiveInt)
+    assert not isinstance(sub_int, pj.SensitiveDimInt)
+    assert sub_int._value == 3 - 1
+
+    # __add__ with float (fallback to SensitiveFloat)
+    add_float = n + 0.5
+    assert isinstance(add_float, pj.SensitiveFloat)
+    assert add_float._value == 3 + 0.5
+
+    # __mul__ with float (fallback to SensitiveFloat)
+    mul_float = n * 1.5
+    assert isinstance(mul_float, pj.SensitiveFloat)
+    assert mul_float._value == 3 * 1.5
+
+    # __add__ with SensitiveInt (fallback)
+    si = pj.SensitiveInt(10, distance=pj.RealExpr(1), accountant=accountant)
+    add_si = n + si
+    assert isinstance(add_si, pj.SensitiveInt)
+    assert not isinstance(add_si, pj.SensitiveDimInt)
+    assert add_si._value == 3 + 10
+
+    # __sub__ with SensitiveInt (fallback)
+    sub_si = n - si
+    assert isinstance(sub_si, pj.SensitiveInt)
+    assert not isinstance(sub_si, pj.SensitiveDimInt)
+    assert sub_si._value == 3 - 10
+
+    # __add__ with SensitiveFloat (fallback)
+    sf = pj.SensitiveFloat(0.5, distance=pj.RealExpr(1), accountant=accountant)
+    add_sf = n + sf
+    assert isinstance(add_sf, pj.SensitiveFloat)
+    assert add_sf._value == 3 + 0.5
+
+    # __sub__ with SensitiveFloat (fallback)
+    sub_sf = n - sf
+    assert isinstance(sub_sf, pj.SensitiveFloat)
+    assert sub_sf._value == 3 - 0.5
+
+    # reveal()
+    revealed = n.reveal(eps=1.0)
+    assert isinstance(revealed, (int, float))
+
+def test_reshape_basic(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                           [4.0, 5.0, 6.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+    n = arr.shape[0]
+    assert isinstance(n, pj.SensitiveDimInt)
+
+    # shape specified with SensitiveDimInt (scale=1)
+    reshaped = arr.reshape((n, 3))
+    assert reshaped._value.shape == (2, 3)
+    assert reshaped.distance_axis == 0
+    assert reshaped.axis_signature == arr.axis_signature
+
+    # flatten with scaled SensitiveDimInt (n*3)
+    flattened_scaled = arr.reshape((n * 3,))
+    assert flattened_scaled._value.shape == (6,)
+    assert flattened_scaled.distance_axis == 0
+    assert flattened_scaled.max_distance == pytest.approx(arr.max_distance * 3)
+
+    # -1 inferred as SensitiveDimInt
+    reshaped_inferred = arr.reshape((-1, 3))
+    assert reshaped_inferred._value.shape == (2, 3)
+    assert reshaped_inferred.distance_axis == 0
+
+    # flatten with -1
+    flattened_inferred = arr.reshape((-1,))
+    assert flattened_inferred._value.shape == (6,)
+    assert flattened_inferred.distance_axis == 0
+    assert flattened_inferred.max_distance == pytest.approx(arr.max_distance * 3)
+
+    # SensitiveDimInt given, -1 inferred as int
+    arr_3d = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0]],
+                              [[5.0, 6.0], [7.0, 8.0]],
+                              [[9.0, 10.0], [11.0, 12.0]]],
+                             distance      = pj.RealExpr(1),
+                             distance_axis = 0,
+                             accountant    = accountant)
+    k = arr_3d.shape[0]
+    assert isinstance(k, pj.SensitiveDimInt)
+    reshaped_3d = arr_3d.reshape((k, -1))
+    assert reshaped_3d._value.shape == (3, 4)
+    assert reshaped_3d.distance_axis == 0
+    assert reshaped_3d.axis_signature == arr_3d.axis_signature
+
+    # split rows (scale=2)
+    arr2 = pnp.PrivNDArray([[1.0, 2.0, 3.0, 4.0],
+                            [5.0, 6.0, 7.0, 8.0],
+                            [9.0, 10.0, 11.0, 12.0]],
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 0,
+                           accountant    = accountant)
+    m = arr2.shape[0]
+    assert isinstance(m, pj.SensitiveDimInt)
+    reshaped_split = arr2.reshape((m * 2, 2))
+    assert reshaped_split._value.shape == (6, 2)
+    assert reshaped_split.distance_axis == 0
+    assert reshaped_split.max_distance == pytest.approx(arr2.max_distance * 2)
+
+    # *args form (without tuple)
+    reshaped_args = arr.reshape(n, 3)
+    assert reshaped_args._value.shape == (2, 3)
+    assert reshaped_args.distance_axis == 0
+
+    reshaped_args_inferred = arr.reshape(-1, 3)
+    assert reshaped_args_inferred._value.shape == (2, 3)
+
+def test_reshape_errors(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+    arr2 = pnp.PrivNDArray([[1.0, 2.0, 3.0]],
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 0,
+                           accountant    = accountant)
+
+    # axis_signature mismatch
+    n2 = arr2.shape[0]
+    assert isinstance(n2, pj.SensitiveDimInt)
+    with pytest.raises(pj.DPError):
+        arr.reshape((n2, 4))
+
+    # scale not positive
+    n = arr.shape[0]
+    assert isinstance(n, pj.SensitiveDimInt)
+    zero_scale = n - n
+    assert isinstance(zero_scale, pj.SensitiveDimInt)
+    assert zero_scale.scale == 0
+    with pytest.raises(ValueError):
+        arr.reshape((zero_scale, 2))
+
+    # cannot infer -1 (PQ % known_product != 0)
+    with pytest.raises(ValueError):
+        arr.reshape((4, -1))
+
+    # mixing individuals: (2, 2, N, 4) with distance_axis=2 -> (n, 16)
+    arr3 = pnp.PrivNDArray(_np.arange(32).reshape(2, 2, 2, 4).astype(float),
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 2,
+                           accountant    = accountant)
+    n3 = arr3.shape[2]
+    assert isinstance(n3, pj.SensitiveDimInt)
+    with pytest.raises(pj.DPError):
+        arr3.reshape((n3, 16))
