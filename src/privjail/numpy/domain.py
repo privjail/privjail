@@ -18,7 +18,6 @@ from .. import egrpc
 
 @egrpc.dataclass
 class NDArrayDomain:
-    """Domain information for PrivNDArray values."""
-
-    norm_type  : str          = "l1"
-    norm_bound : float | None = None
+    norm_type   : str                                      = "l1"
+    norm_bound  : float | None                             = None
+    value_range : tuple[float | None, float | None] | None = None

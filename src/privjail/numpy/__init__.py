@@ -15,12 +15,14 @@
 from . import util # noqa: F401
 from .array import PrivNDArray, SensitiveNDArray, histogram, histogramdd
 from .domain import NDArrayDomain
+from .io import load
 from . import linalg
 
 __all__ = [
     "PrivNDArray",
     "SensitiveNDArray",
     "NDArrayDomain",
+    "load",
     "linalg",
     "histogram",
     "histogramdd",
