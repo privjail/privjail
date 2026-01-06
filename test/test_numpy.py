@@ -44,7 +44,7 @@ def test_gaussian_mechanism_over_rows(accountant: pj.ApproxAccountant) -> None:
     assert arr.shape[1] == 3
 
     bound = 5.0
-    clipped = arr.clip_norm(bound=bound, ord=2)
+    clipped = pj.clip_norm(arr, bound=bound, ord=2)
 
     assert isinstance(clipped, pnp.PrivNDArray)
     assert clipped.domain.norm_type == "l2"
@@ -123,7 +123,7 @@ def test_clip_norm_scalar_rows(accountant: pj.ApproxAccountant) -> None:
                           accountant    = accountant)
 
     bound = 2.0
-    clipped = arr.clip_norm(bound=bound, ord=2)
+    clipped = pj.clip_norm(arr, bound=bound, ord=2)
 
     assert clipped._value.tolist() == pytest.approx([1.0, -2.0, 0.5, 2.0, -2.0])
     assert arr._value.tolist() == [1.0, -2.5, 0.5, 4.0, -6.0]
@@ -138,7 +138,7 @@ def test_clip_norm_matrix_rows(accountant: pj.ApproxAccountant) -> None:
                           accountant    = accountant)
 
     bound = 5.0
-    clipped = arr.clip_norm(bound=bound, ord=2)
+    clipped = pj.clip_norm(arr, bound=bound, ord=2)
 
     clipped_rows = clipped._value.tolist()
     norms = [math.sqrt(sum(v * v for v in row)) for row in clipped_rows]
@@ -158,7 +158,7 @@ def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
                           accountant    = accountant)
 
     bound = 6.0
-    clipped = arr.clip_norm(bound=bound, ord=2)
+    clipped = pj.clip_norm(arr, bound=bound, ord=2)
 
     assert arr._value.shape == clipped._value.shape
 
@@ -207,7 +207,7 @@ def test_normalize(accountant: pj.ApproxAccountant) -> None:
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
                           accountant    = accountant)
-    normalized = arr.normalize(ord=2)
+    normalized = pj.normalize(arr, ord=2)
     expected = [[3.0/5.0, 4.0/5.0],
                 [0.0, 1.0],
                 [1.0, 0.0]]
@@ -227,7 +227,7 @@ def test_normalize_tensor(accountant: pj.ApproxAccountant) -> None:
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
                           accountant    = accountant)
-    normalized = arr.normalize(ord=2)
+    normalized = pj.normalize(arr, ord=2)
     assert arr._value.shape == normalized._value.shape
     original_rows = arr._value.reshape(arr._value.shape[0], -1)
     normalized_rows = normalized._value.reshape(normalized._value.shape[0], -1)
@@ -246,7 +246,7 @@ def test_sum_returns_sensitive_float(accountant: pj.ApproxAccountant) -> None:
                           accountant    = accountant)
 
     bound = 2.0
-    clipped = arr.clip_norm(bound=bound, ord=1)
+    clipped = pj.clip_norm(arr, bound=bound, ord=1)
     total = clipped.sum(axis=0)
 
     assert isinstance(total, pj.SensitiveFloat)
@@ -262,7 +262,7 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
                           accountant    = accountant)
 
     bound = 3.0
-    clipped = arr.clip_norm(bound=bound, ord=1)
+    clipped = pj.clip_norm(arr, bound=bound, ord=1)
     summed = clipped.sum(axis=0)
 
     assert isinstance(summed, pnp.SensitiveNDArray)
@@ -279,7 +279,7 @@ def test_linalg_norm(accountant: pj.ApproxAccountant) -> None:
                           distance_axis = 0,
                           accountant    = accountant)
 
-    clipped = arr.clip_norm(bound=5.0, ord=1)
+    clipped = pj.clip_norm(arr, bound=5.0, ord=1)
     l1norm = pnp.linalg.norm(clipped, ord=1)
 
     assert isinstance(l1norm, pj.SensitiveFloat)

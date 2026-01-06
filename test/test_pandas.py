@@ -317,7 +317,7 @@ def test_priv_dataframe_setitem_numpy() -> None:
     pdf, df = load_dataframe()
 
     # A numpy array should be successfully assigned to a column
-    pdf["a_"] = pdf["a"].values.clip_norm(bound=3.0, ord=1)
+    pdf["a_"] = pj.clip_norm(pdf["a"].values, bound=3.0, ord=1)
     assert pdf["a_"]._value.to_list() == pytest.approx([1., 2., 3., 3., 3.])
     assert pdf["a_"].domain.dtype == "float64"
     assert pdf["a_"].domain.range == pytest.approx((-3.0, 3.0))
