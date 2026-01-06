@@ -370,6 +370,37 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            inherit_axis_signature = True)
 
     @egrpc.method
+    def normalize(self, ord: int | None = None) -> PrivNDArray:
+        ord_value = 2 if ord is None else ord
+        if ord_value not in (1, 2):
+            raise ValueError("`ord` must be 1, 2, or None.")
+
+        # FIXME: support for distance_axis > 0
+        assert self.distance_axis == 0
+
+        eps = 1e-12
+        value_array = _np.asarray(self._value, dtype=float)
+
+        if value_array.ndim == 1:
+            norm = _np.linalg.norm(value_array, ord=ord_value)
+            normalized = value_array / (norm + eps)
+        else:
+            nrows = value_array.shape[0]
+            flat_rows = value_array.reshape(nrows, -1)
+            norms = _np.linalg.norm(flat_rows, ord=ord_value, axis=1, keepdims=True)
+            broadcast_shape = (nrows,) + (1,) * (value_array.ndim - 1)
+            normalized = value_array / (norms.reshape(broadcast_shape) + eps)
+
+        norm_type = "l1" if ord_value == 1 else "l2"
+        new_domain = NDArrayDomain(norm_type=norm_type, norm_bound=1.0, value_range=(-1.0, 1.0))
+        return PrivNDArray(value                  = normalized,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = new_domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
     def sum(self, axis: int | None = None) -> SensitiveFloat | SensitiveNDArray:
         if not ((axis is None and self.ndim == 1) or axis == self.distance_axis):
             raise NotImplementedError("sum() currently supports summing along the distance axis only.")

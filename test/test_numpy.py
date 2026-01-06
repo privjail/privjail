@@ -200,6 +200,45 @@ def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
 #     with pytest.raises(pj.DPError):
 #         arr.clip_norm(bound=2.5, ord=2, axis=1)
 
+def test_normalize(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[3.0, 4.0],
+                           [0.0, 5.0],
+                           [1.0, 0.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+    normalized = arr.normalize(ord=2)
+    expected = [[3.0/5.0, 4.0/5.0],
+                [0.0, 1.0],
+                [1.0, 0.0]]
+    assert _np.allclose(normalized._value, expected)
+    assert normalized._domain.norm_type == "l2"
+    assert normalized._domain.norm_bound == 1.0
+    assert normalized._domain.value_range == (-1.0, 1.0)
+    assert normalized.distance == arr.distance
+    assert normalized.axis_signature == arr.axis_signature
+    row_norms = _np.linalg.norm(normalized._value, ord=2, axis=1)
+    assert _np.allclose(row_norms, [1.0, 1.0, 1.0])
+
+def test_normalize_tensor(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[[ 3.0, 0.0, -4.0], [0.0,  0.0,  0.0]],
+                           [[-5.0, 0.0,  0.0], [0.0, 12.0,  0.0]],
+                           [[ 0.0, 0.0,  0.0], [8.0,  0.0, 15.0]]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          accountant    = accountant)
+    normalized = arr.normalize(ord=2)
+    assert arr._value.shape == normalized._value.shape
+    original_rows = arr._value.reshape(arr._value.shape[0], -1)
+    normalized_rows = normalized._value.reshape(normalized._value.shape[0], -1)
+    original_norms = _np.linalg.norm(original_rows, ord=2, axis=1)
+    normalized_norms = _np.linalg.norm(normalized_rows, ord=2, axis=1)
+    assert original_norms.tolist() == pytest.approx([5.0, 13.0, 17.0])
+    assert _np.allclose(normalized_norms, [1.0, 1.0, 1.0])
+    assert normalized._domain.norm_type == "l2"
+    assert normalized._domain.norm_bound == 1.0
+    assert normalized._domain.value_range == (-1.0, 1.0)
+
 def test_sum_returns_sensitive_float(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([1.0, -1.5, 0.5, 2.0],
                           distance      = pj.RealExpr(1),
