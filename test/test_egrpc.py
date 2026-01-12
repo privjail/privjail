@@ -269,3 +269,93 @@ def test_remoteclass2(server: Any) -> None:
     hoge.value = 2
     assert hoge.value == 2
     assert hoge.fuga().value == "2"
+
+@egrpc.remoteclass
+class Animal:
+    def __init__(self, name: str):
+        self._name = name
+
+    @egrpc.property
+    def name(self) -> str:
+        return self._name
+
+    @egrpc.method
+    def speak(self) -> str:
+        return "..."
+
+@egrpc.remoteclass
+class Dog(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+    @egrpc.method
+    def speak(self) -> str:
+        return "woof"
+
+@egrpc.remoteclass
+class Cat(Animal):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+    @egrpc.method
+    def speak(self) -> str:
+        return "meow"
+
+@egrpc.remoteclass
+class Mammal(Animal):
+    def __init__(self, name: str, legs: int):
+        super().__init__(name)
+        self._legs = legs
+
+    @egrpc.property
+    def legs(self) -> int:
+        return self._legs
+
+@egrpc.remoteclass
+class Horse(Mammal):
+    def __init__(self, name: str):
+        super().__init__(name, 4)
+
+    @egrpc.method
+    def speak(self) -> str:
+        return "neigh"
+
+@egrpc.function
+def create_animal(kind: str, name: str) -> Animal:
+    if kind == "dog":
+        return Dog(name)
+    elif kind == "cat":
+        return Cat(name)
+    elif kind == "horse":
+        return Horse(name)
+    else:
+        return Animal(name)
+
+@egrpc.function
+def get_animal_name(animal: Animal) -> str:
+    return animal.name
+
+def test_inheritance(server: Any) -> None:
+    dog = create_animal("dog", "Pochi")
+    assert isinstance(dog, Dog)
+    assert dog.name == "Pochi"
+    assert dog.speak() == "woof"
+    assert get_animal_name(dog) == "Pochi"
+
+    cat = create_animal("cat", "Tama")
+    assert isinstance(cat, Cat)
+    assert cat.name == "Tama"
+    assert cat.speak() == "meow"
+    assert get_animal_name(cat) == "Tama"
+
+    horse = create_animal("horse", "Uma")
+    assert isinstance(horse, Horse)
+    assert horse.name == "Uma"
+    assert horse.speak() == "neigh"
+    assert horse.legs == 4
+    assert get_animal_name(horse) == "Uma"
+
+    animal = create_animal("unknown", "X")
+    assert isinstance(animal, Animal)
+    assert animal.name == "X"
+    assert animal.speak() == "..."

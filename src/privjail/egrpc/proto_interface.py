@@ -18,7 +18,7 @@ from collections.abc import Sequence, Mapping
 
 from . import names
 from .util import is_type_match, get_function_typed_params, get_function_return_type, get_method_typed_params, get_method_return_type, normalize_args, TypeHint, my_get_origin
-from .compiler import proto_primitive_type_mapping, proto_dataclass_type_mapping, proto_remoteclass_type_mapping, is_subclass, subclasses
+from .compiler import proto_primitive_type_mapping, proto_dataclass_type_mapping, proto_remoteclass_type_mapping, proto_remoteclass_id_mapping, proto_remoteclass_id_reverse_mapping, is_subclass, subclasses
 from .instance_ref import InstanceRefType, get_ref_from_instance, get_instance_from_ref
 from .registry import get_handler_for_type
 
@@ -164,8 +164,16 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
 
     elif type_origin in proto_remoteclass_type_mapping:
         cls = type_origin
-        instance_ref = getattr(proto_msg, param_name).ref
-        return get_instance_from_ref(cls, instance_ref, type_hint, on_server)
+        msg = getattr(proto_msg, param_name)
+        instance_ref = msg.ref
+
+        actual_cls = cls
+        if allow_subclass:
+            candidate_cls = proto_remoteclass_id_reverse_mapping.get(msg.type_id)
+            if candidate_cls is not None and issubclass(candidate_cls, cls):
+                actual_cls = candidate_cls
+
+        return get_instance_from_ref(actual_cls, instance_ref, type_hint, on_server)
 
     elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)
@@ -257,8 +265,16 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
 
     elif type_origin in proto_remoteclass_type_mapping:
         cls = type_origin
-        instance_ref = get_ref_from_instance(cls, obj, on_server)
-        getattr(proto_msg, param_name).ref = instance_ref
+        actual_cls = type(obj) if allow_subclass and isinstance(obj, cls) else cls
+
+        if actual_cls not in proto_remoteclass_id_mapping:
+            raise TypeError(f"Class '{actual_cls.__name__}' is not registered as @egrpc.remoteclass. "
+                            f"All subclasses of '{cls.__name__}' must be decorated with @egrpc.remoteclass.")
+
+        instance_ref = get_ref_from_instance(actual_cls, obj, on_server)
+        msg = getattr(proto_msg, param_name)
+        msg.ref = instance_ref
+        msg.type_id = proto_remoteclass_id_mapping[actual_cls]
 
     elif type_origin in (Union, UnionType):
         child_proto_msg = getattr(proto_msg, param_name)

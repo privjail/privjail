@@ -48,6 +48,8 @@ proto_primitive_type_mapping = {
 
 proto_dataclass_type_mapping: dict[Any, str] = {}
 proto_remoteclass_type_mapping: dict[Any, str] = {}
+proto_remoteclass_id_mapping: dict[Any, int] = {}
+proto_remoteclass_id_reverse_mapping: dict[int, Any] = {}
 
 proto_header = """syntax = "proto3";
 
@@ -289,18 +291,29 @@ def add_remoteclass_method_def(cls: Type[T], proto_rpc_def: str, proto_req_def: 
 
 def define_remoteclass_instance_ref(cls: Type[T]) -> None:
     global proto_remoteclass_type_mapping
+    global proto_remoteclass_id_mapping
+    global proto_remoteclass_id_reverse_mapping
 
     if cls not in proto_remoteclass_type_mapping:
         proto_instance_ref_name = names.proto_instance_ref_name(cls)
 
         proto_remoteclass_type_mapping[cls] = proto_instance_ref_name
+        type_id = len(proto_remoteclass_id_mapping)
+        proto_remoteclass_id_mapping[cls] = type_id
+        proto_remoteclass_id_reverse_mapping[type_id] = cls
 
         global proto_remoteclass_msg_defs
 
         if cls not in proto_remoteclass_msg_defs:
             proto_remoteclass_msg_defs[cls] = []
 
-        proto_instance_def = gen_proto_msg_def(proto_instance_ref_name, {"ref": InstanceRefType})
+        proto_instance_def = gen_proto_msg_def(
+            proto_instance_ref_name,
+            {
+                "ref": InstanceRefType,
+                "type_id": int,
+            },
+        )
         proto_remoteclass_msg_defs[cls] += [""] + proto_instance_def
 
 def compile_remoteclass(cls: Type[T]) -> None:
