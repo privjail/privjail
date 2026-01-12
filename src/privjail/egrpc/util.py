@@ -106,19 +106,17 @@ def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
             and all(is_type_match(v, type_args[1]) for v in obj.values())
         )
 
-    elif type_origin is _np.integer:
-        # TODO: consider type args (T in np.integer[T])
-        return isinstance(obj, _np.integer)
-
-    elif type_origin is _np.floating:
-        # TODO: consider type args (T in np.floating[T])
-        return isinstance(obj, _np.floating)
-
     else:
-        return (
-            hasattr(obj, "__orig_class__")
-            and all(is_subtype(th1, th2) for th1, th2 in zip(get_args(obj.__orig_class__), type_args))
-        )
+        # Generic types: check isinstance against origin type
+        try:
+            if not isinstance(obj, type_origin):
+                return False
+        except TypeError:
+            return False
+        # If object has __orig_class__, also verify type arguments
+        if hasattr(obj, "__orig_class__"):
+            return all(is_subtype(th1, th2) for th1, th2 in zip(get_args(obj.__orig_class__), type_args))
+        return True
 
 def get_function_typed_params(func: Callable[P, R]) -> dict[str, TypeHint]:
     type_hints = get_type_hints(func)
