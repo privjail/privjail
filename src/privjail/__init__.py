@@ -19,7 +19,7 @@ from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as max, _min 
 from .array_base import SensitiveDimInt
 from .realexpr import RealExpr
 from .mechanism import laplace_mechanism, gaussian_mechanism, exponential_mechanism, argmax, argmin
-from .helper import clip_norm, normalize
+from .helper import clip_norm, normalize, sample
 from .egrpc import serve, connect, disconnect, proto_file_content
 
 __all__ = [
@@ -49,6 +49,7 @@ __all__ = [
     "argmin",
     "clip_norm",
     "normalize",
+    "sample",
     "serve",
     "connect",
     "disconnect",

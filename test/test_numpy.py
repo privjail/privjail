@@ -220,6 +220,29 @@ def test_normalize(accountant: pj.ApproxAccountant) -> None:
     row_norms = _np.linalg.norm(normalized._value, ord=2, axis=1)
     assert _np.allclose(row_norms, [1.0, 1.0, 1.0])
 
+def test_sample(accountant: pj.ApproxAccountant) -> None:
+    x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
+                        distance      = pj.RealExpr(1),
+                        distance_axis = 0,
+                        accountant    = accountant)
+
+    # Single array
+    (x_s,) = pj.sample(x, q=0.5)
+    assert isinstance(x_s, pnp.PrivNDArray)
+    assert x_s.axis_signature != x.axis_signature
+    assert x_s._value.shape[0] <= x._value.shape[0]
+
+    # Multiple arrays
+    y = x * 2  # same axis_signature
+    x_s, y_s = pj.sample(x, y, q=0.5)
+    assert isinstance(x_s, pnp.PrivNDArray)
+    assert isinstance(y_s, pnp.PrivNDArray)
+    assert x_s.axis_signature == y_s.axis_signature
+    assert x_s.axis_signature != x.axis_signature
+    assert _np.allclose(y_s._value, x_s._value * 2)
+    assert x_s._value.shape[0] <= x._value.shape[0]
+    assert y_s._value.shape[0] == x_s._value.shape[0]
+
 def test_normalize_tensor(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([[[ 3.0, 0.0, -4.0], [0.0,  0.0,  0.0]],
                            [[-5.0, 0.0,  0.0], [0.0, 12.0,  0.0]],

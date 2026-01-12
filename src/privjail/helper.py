@@ -15,10 +15,14 @@
 from __future__ import annotations
 
 import numpy as _np
+import numpy.typing as _npt
 
-from .util import realnum
+from .util import realnum, DPError
 from .numpy import PrivNDArray, NDArrayDomain
+from .alignment import new_axis_signature
+from . import egrpc
 
+@egrpc.function
 def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivNDArray:
     if bound <= 0:
         raise ValueError("`bound` must be positive.")
@@ -54,6 +58,7 @@ def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivN
                        parents                = [arr],
                        inherit_axis_signature = True)
 
+@egrpc.function
 def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
     ord_value = 2 if ord is None else ord
     if ord_value not in (1, 2):
@@ -83,3 +88,44 @@ def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
                        domain                 = new_domain,
                        parents                = [arr],
                        inherit_axis_signature = True)
+
+def sample(*arrays: PrivNDArray, q: float, method: str = "poisson") -> tuple[PrivNDArray, ...]:
+    return _sample_impl(arrays, q, method)
+
+@egrpc.function
+def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tuple[PrivNDArray, ...]:
+    if len(arrays) == 0:
+        raise ValueError("At least one array is required.")
+
+    if not (0.0 < q <= 1.0):
+        raise ValueError("Sampling rate q must be in (0, 1].")
+
+    if method != "poisson":
+        raise ValueError(f"Unknown sampling method: '{method}'")
+
+    first = arrays[0]
+
+    if not all(arr.axis_signature == first.axis_signature for arr in arrays[1:]):
+        raise DPError("All arrays must have the same axis_signature.")
+
+    # FIXME: support for distance_axis > 0
+    assert all(arr.distance_axis == 0 for arr in arrays)
+
+    n = first._value.shape[0]
+    mask: _npt.NDArray[_np.bool_] = _np.random.random(n) < q
+
+    # TODO: implement subsampling accountant
+
+    sig = new_axis_signature()
+    results: list[PrivNDArray] = []
+    for arr in arrays:
+        out = PrivNDArray(value                  = arr._value[mask],
+                          distance               = arr.distance,
+                          distance_axis          = arr.distance_axis,
+                          domain                 = arr.domain,
+                          parents                = [arr],
+                          inherit_axis_signature = False)
+        out._axis_signature = sig
+        results.append(out)
+
+    return tuple(results)
