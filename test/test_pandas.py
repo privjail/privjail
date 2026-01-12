@@ -500,6 +500,42 @@ def test_dataframe_groupby() -> None:
     assert (groups.get_group(4).columns == pdf.columns).all()
     assert (groups.get_group(4).dtypes == pdf.dtypes).all()
 
+def test_groupby_accounting_group_isolation() -> None:
+    pdf, df = load_dataframe()
+
+    keys = [2, 4]
+    pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=list(keys))})
+    groups = pdf.groupby("b")
+
+    child1 = groups.get_group(2)
+    child2 = groups.get_group(4)
+
+    # Each child should have a different accounting_group
+    assert child1._accounting_group is not child2._accounting_group
+
+    # Create a new accountant for child1
+    new_acc = pj.create_accountant("approx", parent=child1.accountant)
+
+    # Setting the new accountant on child1 should work
+    child1.set_accountant(new_acc)
+    assert child1.accountant is new_acc
+
+    # Setting the new accountant on child2 should fail (different accounting_group)
+    with pytest.raises(pj.DPError):
+        child2.set_accountant(new_acc)
+
+    # child -> parent direction should fail
+    child_acc = pj.create_accountant("approx", parent=child2.accountant)
+    with pytest.raises(pj.DPError):
+        pdf.set_accountant(child_acc)
+
+    # parent -> child direction should work (accounting_group unchanged)
+    parent_acc = pj.create_accountant("approx", parent=pdf.accountant)
+    original_group = child2._accounting_group
+    child2.set_accountant(parent_acc)
+    assert child2.accountant is parent_acc
+    assert child2._accounting_group is original_group
+
 def test_dataframe_values_returns_ndarray() -> None:
     pdf, df = load_dataframe()
 

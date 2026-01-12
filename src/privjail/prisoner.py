@@ -18,7 +18,7 @@ import contextlib
 
 import numpy as _np
 
-from .util import integer, floating, realnum, is_integer, is_floating
+from .util import integer, floating, realnum, is_integer, is_floating, DPError
 from .realexpr import RealExpr, _max as dmax
 from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, get_lsca_of_same_family, BudgetType, PureBudgetType, ApproxBudgetType, zCDPBudgetType, AccountingGroup
 from . import egrpc
@@ -60,7 +60,7 @@ class Prisoner(Generic[T]):
             if len(parents) != 1:
                 raise ValueError("different accountant cannot be set for a prisoner with multiple parents")
             self._accountant       = accountant
-            self._accounting_group = accounting_group if accounting_group is not None else parents[0]._accounting_group
+            self._accounting_group = accounting_group if accounting_group is not None else accountant.accounting_group
 
         elif len(parents) == 1:
             # single parent
@@ -84,7 +84,7 @@ class Prisoner(Generic[T]):
             return
         acc_group = accountant.accounting_group
         if acc_group is None or not acc_group.is_ancestor_or_same(self._accounting_group):
-            raise ValueError("accountant's accounting_group must be an ancestor or the same as prisoner's accounting_group")
+            raise DPError("accountant's accounting_group must be an ancestor or the same as prisoner's accounting_group")
         self._accountant = accountant
 
     @property

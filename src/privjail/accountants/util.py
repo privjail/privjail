@@ -83,7 +83,12 @@ class Accountant(ABC, Generic[T]):
         if accounting_group is not None:
             self._accounting_group = accounting_group
         elif parent is not None:
-            self._accounting_group = parent._accounting_group
+            if isinstance(parent, ParallelAccountant):
+                # Child of ParallelAccountant: create new child AccountingGroup
+                parent_group = parent._accounting_group
+                self._accounting_group = parent_group.create_child(root_accountant=self) if parent_group is not None else AccountingGroup(root_accountant=self)
+            else:
+                self._accounting_group = parent._accounting_group
         else:
             # Root accountant: create new AccountingGroup automatically
             self._accounting_group = AccountingGroup(root_accountant=self)
