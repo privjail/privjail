@@ -57,6 +57,7 @@ message SliceSpec {
   optional int64 start = 1;
   optional int64 stop = 2;
   optional int64 step = 3;
+  bool is_present = 4;
 }
 """
 

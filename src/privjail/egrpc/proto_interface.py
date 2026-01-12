@@ -243,6 +243,7 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
 
     elif type_origin is slice:
         msg = getattr(proto_msg, param_name)
+        msg.is_present = True
         if obj.start is not None:
             msg.start = obj.start
         if obj.stop is not None:

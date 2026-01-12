@@ -119,6 +119,10 @@ def func_slice(s: slice) -> slice:
 def func_ellipsis(e: EllipsisType) -> EllipsisType:
     return e
 
+@egrpc.function
+def func_slice_tuple(idx: tuple[int | slice, ...]) -> tuple[int | slice, ...]:
+    return idx
+
 def test_function(server: Any) -> None:
     assert func1("Alice", 30) == "Alice: 30"
     assert func2("Bob", 60) == "Bob: 60.00"
@@ -138,6 +142,7 @@ def test_function(server: Any) -> None:
     assert func_slice(slice(3, None)) == slice(3, None)
     assert func_slice(slice(None)) == slice(None)
     assert func_ellipsis(...) is ...
+    assert func_slice_tuple((slice(None), slice(None))) == (slice(None), slice(None))
 
 @egrpc.multifunction
 def mfunc1(x: int | float, y: int | float) -> float:
