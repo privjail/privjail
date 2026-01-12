@@ -957,3 +957,41 @@ def test_privndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
                             accountant    = accountant)
     with pytest.raises(pj.DPError):
         arr + other
+
+def test_broadcast_alignment(accountant: pj.ApproxAccountant) -> None:
+    arr2x2 = pnp.PrivNDArray([[1.0, 2.0],
+                              [3.0, 4.0]],
+                             distance      = pj.RealExpr(1),
+                             distance_axis = 0,
+                             domain        = pnp.NDArrayDomain(value_range=(0.0, 10.0)),
+                             accountant    = accountant)
+
+    # Fail: (2,) pads to (1, 2) -> int(1) vs SensitiveDimInt at position 0
+    row_max_flat = arr2x2.max(axis=1, keepdims=False)
+    with pytest.raises(pj.DPError):
+        arr2x2 + row_max_flat
+
+    # OK: keepdims=True -> (2, 1) aligns with (2, 2)
+    row_max_kept = arr2x2.max(axis=1, keepdims=True)
+    result_2x2 = arr2x2 - row_max_kept
+    assert result_2x2._value.shape == (2, 2)
+    assert _np.allclose(result_2x2._value, [[-1.0, 0.0], [-1.0, 0.0]])
+
+    arr3d_222 = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0]],
+                                 [[5.0, 6.0], [7.0, 8.0]]],
+                                distance      = pj.RealExpr(1),
+                                distance_axis = 0,
+                                domain        = pnp.NDArrayDomain(value_range=(0.0, 10.0)),
+                                accountant    = accountant)
+
+    # Fail: (2, 2) pads to (1, 2, 2) -> int(1) vs SensitiveDimInt at position 0
+    reduced_22 = arr3d_222.max(axis=2, keepdims=False)
+    with pytest.raises(pj.DPError):
+        arr3d_222 + reduced_22
+
+    # OK: keepdims=True -> (2, 2, 1) aligns with (2, 2, 2)
+    reduced_kept = arr3d_222.max(axis=2, keepdims=True)
+    result_222 = arr3d_222 - reduced_kept
+    assert result_222._value.shape == (2, 2, 2)
+    assert _np.allclose(result_222._value, [[[-1.0, 0.0], [-1.0, 0.0]],
+                                            [[-1.0, 0.0], [-1.0, 0.0]]])

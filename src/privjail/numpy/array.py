@@ -25,49 +25,7 @@ from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveFloat
 from .domain import NDArrayDomain
-
-PrivShape = tuple[int | SensitiveDimInt, ...]
-
-def _infer_missing_dim(input_shape: PrivShape, output_shape: PrivShape) -> PrivShape:
-    if -1 not in output_shape:
-        return output_shape
-
-    input_priv_dim: SensitiveDimInt | None = None
-    for dim in input_shape:
-        if isinstance(dim, SensitiveDimInt):
-            input_priv_dim = dim
-            break
-    assert input_priv_dim is not None
-
-    output_priv_dim: SensitiveDimInt | None = None
-    for dim in output_shape:
-        if isinstance(dim, SensitiveDimInt):
-            output_priv_dim = dim
-            break
-
-    input_PQ = 1
-    for dim in input_shape:
-        if isinstance(dim, int):
-            input_PQ *= dim
-
-    output_known = 1
-    for dim in output_shape:
-        if isinstance(dim, int) and dim != -1:
-            output_known *= dim
-
-    resolved: int | SensitiveDimInt
-    if output_priv_dim is not None:
-        scale = output_priv_dim.scale
-        if scale * output_known <= 0 or input_PQ % (scale * output_known) != 0:
-            raise ValueError("Cannot infer dimension for -1.")
-        resolved = input_PQ // (scale * output_known)
-    else:
-        if input_PQ % output_known != 0:
-            raise ValueError("Cannot infer dimension for -1.")
-        scale = input_PQ // output_known
-        resolved = input_priv_dim * scale
-
-    return tuple(resolved if dim == -1 else dim for dim in output_shape)
+from .util import PrivShape, infer_missing_dim, check_broadcast_distance_axis
 
 ValueRange = tuple[float | None, float | None] | None
 
@@ -277,7 +235,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
 
     @egrpc.method
     def _reshape_impl(self, shape: PrivShape) -> PrivNDArray:
-        output_shape = _infer_missing_dim(self.shape, shape)
+        output_shape = infer_missing_dim(self.shape, shape)
 
         priv_dims = [(i, d) for i, d in enumerate(output_shape) if isinstance(d, SensitiveDimInt)]
         if len(priv_dims) != 1:
@@ -486,8 +444,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
     def _check_axis_aligned(self, other: PrivNDArray) -> None:
         if self.axis_signature != other.axis_signature:
             raise DPError("axis_signature mismatch in PrivNDArray operation.")
-        if self.distance_axis != other.distance_axis:
-            raise DPError("distance_axis mismatch in PrivNDArray operation.")
+        check_broadcast_distance_axis(self.shape, other.shape)
 
     @egrpc.multimethod
     def __add__(self, other: realnum) -> PrivNDArray:
