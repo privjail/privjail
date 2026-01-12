@@ -555,6 +555,45 @@ def test_maximum_minimum(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         pnp.minimum(arr, other)
 
+def test_exp(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[0.0, 1.0], [2.0, -1.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(-1.0, 2.0)),
+                          accountant    = accountant)
+
+    result = pnp.exp(arr)
+    assert isinstance(result, pnp.PrivNDArray)
+    assert _np.allclose(result._value, _np.exp(arr._value))
+    assert result.domain.value_range is not None
+    assert result.domain.value_range[0] == pytest.approx(_np.exp(-1.0))
+    assert result.domain.value_range[1] == pytest.approx(_np.exp(2.0))
+    assert result.axis_signature == arr.axis_signature
+
+def test_log(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(0.5, 5.0)),
+                          accountant    = accountant)
+
+    result = pnp.log(arr)
+    assert isinstance(result, pnp.PrivNDArray)
+    assert _np.allclose(result._value, _np.log(arr._value))
+    assert result.domain.value_range is not None
+    assert result.domain.value_range[0] == pytest.approx(_np.log(0.5))
+    assert result.domain.value_range[1] == pytest.approx(_np.log(5.0))
+    assert result.axis_signature == arr.axis_signature
+
+    # value_range with lo <= 0 becomes None
+    arr_neg = pnp.PrivNDArray([[1.0, 2.0]],
+                              distance      = pj.RealExpr(1),
+                              distance_axis = 0,
+                              domain        = pnp.NDArrayDomain(value_range=(-1.0, 5.0)),
+                              accountant    = accountant)
+    result_neg = pnp.log(arr_neg)
+    assert result_neg.domain.value_range is None
+
 def test_histogram_basic(accountant: pj.ApproxAccountant) -> None:
     samples = pnp.PrivNDArray([0.1, 0.4, 0.8],
                               distance      = pj.RealExpr(1.0),

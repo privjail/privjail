@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from .. import egrpc
 
+ValueRange = tuple[float | None, float | None] | None
+
 @egrpc.dataclass
 class NDArrayDomain:
-    norm_type   : str                                      = "l1"
-    norm_bound  : float | None                             = None
-    value_range : tuple[float | None, float | None] | None = None
+    norm_type   : str          = "l1"
+    norm_bound  : float | None = None
+    value_range : ValueRange   = None

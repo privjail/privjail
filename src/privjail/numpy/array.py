@@ -24,10 +24,8 @@ from ..array_base import PrivArrayBase, SensitiveDimInt
 from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveFloat
-from .domain import NDArrayDomain
+from .domain import NDArrayDomain, ValueRange
 from .util import PrivShape, infer_missing_dim, check_broadcast_distance_axis
-
-ValueRange = tuple[float | None, float | None] | None
 
 def _negate_value_range(vr: ValueRange) -> ValueRange:
     if vr is None:

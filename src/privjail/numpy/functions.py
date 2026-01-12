@@ -21,9 +21,7 @@ import numpy.typing as _npt
 from .. import egrpc
 from ..util import DPError, realnum
 from .array import PrivNDArray, SensitiveNDArray
-from .domain import NDArrayDomain
-
-ValueRange = tuple[float | None, float | None] | None
+from .domain import NDArrayDomain, ValueRange
 
 def _is_sequence(value: Any) -> TypeGuard[Sequence[Any]]:
     if isinstance(value, _np.ndarray):
@@ -123,6 +121,24 @@ def _minimum_value_range_scalar(vr: ValueRange, c: float) -> ValueRange:
     new_hi = min(hi, c) if hi is not None else None
     return (new_lo, new_hi)
 
+def _exp_value_range(vr: ValueRange) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    new_lo = _np.exp(lo) if lo is not None else None
+    new_hi = _np.exp(hi) if hi is not None else None
+    return (new_lo, new_hi)
+
+def _log_value_range(vr: ValueRange) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    if lo is not None and lo <= 0:
+        return None
+    new_lo = _np.log(lo) if lo is not None else None
+    new_hi = _np.log(hi) if hi is not None else None
+    return (new_lo, new_hi)
+
 @egrpc.function
 def maximum(x1: PrivNDArray, x2: PrivNDArray | realnum) -> PrivNDArray:
     if isinstance(x2, PrivNDArray):
@@ -162,3 +178,23 @@ def minimum(x1: PrivNDArray, x2: PrivNDArray | realnum) -> PrivNDArray:
                            domain                 = NDArrayDomain(value_range=new_vr),
                            parents                = [x1],
                            inherit_axis_signature = True)
+
+@egrpc.function
+def exp(x: PrivNDArray) -> PrivNDArray:
+    new_vr = _exp_value_range(x.domain.value_range)
+    return PrivNDArray(value                  = _np.exp(x._value),
+                       distance               = x.distance,
+                       distance_axis          = x.distance_axis,
+                       domain                 = NDArrayDomain(value_range=new_vr),
+                       parents                = [x],
+                       inherit_axis_signature = True)
+
+@egrpc.function
+def log(x: PrivNDArray) -> PrivNDArray:
+    new_vr = _log_value_range(x.domain.value_range)
+    return PrivNDArray(value                  = _np.log(x._value),
+                       distance               = x.distance,
+                       distance_axis          = x.distance_axis,
+                       domain                 = NDArrayDomain(value_range=new_vr),
+                       parents                = [x],
+                       inherit_axis_signature = True)
