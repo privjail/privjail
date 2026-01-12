@@ -296,6 +296,68 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
     assert summed._value.tolist() == pytest.approx(expected.tolist())
     assert summed.max_distance == pytest.approx(bound)
 
+def test_max_min(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 5.0, 3.0],
+                           [9.0, 2.0, 4.0],
+                           [6.0, 8.0, 7.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(0.0, 10.0)),
+                          accountant    = accountant)
+
+    for method, expected, expected_kd in [
+        (arr.max, [5.0, 9.0, 8.0], [[5.0], [9.0], [8.0]]),
+        (arr.min, [1.0, 2.0, 6.0], [[1.0], [2.0], [6.0]]),
+    ]:
+        # along axis=1 (non-distance axis)
+        result = method(axis=1)
+        assert isinstance(result, pnp.PrivNDArray)
+        assert _np.allclose(result._value, expected)
+        assert result._value.shape == (3,)
+        assert result.distance_axis == 0
+        assert result.domain.value_range == (0.0, 10.0)
+        assert result.axis_signature == arr.axis_signature
+
+        # with keepdims=True
+        result_kd = method(axis=1, keepdims=True)
+        assert _np.allclose(result_kd._value, expected_kd)
+        assert result_kd._value.shape == (3, 1)
+        assert result_kd.distance_axis == 0
+        assert result_kd.axis_signature == arr.axis_signature
+
+        # along distance axis should raise DPError
+        with pytest.raises(pj.DPError):
+            method(axis=0)
+
+        # axis=None should raise DPError
+        with pytest.raises(pj.DPError):
+            method(axis=None)
+
+        # negative axis
+        result_neg = method(axis=-1)
+        assert _np.allclose(result_neg._value, expected)
+
+    # 3D array: distance_axis adjustment
+    arr3d = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0]],
+                             [[5.0, 6.0], [7.0, 8.0]]],
+                            distance      = pj.RealExpr(1),
+                            distance_axis = 2,
+                            accountant    = accountant)
+    # along axis=1, distance_axis=2 -> new distance_axis=1
+    for method, expected3d, expected3d_kd in [
+        (arr3d.max, [[3.0, 4.0], [7.0, 8.0]], [[[3.0, 4.0]], [[7.0, 8.0]]]),
+        (arr3d.min, [[1.0, 2.0], [5.0, 6.0]], [[[1.0, 2.0]], [[5.0, 6.0]]]),
+    ]:
+        result3d = method(axis=1)
+        assert result3d._value.shape == (2, 2)
+        assert result3d.distance_axis == 1
+        assert _np.allclose(result3d._value, expected3d)
+
+        result3d_kd = method(axis=1, keepdims=True)
+        assert result3d_kd._value.shape == (2, 1, 2)
+        assert result3d_kd.distance_axis == 2
+        assert _np.allclose(result3d_kd._value, expected3d_kd)
+
 def test_linalg_norm(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([10.0, -20.0, 30.0, 40.0],
                           distance      = pj.RealExpr(1),

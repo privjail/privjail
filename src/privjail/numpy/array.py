@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Any, Sequence, TypeGuard
+from typing import Any, Sequence
 
 import numpy as _np
 import numpy.typing as _npt
@@ -350,6 +350,68 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                                     distance  = new_distance,
                                     norm_type = self._domain.norm_type,
                                     parents   = [self])
+
+    @egrpc.method
+    def max(self, axis: int | None = None, keepdims: bool = False) -> PrivNDArray:
+        if axis is None:
+            raise DPError("max() with axis=None would collapse the distance axis.")
+
+        if axis < 0:
+            axis = self.ndim + axis
+
+        if not (0 <= axis < self.ndim):
+            raise ValueError(f"axis {axis} is out of bounds for array of dimension {self.ndim}.")
+
+        if axis == self.distance_axis:
+            raise DPError("max() along the distance axis is not allowed.")
+
+        if keepdims:
+            new_distance_axis = self.distance_axis
+        else:
+            if axis < self.distance_axis:
+                new_distance_axis = self.distance_axis - 1
+            else:
+                new_distance_axis = self.distance_axis
+
+        result = self._value.max(axis=axis, keepdims=keepdims)
+
+        return PrivNDArray(value                  = result,
+                           distance               = self.distance,
+                           distance_axis          = new_distance_axis,
+                           domain                 = NDArrayDomain(value_range=self._domain.value_range),
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
+    @egrpc.method
+    def min(self, axis: int | None = None, keepdims: bool = False) -> PrivNDArray:
+        if axis is None:
+            raise DPError("min() with axis=None would collapse the distance axis.")
+
+        if axis < 0:
+            axis = self.ndim + axis
+
+        if not (0 <= axis < self.ndim):
+            raise ValueError(f"axis {axis} is out of bounds for array of dimension {self.ndim}.")
+
+        if axis == self.distance_axis:
+            raise DPError("min() along the distance axis is not allowed.")
+
+        if keepdims:
+            new_distance_axis = self.distance_axis
+        else:
+            if axis < self.distance_axis:
+                new_distance_axis = self.distance_axis - 1
+            else:
+                new_distance_axis = self.distance_axis
+
+        result = self._value.min(axis=axis, keepdims=keepdims)
+
+        return PrivNDArray(value                  = result,
+                           distance               = self.distance,
+                           distance_axis          = new_distance_axis,
+                           domain                 = NDArrayDomain(value_range=self._domain.value_range),
+                           parents                = [self],
+                           inherit_axis_signature = True)
 
     @egrpc.multimethod
     def __matmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray:
