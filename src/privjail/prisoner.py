@@ -415,32 +415,50 @@ def create_accountant(accountant_type : str,
     else:
         raise ValueError(f"Unknown DP type: {accountant_type}. Expected 'pure', 'approx', or 'zcdp'.")
 
-@contextlib.contextmanager
-def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) -> Iterator[Prisoner[Any]]:
-    old_accountant = prisoner.accountant
-    new_accountant = create_accountant("pure", parent=old_accountant, budget_limit=budget_limit)
-    prisoner.set_accountant(new_accountant)
-    try:
-        yield prisoner
-    finally:
-        prisoner.set_accountant(old_accountant)
+P = TypeVar("P", bound=Prisoner[Any])
 
 @contextlib.contextmanager
-def approxDP(prisoner: Prisoner[Any], budget_limit: ApproxBudgetType | None = None) -> Iterator[Prisoner[Any]]:
-    old_accountant = prisoner.accountant
-    new_accountant = create_accountant("approx", parent=old_accountant, budget_limit=budget_limit)
-    prisoner.set_accountant(new_accountant)
+def _dp_context(prisoners       : P | Sequence[P],
+                accountant_type : str,
+                budget_limit    : BudgetType | None = None,
+                delta           : float | None      = None,
+                ) -> Iterator[P | Sequence[P]]:
+    if isinstance(prisoners, Prisoner):
+        prisoner_list: list[P] = [prisoners]  # type: ignore[list-item]
+    else:
+        prisoner_list = list(prisoners)
+
+    if len(prisoner_list) == 0:
+        raise ValueError("At least one prisoner is required")
+
+    # Check all prisoners have the same accountant
+    first_accountant = prisoner_list[0].accountant
+    for p in prisoner_list[1:]:
+        if p.accountant is not first_accountant:
+            raise DPError("All prisoners must have the same accountant")
+
+    old_accountants = [p.accountant for p in prisoner_list]
+    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, delta=delta)
+
+    for p in prisoner_list:
+        p.set_accountant(new_accountant)
     try:
-        yield prisoner
+        yield prisoners  # type: ignore[misc]
     finally:
-        prisoner.set_accountant(old_accountant)
+        for p, old_acc in zip(prisoner_list, old_accountants):
+            p.set_accountant(old_acc)
 
 @contextlib.contextmanager
-def zCDP(prisoner: Prisoner[Any], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Iterator[Prisoner[Any]]:
-    old_accountant = prisoner.accountant
-    new_accountant = create_accountant("zcdp", parent=old_accountant, budget_limit=budget_limit, delta=delta)
-    prisoner.set_accountant(new_accountant)
-    try:
-        yield prisoner
-    finally:
-        prisoner.set_accountant(old_accountant)
+def pureDP(prisoners: P | Sequence[P], budget_limit: PureBudgetType | None = None) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "pure", budget_limit) as ctx:
+        yield ctx
+
+@contextlib.contextmanager
+def approxDP(prisoners: P | Sequence[P], budget_limit: ApproxBudgetType | None = None) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "approx", budget_limit) as ctx:
+        yield ctx
+
+@contextlib.contextmanager
+def zCDP(prisoners: P | Sequence[P], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "zcdp", budget_limit, delta) as ctx:
+        yield ctx
