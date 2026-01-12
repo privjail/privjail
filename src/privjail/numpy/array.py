@@ -616,6 +616,79 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            parents                = [self],
                            inherit_axis_signature = True)
 
+    def _compare(self, other: realnum | PrivNDArray, op: str) -> PrivNDArray:
+        ops = {
+            "eq": lambda a, b: a == b,
+            "ne": lambda a, b: a != b,
+            "lt": lambda a, b: a < b,
+            "le": lambda a, b: a <= b,
+            "gt": lambda a, b: a > b,
+            "ge": lambda a, b: a >= b,
+        }
+
+        if isinstance(other, PrivNDArray):
+            self._check_axis_aligned(other)
+            result = ops[op](self._value, other._value).astype(float)
+            parents = [self, other]
+        else:
+            result = ops[op](self._value, other).astype(float)
+            parents = [self]
+
+        return PrivNDArray(value                  = result,
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = NDArrayDomain(value_range=(0.0, 1.0)), # TODO: support bool domain
+                           parents                = parents,
+                           inherit_axis_signature = True)
+
+    @egrpc.multimethod
+    def __eq__(self, other: realnum) -> PrivNDArray:  # type: ignore[override]
+        return self._compare(other, "eq")
+
+    @__eq__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        return self._compare(other, "eq")
+
+    @egrpc.multimethod
+    def __ne__(self, other: realnum) -> PrivNDArray:  # type: ignore[override]
+        return self._compare(other, "ne")
+
+    @__ne__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        return self._compare(other, "ne")
+
+    @egrpc.multimethod
+    def __lt__(self, other: realnum) -> PrivNDArray:
+        return self._compare(other, "lt")
+
+    @__lt__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        return self._compare(other, "lt")
+
+    @egrpc.multimethod
+    def __le__(self, other: realnum) -> PrivNDArray:
+        return self._compare(other, "le")
+
+    @__le__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        return self._compare(other, "le")
+
+    @egrpc.multimethod
+    def __gt__(self, other: realnum) -> PrivNDArray:
+        return self._compare(other, "gt")
+
+    @__gt__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        return self._compare(other, "gt")
+
+    @egrpc.multimethod
+    def __ge__(self, other: realnum) -> PrivNDArray:
+        return self._compare(other, "ge")
+
+    @__ge__.register
+    def _(self, other: PrivNDArray) -> PrivNDArray:
+        return self._compare(other, "ge")
+
 @egrpc.remoteclass
 class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
     __array_priority__ = 1000  # To prevent NumPy from treating SensitiveNDArray as a scalar operand
