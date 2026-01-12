@@ -110,6 +110,10 @@ def func8(x: Optional[int] = None) -> int | None:
 def func9(x: Tuple[int, ...]) -> Tuple[float, ...]:
     return tuple(float(n) for n in x)
 
+@egrpc.function
+def func_slice(s: slice) -> slice:
+    return s
+
 def test_function(server: Any) -> None:
     assert func1("Alice", 30) == "Alice: 30"
     assert func2("Bob", 60) == "Bob: 60.00"
@@ -124,6 +128,10 @@ def test_function(server: Any) -> None:
     assert func8(2) == 4
     assert func8() is None
     assert func9((1, 2, 3)) == (1.0, 2.0, 3.0)
+    assert func_slice(slice(1, 10, 2)) == slice(1, 10, 2)
+    assert func_slice(slice(None, 5)) == slice(None, 5)
+    assert func_slice(slice(3, None)) == slice(3, None)
+    assert func_slice(slice(None)) == slice(None)
 
 @egrpc.multifunction
 def mfunc1(x: int | float, y: int | float) -> float:

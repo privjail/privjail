@@ -139,6 +139,13 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
     elif type_origin in proto_primitive_type_mapping:
         return getattr(proto_msg, param_name)
 
+    elif type_origin is slice:
+        msg = getattr(proto_msg, param_name)
+        start = msg.start if msg.HasField("start") else None
+        stop = msg.stop if msg.HasField("stop") else None
+        step = msg.step if msg.HasField("step") else None
+        return slice(start, stop, step)
+
     elif is_subclass(type_origin, proto_dataclass_type_mapping):
         proto_class_msg = getattr(proto_msg, param_name)
         proto_types = subclasses(type_origin, proto_dataclass_type_mapping)
@@ -219,6 +226,15 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
 
     elif type_origin in proto_primitive_type_mapping:
         setattr(proto_msg, param_name, obj)
+
+    elif type_origin is slice:
+        msg = getattr(proto_msg, param_name)
+        if obj.start is not None:
+            msg.start = obj.start
+        if obj.stop is not None:
+            msg.stop = obj.stop
+        if obj.step is not None:
+            msg.step = obj.step
 
     elif is_subclass(type_origin, proto_dataclass_type_mapping):
         proto_class_msg = getattr(proto_msg, param_name)

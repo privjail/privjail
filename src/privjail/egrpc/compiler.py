@@ -49,6 +49,12 @@ proto_dataclass_type_mapping: dict[Any, str] = {}
 proto_remoteclass_type_mapping: dict[Any, str] = {}
 
 proto_header = """syntax = "proto3";
+
+message SliceSpec {
+  optional int64 start = 1;
+  optional int64 stop = 2;
+  optional int64 step = 3;
+}
 """
 
 proto_content = ""
@@ -100,6 +106,10 @@ def gen_proto_field_def(index          : int,
     if type_origin in proto_primitive_type_mapping:
         proto_type = proto_primitive_type_mapping[type_origin]
         proto_fields.append(f"{indent_str(depth)}{repeated_str}{proto_type} {param_name} = {index + 1};")
+        index += 1
+
+    elif type_origin is slice:
+        proto_fields.append(f"{indent_str(depth)}{repeated_str}SliceSpec {param_name} = {index + 1};")
         index += 1
 
     elif is_subclass(type_origin, proto_dataclass_type_mapping):
