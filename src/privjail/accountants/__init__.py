@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_of_same_family
+from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_of_same_family, AccountingGroup
 from .dummy import DummyAccountant, DummyParallelAccountant
 from .pure import PureAccountant, PureParallelAccountant, PureBudgetType
 from .approx import ApproxAccountant, ApproxParallelAccountant, ApproxBudgetType
@@ -23,6 +23,7 @@ __all__ = [
     "BudgetExceededError",
     "Accountant",
     "ParallelAccountant",
+    "AccountingGroup",
     "DummyAccountant",
     "DummyParallelAccountant",
     "PureAccountant",

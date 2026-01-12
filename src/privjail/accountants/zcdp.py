@@ -18,9 +18,11 @@ import math
 
 from .util import Accountant, ParallelAccountant
 from .approx import ApproxAccountant
+from .. import egrpc
 
 zCDPBudgetType = float
 
+@egrpc.remoteclass
 class zCDPAccountant(Accountant[zCDPBudgetType]):
     def __init__(self,
                  *,

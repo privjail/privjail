@@ -17,9 +17,11 @@ from typing import Any
 
 from .util import Accountant, ParallelAccountant
 from .approx import ApproxAccountant
+from .. import egrpc
 
 PureBudgetType = float
 
+@egrpc.remoteclass
 class PureAccountant(Accountant[PureBudgetType]):
     @staticmethod
     def family_name() -> str:

@@ -17,34 +17,76 @@ from abc import ABC, abstractmethod
 from typing import Generic, TypeVar, Any, Sequence, ClassVar
 import weakref
 
+from .. import egrpc
+
 class BudgetExceededError(Exception):
     ...
 
+class AccountingGroup:
+    _parent          : AccountingGroup | None
+    _root_accountant : Accountant[Any]
+
+    def __init__(self,
+                 root_accountant : Accountant[Any],
+                 parent          : AccountingGroup | None = None):
+        self._parent          = parent
+        self._root_accountant = root_accountant
+
+    @property
+    def parent(self) -> AccountingGroup | None:
+        return self._parent
+
+    @property
+    def root_accountant(self) -> Accountant[Any]:
+        return self._root_accountant
+
+    def is_ancestor_or_same(self, other: AccountingGroup) -> bool:
+        current: AccountingGroup | None = other
+        while current is not None:
+            if current is self:
+                return True
+            current = current._parent
+        return False
+
+    def create_child(self, root_accountant: Accountant[Any]) -> AccountingGroup:
+        return AccountingGroup(root_accountant=root_accountant, parent=self)
+
 T = TypeVar("T")
 
+@egrpc.remoteclass
 class Accountant(ABC, Generic[T]):
-    _budget_limit : T | None
-    _budget_spent : T
-    _parent       : Accountant[Any] | None
-    _root_name    : str
-    _depth        : int
+    _budget_limit     : T | None
+    _budget_spent     : T
+    _parent           : Accountant[Any] | None
+    _root_name        : str
+    _depth            : int
+    _accounting_group : AccountingGroup | None
 
     accountant_registry: ClassVar[weakref.WeakSet[Accountant[Any]]] = weakref.WeakSet()
 
     def __init__(self,
                  *,
-                 budget_limit : T | None               = None,
-                 parent       : Accountant[Any] | None = None,
-                 register     : bool                   = True,
+                 budget_limit     : T | None               = None,
+                 parent           : Accountant[Any] | None = None,
+                 accounting_group : AccountingGroup | None = None,
+                 register         : bool                   = True,
                  ):
         if budget_limit is not None:
             type(self).assert_budget(budget_limit)
 
-        self._budget_limit = budget_limit
-        self._budget_spent = type(self).zero()
-        self._parent       = parent
-        self._root_name    = parent._root_name if parent is not None else ""
-        self._depth        = parent._depth + 1 if parent is not None else 0
+        self._budget_limit     = budget_limit
+        self._budget_spent     = type(self).zero()
+        self._parent           = parent
+        self._root_name        = parent._root_name if parent is not None else ""
+        self._depth            = parent._depth + 1 if parent is not None else 0
+
+        if accounting_group is not None:
+            self._accounting_group = accounting_group
+        elif parent is not None:
+            self._accounting_group = parent._accounting_group
+        else:
+            # Root accountant: create new AccountingGroup automatically
+            self._accounting_group = AccountingGroup(root_accountant=self)
 
         if register:
             Accountant.accountant_registry.add(self)
@@ -57,6 +99,10 @@ class Accountant(ABC, Generic[T]):
 
     def budget_spent(self) -> T:
         return self._budget_spent
+
+    @property
+    def accounting_group(self) -> AccountingGroup | None:
+        return self._accounting_group
 
     def get_parent(self) -> Accountant[Any]:
         if self._parent is None:

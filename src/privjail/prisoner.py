@@ -20,55 +20,76 @@ import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating
 from .realexpr import RealExpr, _max as dmax
-from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, get_lsca_of_same_family, PureBudgetType, ApproxBudgetType, zCDPBudgetType
+from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, get_lsca_of_same_family, BudgetType, PureBudgetType, ApproxBudgetType, zCDPBudgetType, AccountingGroup
 from . import egrpc
 
 T = TypeVar("T")
 
+@egrpc.remoteclass
 class Prisoner(Generic[T]):
-    _value          : T
-    distance        : RealExpr
-    accountant      : Accountant[Any]
-    accountant_orig : Accountant[Any]
+    _value            : T
+    distance          : RealExpr
+    _accountant       : Accountant[Any]
+    _accounting_group : AccountingGroup | None
 
     def __init__(self,
-                 value      : T,
-                 distance   : RealExpr,
+                 value            : T,
+                 distance         : RealExpr,
                  *,
-                 parents    : Sequence[Prisoner[Any]] = [], # FIXME: do we really need parents here?
-                 accountant : Accountant[Any] | None  = None,
+                 parents          : Sequence[Prisoner[Any]] = [], # FIXME: do we really need parents here?
+                 accountant       : Accountant[Any] | None  = None,
+                 accounting_group : AccountingGroup | None  = None,
                  ):
         self._value   = value
         self.distance = distance
 
         if distance.is_zero():
             # constant (public value)
-            self.accountant = DummyAccountant()
+            self._accountant       = DummyAccountant()
+            self._accounting_group = None
 
         elif len(parents) == 0:
             # root prisoner
             if accountant is None:
                 raise ValueError("accountant must be set for the root prisoner.")
-
-            self.accountant = accountant
+            self._accountant       = accountant
+            self._accounting_group = accounting_group if accounting_group is not None else accountant.accounting_group
 
         elif accountant is not None:
             # accountant is explicitly specified
             if len(parents) != 1:
                 raise ValueError("different accountant cannot be set for a prisoner with multiple parents")
-
-            self.accountant = accountant
+            self._accountant       = accountant
+            self._accounting_group = accounting_group if accounting_group is not None else parents[0]._accounting_group
 
         elif len(parents) == 1:
             # single parent
-            self.accountant = parents[0].accountant
+            self._accountant       = parents[0].accountant
+            self._accounting_group = parents[0]._accounting_group
 
         else:
             # multiple parents
-            lsca_accountant = get_lsca_of_same_family([p.accountant for p in parents if not isinstance(p.accountant, DummyAccountant)])
-            self.accountant = lsca_accountant.get_parent() if isinstance(lsca_accountant, ParallelAccountant) else lsca_accountant
+            lsca_accountant        = get_lsca_of_same_family([p.accountant for p in parents if not isinstance(p.accountant, DummyAccountant)])
+            self._accountant       = lsca_accountant.get_parent() if isinstance(lsca_accountant, ParallelAccountant) else lsca_accountant
+            self._accounting_group = self._accountant.accounting_group
 
-        self.accountant_orig = self.accountant
+    @egrpc.property
+    def accountant(self) -> Accountant[Any]:
+        return self._accountant
+
+    @egrpc.method
+    def set_accountant(self, accountant: Accountant[Any]) -> None:
+        if self._accounting_group is None:
+            self._accountant = accountant
+            return
+        acc_group = accountant.accounting_group
+        if acc_group is None or not acc_group.is_ancestor_or_same(self._accounting_group):
+            raise ValueError("accountant's accounting_group must be an ancestor or the same as prisoner's accounting_group")
+        self._accountant = accountant
+
+    @property
+    def accounting_group(self) -> AccountingGroup | None:
+        return self._accounting_group
 
     def __str__(self) -> str:
         return "<***>"
@@ -79,22 +100,6 @@ class Prisoner(Generic[T]):
     @egrpc.property
     def max_distance(self) -> realnum:
         return self.distance.max()
-
-    @egrpc.method
-    def switch_to_pureDP(self, budget_limit: PureBudgetType | None = None) -> None:
-        self.accountant = PureAccountant(budget_limit=budget_limit, parent=self.accountant_orig)
-
-    @egrpc.method
-    def switch_to_approxDP(self, budget_limit: ApproxBudgetType | None = None) -> None:
-        self.accountant = ApproxAccountant(budget_limit=budget_limit, parent=self.accountant_orig)
-
-    @egrpc.method
-    def switch_to_zCDP(self, budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> None:
-        self.accountant = zCDPAccountant(budget_limit=budget_limit, parent=self.accountant_orig, delta=delta)
-
-    @egrpc.method
-    def switch_to_original_accountant(self) -> None:
-        self.accountant = self.accountant_orig
 
 @egrpc.remoteclass
 class SensitiveInt(Prisoner[integer]):
@@ -390,26 +395,52 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 
     return result
 
+@egrpc.function
+def create_accountant(accountant_type : str,
+                      *,
+                      parent          : Accountant[Any],
+                      budget_limit    : BudgetType | None = None,
+                      delta           : float | None      = None,
+                      ) -> Accountant[Any]:
+    accountant_type_lower = accountant_type.lower()
+    if accountant_type_lower == "pure":
+        assert budget_limit is None or isinstance(budget_limit, (int, float))
+        return PureAccountant(budget_limit=budget_limit, parent=parent)
+    elif accountant_type_lower == "approx":
+        assert budget_limit is None or isinstance(budget_limit, tuple)
+        return ApproxAccountant(budget_limit=budget_limit, parent=parent)
+    elif accountant_type_lower == "zcdp":
+        assert budget_limit is None or isinstance(budget_limit, (int, float))
+        return zCDPAccountant(budget_limit=budget_limit, parent=parent, delta=delta)
+    else:
+        raise ValueError(f"Unknown DP type: {accountant_type}. Expected 'pure', 'approx', or 'zcdp'.")
+
 @contextlib.contextmanager
 def pureDP(prisoner: Prisoner[Any], budget_limit: PureBudgetType | None = None) -> Iterator[Prisoner[Any]]:
-    prisoner.switch_to_pureDP(budget_limit=budget_limit)
+    old_accountant = prisoner.accountant
+    new_accountant = create_accountant("pure", parent=old_accountant, budget_limit=budget_limit)
+    prisoner.set_accountant(new_accountant)
     try:
         yield prisoner
     finally:
-        prisoner.switch_to_original_accountant()
+        prisoner.set_accountant(old_accountant)
 
 @contextlib.contextmanager
 def approxDP(prisoner: Prisoner[Any], budget_limit: ApproxBudgetType | None = None) -> Iterator[Prisoner[Any]]:
-    prisoner.switch_to_approxDP(budget_limit=budget_limit)
+    old_accountant = prisoner.accountant
+    new_accountant = create_accountant("approx", parent=old_accountant, budget_limit=budget_limit)
+    prisoner.set_accountant(new_accountant)
     try:
         yield prisoner
     finally:
-        prisoner.switch_to_original_accountant()
+        prisoner.set_accountant(old_accountant)
 
 @contextlib.contextmanager
 def zCDP(prisoner: Prisoner[Any], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Iterator[Prisoner[Any]]:
-    prisoner.switch_to_zCDP(budget_limit=budget_limit, delta=delta)
+    old_accountant = prisoner.accountant
+    new_accountant = create_accountant("zcdp", parent=old_accountant, budget_limit=budget_limit, delta=delta)
+    prisoner.set_accountant(new_accountant)
     try:
         yield prisoner
     finally:
-        prisoner.switch_to_original_accountant()
+        prisoner.set_accountant(old_accountant)

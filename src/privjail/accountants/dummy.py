@@ -16,9 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from .util import Accountant, ParallelAccountant
+from .. import egrpc
 
 DummyBudgetType = None
 
+@egrpc.remoteclass
 class DummyAccountant(Accountant[None]):
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs, register=False)

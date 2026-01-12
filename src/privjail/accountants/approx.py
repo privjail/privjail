@@ -16,9 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from .util import Accountant, ParallelAccountant
+from .. import egrpc
 
 ApproxBudgetType = tuple[float, float]
 
+@egrpc.remoteclass
 class ApproxAccountant(Accountant[ApproxBudgetType]):
     @staticmethod
     def family_name() -> str:
