@@ -75,10 +75,16 @@ def grpc_register_method(cls: Type[T], method: Callable[P, R], handler: HandlerT
     # proto_handlers[proto_service_name][proto_rpc_name] = handler
     proto_handlers[proto_service_name][proto_rpc_name] = wrapper
 
+MAX_MESSAGE_LENGTH = 256 * 1024 * 1024  # 256MB
+
 def init_server(port: int, host: str | None = None) -> Any:
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1),
                          maximum_concurrent_rpcs=1,
-                         options=(("grpc.so_reuseport", 0),))
+                         options=(
+                             ("grpc.so_reuseport", 0),
+                             ("grpc.max_send_message_length", MAX_MESSAGE_LENGTH),
+                             ("grpc.max_receive_message_length", MAX_MESSAGE_LENGTH),
+                         ))
 
     global proto_handlers
     for proto_service_name, handlers in proto_handlers.items():
@@ -100,7 +106,13 @@ client_channel: ChannelType | None = None
 
 def init_client(hostname: str, port: int) -> None:
     global client_channel
-    client_channel = grpc.insecure_channel(f"{hostname}:{port}")
+    client_channel = grpc.insecure_channel(
+        f"{hostname}:{port}",
+        options=(
+            ("grpc.max_send_message_length", MAX_MESSAGE_LENGTH),
+            ("grpc.max_receive_message_length", MAX_MESSAGE_LENGTH),
+        )
+    )
 
 def del_client() -> None:
     global client_channel
