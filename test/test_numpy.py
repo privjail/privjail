@@ -685,6 +685,69 @@ def test_maximum_minimum(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         pnp.minimum(arr, other)
 
+def test_concatenate(accountant: pj.ApproxAccountant) -> None:
+    arr1 = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+                           distance      = pj.RealExpr(1),
+                           distance_axis = 0,
+                           domain        = pnp.NDArrayDomain(value_range=(0.0, 5.0)),
+                           accountant    = accountant)
+    arr2 = arr1 * 2  # [[2.0, 4.0], [6.0, 8.0]]
+    arr3 = arr1 + 1  # [[2.0, 3.0], [4.0, 5.0]]
+
+    # concatenate along axis=1 (non-distance axis)
+    result = pnp.concatenate([arr1, arr2], axis=1)
+    assert result._value.shape == (2, 4)
+    assert result.distance_axis == 0
+    assert result.axis_signature == arr1.axis_signature
+    assert _np.allclose(result._value, [[1.0, 2.0, 2.0, 4.0],
+                                        [3.0, 4.0, 6.0, 8.0]])
+    assert result.domain.value_range == (0.0, 10.0)
+
+    # concatenate multiple arrays
+    result = pnp.concatenate([arr1, arr2, arr3], axis=1)
+    assert result._value.shape == (2, 6)
+    assert _np.allclose(result._value, [[1.0, 2.0, 2.0, 4.0, 2.0, 3.0],
+                                        [3.0, 4.0, 6.0, 8.0, 4.0, 5.0]])
+
+    # negative axis
+    result = pnp.concatenate([arr1, arr2], axis=-1)
+    assert result._value.shape == (2, 4)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, [[1.0, 2.0, 2.0, 4.0],
+                                        [3.0, 4.0, 6.0, 8.0]])
+
+    # 3D array: shape (2, 2, 1)
+    arr3d = pnp.PrivNDArray([[[1.0], [2.0]], [[3.0], [4.0]]],
+                            distance      = pj.RealExpr(1),
+                            distance_axis = 0,
+                            accountant    = accountant)
+    arr3d_2 = arr3d * 2  # [[[2.0], [4.0]], [[6.0], [8.0]]]
+    result = pnp.concatenate([arr3d, arr3d_2], axis=2)
+    assert result._value.shape == (2, 2, 2)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, [[[1.0, 2.0], [2.0, 4.0]],
+                                        [[3.0, 6.0], [4.0, 8.0]]])
+
+    # error: axis_signature mismatch
+    other = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
+                            distance      = pj.RealExpr(1),
+                            distance_axis = 0,
+                            accountant    = accountant)
+    with pytest.raises(pj.DPError):
+        pnp.concatenate([arr1, other], axis=1)
+
+    # error: distance_axis mismatch
+    arr_diff_axis = pnp.PrivNDArray(arr1._value,
+                                    distance      = pj.RealExpr(1),
+                                    distance_axis = 1,
+                                    accountant    = accountant)
+    with pytest.raises(pj.DPError):
+        pnp.concatenate([arr1, arr_diff_axis], axis=0)
+
+    # error: empty arrays
+    with pytest.raises(ValueError):
+        pnp.concatenate([])
+
 def test_exp(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([[0.0, 1.0], [2.0, -1.0]],
                           distance      = pj.RealExpr(1),

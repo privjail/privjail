@@ -204,3 +204,42 @@ def log(x: PrivNDArray) -> PrivNDArray:
 def eye(N: int, M: int | None = None, k: int = 0) -> SensitiveNDArray:
     # dummy SensitiveNDArray for constructing one hot vectors (np.eye(N)[y])
     return SensitiveNDArray(value=_np.eye(N, M, k), distance=RealExpr(0))
+
+def _union_value_ranges(ranges: Sequence[ValueRange]) -> ValueRange:
+    if not ranges or any(r is None or r[0] is None or r[1] is None for r in ranges):
+        return None
+    los = [r[0] for r in ranges if r is not None and r[0] is not None]
+    his = [r[1] for r in ranges if r is not None and r[1] is not None]
+    return (min(los), max(his))
+
+@egrpc.function
+def concatenate(arrays: Sequence[PrivNDArray], axis: int = 0) -> PrivNDArray:
+    if len(arrays) == 0:
+        raise ValueError("need at least one array to concatenate")
+
+    first = arrays[0]
+    distance_axis = first.distance_axis
+    axis_signature = first.axis_signature
+
+    if axis < 0:
+        axis = first.ndim + axis
+
+    for arr in arrays[1:]:
+        if arr.axis_signature != axis_signature:
+            raise DPError("All arrays must have the same axis_signature.")
+        if arr.distance_axis != distance_axis:
+            raise DPError("All arrays must have the same distance_axis.")
+
+    if axis == distance_axis:
+        # TODO: support concatenation along distance_axis by summing distances
+        raise DPError("Cannot concatenate along distance_axis.")
+
+    new_vr = _union_value_ranges([arr.domain.value_range for arr in arrays])
+
+    result = _np.concatenate([arr._value for arr in arrays], axis=axis)
+    return PrivNDArray(value                  = result,
+                       distance               = first.distance,
+                       distance_axis          = distance_axis,
+                       domain                 = NDArrayDomain(value_range=new_vr),
+                       parents                = list(arrays),
+                       inherit_axis_signature = True)

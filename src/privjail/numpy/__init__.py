@@ -14,7 +14,7 @@
 
 from . import util # noqa: F401
 from .array import PrivNDArray, SensitiveNDArray
-from .functions import histogram, histogramdd, maximum, minimum, exp, log, eye
+from .functions import histogram, histogramdd, maximum, minimum, exp, log, eye, concatenate
 from .domain import NDArrayDomain
 from .io import load
 from . import linalg
@@ -32,4 +32,5 @@ __all__ = [
     "exp",
     "log",
     "eye",
+    "concatenate",
 ]
