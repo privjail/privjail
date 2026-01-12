@@ -1059,3 +1059,42 @@ def test_broadcast_alignment(accountant: pj.ApproxAccountant) -> None:
     assert result_222._value.shape == (2, 2, 2)
     assert _np.allclose(result_222._value, [[[-1.0, 0.0], [-1.0, 0.0]],
                                             [[-1.0, 0.0], [-1.0, 0.0]]])
+
+def test_one_hot(accountant: pj.ApproxAccountant) -> None:
+    eye5 = pnp.eye(5)
+    assert isinstance(eye5, pnp.SensitiveNDArray)
+    assert eye5.shape == (5, 5)
+    assert eye5.distance.expr == 0
+
+    indices = pnp.PrivNDArray([0, 2, 4],
+                              distance      = pj.RealExpr(1),
+                              distance_axis = 0,
+                              domain        = pnp.NDArrayDomain(value_range=(0, 4)),
+                              accountant    = accountant)
+
+    one_hot = pnp.eye(5)[indices]
+
+    assert isinstance(one_hot, pnp.PrivNDArray)
+    assert one_hot._value.shape == (3, 5)
+    assert one_hot.distance_axis == 0
+    expected = _np.array([[1, 0, 0, 0, 0],
+                          [0, 0, 1, 0, 0],
+                          [0, 0, 0, 0, 1]], dtype=float)
+    assert _np.allclose(one_hot._value, expected)
+
+    # value_range out of bounds
+    bad_indices = pnp.PrivNDArray([0, 5],
+                                  distance      = pj.RealExpr(1),
+                                  distance_axis = 0,
+                                  domain        = pnp.NDArrayDomain(value_range=(0, 5)),
+                                  accountant    = accountant)
+    with pytest.raises(pj.DPError):
+        pnp.eye(5)[bad_indices]
+
+    # no value_range
+    no_vr_indices = pnp.PrivNDArray([0, 2],
+                                    distance      = pj.RealExpr(1),
+                                    distance_axis = 0,
+                                    accountant    = accountant)
+    with pytest.raises(pj.DPError):
+        pnp.eye(5)[no_vr_indices]

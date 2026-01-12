@@ -20,6 +20,7 @@ import numpy.typing as _npt
 
 from .. import egrpc
 from ..util import DPError, realnum
+from ..realexpr import RealExpr
 from .array import PrivNDArray, SensitiveNDArray
 from .domain import NDArrayDomain, ValueRange
 
@@ -198,3 +199,8 @@ def log(x: PrivNDArray) -> PrivNDArray:
                        domain                 = NDArrayDomain(value_range=new_vr),
                        parents                = [x],
                        inherit_axis_signature = True)
+
+@egrpc.function
+def eye(N: int, M: int | None = None, k: int = 0) -> SensitiveNDArray:
+    # dummy SensitiveNDArray for constructing one hot vectors (np.eye(N)[y])
+    return SensitiveNDArray(value=_np.eye(N, M, k), distance=RealExpr(0))

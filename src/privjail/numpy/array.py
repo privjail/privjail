@@ -770,3 +770,30 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
                                       scale = float(scale) if scale is not None else None)
         else:
             raise ValueError(f"Unknown DP mechanism: '{mech}'")
+
+    @egrpc.multimethod
+    def __getitem__(self, index: PrivNDArray) -> PrivNDArray:
+        # TODO: support more types of indexing
+        if self.distance.expr != 0:
+            raise DPError("Indexing with PrivNDArray requires distance=0")
+
+        if index.ndim != 1:
+            raise DPError("Index must be 1-D array")
+
+        vr = index.domain.value_range
+        if vr is None:
+            raise DPError("Index must have a defined value_range")
+        lo, hi = vr
+        if lo is None or hi is None:
+            raise DPError("Index value_range must have both lower and upper bounds")
+        if lo < 0 or hi >= self.shape[0]:
+            raise DPError(f"Index value_range [{lo}, {hi}] is out of bounds for array of length {self.shape[0]}")
+
+        result = self._value[index._value.astype(int)]
+
+        return PrivNDArray(value                  = result,
+                           distance               = index.distance,
+                           distance_axis          = index.distance_axis,
+                           domain                 = NDArrayDomain(), # TODO: calculate domain
+                           parents                = [index],
+                           inherit_axis_signature = True)
