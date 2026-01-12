@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import EllipsisType
 from typing import Union, List, Tuple, Dict, Optional, Iterator, Any
 import sys
 import os
@@ -114,6 +115,10 @@ def func9(x: Tuple[int, ...]) -> Tuple[float, ...]:
 def func_slice(s: slice) -> slice:
     return s
 
+@egrpc.function
+def func_ellipsis(e: EllipsisType) -> EllipsisType:
+    return e
+
 def test_function(server: Any) -> None:
     assert func1("Alice", 30) == "Alice: 30"
     assert func2("Bob", 60) == "Bob: 60.00"
@@ -132,6 +137,7 @@ def test_function(server: Any) -> None:
     assert func_slice(slice(None, 5)) == slice(None, 5)
     assert func_slice(slice(3, None)) == slice(3, None)
     assert func_slice(slice(None)) == slice(None)
+    assert func_ellipsis(...) is ...
 
 @egrpc.multifunction
 def mfunc1(x: int | float, y: int | float) -> float:

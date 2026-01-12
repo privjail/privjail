@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import get_type_hints, get_args, Union, List, Tuple, Dict, TypeVar, Callable, Any, ParamSpec, Type
-from types import UnionType, ModuleType
+from types import EllipsisType, UnionType, ModuleType
 from collections.abc import Sequence, Mapping
 
 from . import names
@@ -136,6 +136,9 @@ def get_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, a
     if type_origin is type(None):
         return None
 
+    elif type_origin is EllipsisType:
+        return ...
+
     elif type_origin in proto_primitive_type_mapping:
         return getattr(proto_msg, param_name)
 
@@ -222,6 +225,9 @@ def set_proto_field(proto_msg: ProtoMsg, param_name: str, type_hint: TypeHint, o
     type_origin = type_hint if type_origin is None else type_origin
 
     if type_origin is type(None):
+        setattr(proto_msg, param_name, True)
+
+    elif type_origin is EllipsisType:
         setattr(proto_msg, param_name, True)
 
     elif type_origin in proto_primitive_type_mapping:

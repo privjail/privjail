@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 from typing import get_args, Union, List, Tuple, Dict, Callable, Any, TypeVar, Type, ParamSpec
-from types import UnionType, ModuleType
+from types import EllipsisType, UnionType, ModuleType
 from collections.abc import Sequence, Mapping
 import os
 import sys
@@ -40,6 +40,7 @@ proto_primitive_type_mapping = {
     float        : "double",
     bool         : "bool",
     type(None)   : "bool",
+    EllipsisType : "bool",
     bytes        : "bytes",
     _np.integer  : "int64",
     _np.floating : "double",
