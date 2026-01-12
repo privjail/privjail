@@ -25,7 +25,7 @@ from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveFloat
 from .domain import NDArrayDomain, ValueRange
-from .util import PrivShape, infer_missing_dim, check_broadcast_distance_axis
+from .util import PrivShape, NDIndex, infer_missing_dim, check_broadcast_distance_axis
 
 def _negate_value_range(vr: ValueRange) -> ValueRange:
     if vr is None:
@@ -617,22 +617,29 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            inherit_axis_signature = True)
 
     def _compare(self, other: realnum | PrivNDArray, op: str) -> PrivNDArray:
-        ops = {
-            "eq": lambda a, b: a == b,
-            "ne": lambda a, b: a != b,
-            "lt": lambda a, b: a < b,
-            "le": lambda a, b: a <= b,
-            "gt": lambda a, b: a > b,
-            "ge": lambda a, b: a >= b,
-        }
-
+        other_value: _npt.NDArray[Any] | realnum
         if isinstance(other, PrivNDArray):
             self._check_axis_aligned(other)
-            result = ops[op](self._value, other._value).astype(float)
+            other_value = other._value
             parents = [self, other]
         else:
-            result = ops[op](self._value, other).astype(float)
+            other_value = other
             parents = [self]
+
+        if op == "eq":
+            result = (self._value == other_value).astype(float)
+        elif op == "ne":
+            result = (self._value != other_value).astype(float)
+        elif op == "lt":
+            result = (self._value < other_value).astype(float)
+        elif op == "le":
+            result = (self._value <= other_value).astype(float)
+        elif op == "gt":
+            result = (self._value > other_value).astype(float)
+        elif op == "ge":
+            result = (self._value >= other_value).astype(float)
+        else:
+            raise RuntimeError
 
         return PrivNDArray(value                  = result,
                            distance               = self.distance,
@@ -642,7 +649,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            inherit_axis_signature = True)
 
     @egrpc.multimethod
-    def __eq__(self, other: realnum) -> PrivNDArray:  # type: ignore[override]
+    def __eq__(self, other: realnum) -> PrivNDArray:
         return self._compare(other, "eq")
 
     @__eq__.register
@@ -650,7 +657,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         return self._compare(other, "eq")
 
     @egrpc.multimethod
-    def __ne__(self, other: realnum) -> PrivNDArray:  # type: ignore[override]
+    def __ne__(self, other: realnum) -> PrivNDArray:
         return self._compare(other, "ne")
 
     @__ne__.register
@@ -658,7 +665,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         return self._compare(other, "ne")
 
     @egrpc.multimethod
-    def __lt__(self, other: realnum) -> PrivNDArray:
+    def __lt__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         return self._compare(other, "lt")
 
     @__lt__.register
@@ -666,7 +673,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         return self._compare(other, "lt")
 
     @egrpc.multimethod
-    def __le__(self, other: realnum) -> PrivNDArray:
+    def __le__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         return self._compare(other, "le")
 
     @__le__.register
@@ -674,7 +681,7 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         return self._compare(other, "le")
 
     @egrpc.multimethod
-    def __gt__(self, other: realnum) -> PrivNDArray:
+    def __gt__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         return self._compare(other, "gt")
 
     @__gt__.register
@@ -682,12 +689,70 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         return self._compare(other, "gt")
 
     @egrpc.multimethod
-    def __ge__(self, other: realnum) -> PrivNDArray:
+    def __ge__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         return self._compare(other, "ge")
 
     @__ge__.register
     def _(self, other: PrivNDArray) -> PrivNDArray:
         return self._compare(other, "ge")
+
+    def _normalize_index(self, index: NDIndex) -> tuple[int | slice | None, ...]:
+        if not isinstance(index, tuple):
+            index = (index,)
+
+        ellipsis_count = sum(1 for i in index if i is ...)
+        if ellipsis_count > 1:
+            raise IndexError("an index can only have a single ellipsis ('...')")
+
+        if ellipsis_count == 0:
+            return index  # type: ignore
+
+        ellipsis_pos = index.index(...)
+        n_explicit = len(index) - 1  # excluding ellipsis
+        n_missing = self.ndim - n_explicit
+        if n_missing < 0:
+            raise IndexError("too many indices for array")
+
+        expanded = (
+            index[:ellipsis_pos] +
+            (slice(None),) * n_missing +
+            index[ellipsis_pos + 1:]
+        )
+        return expanded  # type: ignore[return-value]
+
+    def _validate_index_at_distance_axis(self, index: tuple[int | slice | None, ...]) -> None:
+        axis_indices = [idx for idx in index if idx is not None]
+        if self.distance_axis < len(axis_indices):
+            idx = axis_indices[self.distance_axis]
+            if not (isinstance(idx, slice) and idx == slice(None)):
+                raise DPError("Cannot index distance_axis with anything other than ':'")
+
+    def _compute_new_distance_axis(self, index: tuple[int | slice | None, ...]) -> int:
+        offset = 0
+        orig_axis = 0
+        for idx in index:
+            if orig_axis > self.distance_axis:
+                break
+            if idx is None:
+                offset += 1
+            else:
+                if orig_axis < self.distance_axis and isinstance(idx, int):
+                    offset -= 1
+                orig_axis += 1
+        return self.distance_axis + offset
+
+    @egrpc.method
+    def __getitem__(self, index: NDIndex) -> PrivNDArray:
+        normalized = self._normalize_index(index)
+        self._validate_index_at_distance_axis(normalized)
+        new_distance_axis = self._compute_new_distance_axis(normalized)
+
+        return PrivNDArray(value                  = self._value[index],
+                           distance               = self.distance,
+                           distance_axis          = new_distance_axis,
+                           domain                 = NDArrayDomain(value_range=self.domain.value_range),
+                           parents                = [self],
+                           inherit_axis_signature = True)
 
 @egrpc.remoteclass
 class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):

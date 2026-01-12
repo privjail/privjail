@@ -116,6 +116,111 @@ def test_swapaxes(accountant: pj.ApproxAccountant) -> None:
     assert swapped_12._value.tolist() == [[[1.0, 3.0], [2.0, 4.0]],
                                           [[5.0, 7.0], [6.0, 8.0]]]
 
+def test_getitem(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+                           [[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(-1.0, 15.0)),
+                          accountant    = accountant)
+    assert arr._value.shape == (2, 3, 2)
+
+    # basic slice ":"
+    result = arr[:, :, :]
+    assert result._value.shape == (2, 3, 2)
+    assert result.distance_axis == 0
+    assert result.domain.value_range == (-1.0, 15.0)
+    assert result.axis_signature == arr.axis_signature
+    assert _np.allclose(result._value, arr._value[:, :, :])
+
+    # slice on non-distance axis
+    result = arr[:, 1:, :]
+    assert result._value.shape == (2, 2, 2)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, arr._value[:, 1:, :])
+
+    # int on non-distance axis (removes axis)
+    result = arr[:, 0, :]
+    assert result._value.shape == (2, 2)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, arr._value[:, 0, :])
+
+    # int removes axis before distance_axis
+    arr_mid = pnp.PrivNDArray(arr._value,
+                              distance      = pj.RealExpr(1),
+                              distance_axis = 1,
+                              accountant    = accountant)
+    result = arr_mid[0, :, :]
+    assert result._value.shape == (3, 2)
+    assert result.distance_axis == 0  # shifted from 1 to 0
+    assert _np.allclose(result._value, arr_mid._value[0, :, :])
+
+    # None (newaxis) before distance_axis
+    result = arr[None, :, :, :]
+    assert result._value.shape == (1, 2, 3, 2)
+    assert result.distance_axis == 1  # shifted from 0 to 1
+    assert _np.allclose(result._value, arr._value[None, :, :, :])
+
+    # None after distance_axis
+    result = arr[:, None, :, :]
+    assert result._value.shape == (2, 1, 3, 2)
+    assert result.distance_axis == 0  # unchanged
+    assert _np.allclose(result._value, arr._value[:, None, :, :])
+
+    # None at end
+    result = arr[:, :, :, None]
+    assert result._value.shape == (2, 3, 2, 1)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, arr._value[:, :, :, None])
+
+    # multiple None
+    result = arr[None, :, None, :, :]
+    assert result._value.shape == (1, 2, 1, 3, 2)
+    assert result.distance_axis == 1
+    assert _np.allclose(result._value, arr._value[None, :, None, :, :])
+
+    # ellipsis
+    result = arr[..., 0]
+    assert result._value.shape == (2, 3)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, arr._value[..., 0])
+
+    result = arr[..., None]
+    assert result._value.shape == (2, 3, 2, 1)
+    assert result.distance_axis == 0
+    assert _np.allclose(result._value, arr._value[..., None])
+
+    # outer product pattern: arr[:, :, None] * arr[:, None, :]
+    arr2d = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                             [4.0, 5.0, 6.0]],
+                            distance      = pj.RealExpr(1),
+                            distance_axis = 0,
+                            accountant    = accountant)
+    left = arr2d[:, :, None]
+    right = arr2d[:, None, :]
+    assert left._value.shape == (2, 3, 1)
+    assert right._value.shape == (2, 1, 3)
+    assert left.distance_axis == 0
+    assert right.distance_axis == 0
+    assert _np.allclose(left._value, arr2d._value[:, :, None])
+    assert _np.allclose(right._value, arr2d._value[:, None, :])
+    outer = left * right
+    assert outer._value.shape == (2, 3, 3)
+    assert outer.distance_axis == 0
+    assert _np.allclose(outer._value, arr2d._value[:, :, None] * arr2d._value[:, None, :])
+
+    # error: index distance_axis with int
+    with pytest.raises(pj.DPError):
+        arr[0, :, :]
+
+    # error: index distance_axis with non-trivial slice
+    with pytest.raises(pj.DPError):
+        arr[0:1, :, :]
+
+    # error: multiple ellipsis
+    with pytest.raises(IndexError):
+        arr[..., ...]
+
 def test_clip_norm_scalar_rows(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([1.0, -2.5, 0.5, 4.0, -6.0],
                           distance      = pj.RealExpr(1),
@@ -1098,3 +1203,4 @@ def test_one_hot(accountant: pj.ApproxAccountant) -> None:
                                     accountant    = accountant)
     with pytest.raises(pj.DPError):
         pnp.eye(5)[no_vr_indices]
+

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from types import EllipsisType
 from typing import Any
 
 import numpy as _np
@@ -44,6 +45,9 @@ class NDArrayPayload:
 egrpc.register_type(_np.ndarray, NDArrayPayload)
 
 PrivShape = tuple[int | SensitiveDimInt, ...]
+
+IndexItem = int | slice | None | EllipsisType
+NDIndex = IndexItem | tuple[IndexItem, ...]
 
 def infer_missing_dim(input_shape: PrivShape, output_shape: PrivShape) -> PrivShape:
     if -1 not in output_shape:
