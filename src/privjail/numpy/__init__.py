@@ -14,7 +14,7 @@
 
 from . import util # noqa: F401
 from .array import PrivNDArray, SensitiveNDArray
-from .functions import histogram, histogramdd, maximum, minimum exp, log
+from .functions import histogram, histogramdd, maximum, minimum, exp, log
 from .domain import NDArrayDomain
 from .io import load
 from . import linalg

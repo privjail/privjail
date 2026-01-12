@@ -289,23 +289,60 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            inherit_axis_signature = (scale == 1))
 
     @egrpc.method
-    def sum(self, axis: int | None = None) -> SensitiveFloat | SensitiveNDArray:
-        if not ((axis is None and self.ndim == 1) or axis == self.distance_axis):
-            raise NotImplementedError("sum() currently supports summing along the distance axis only.")
+    def sum(self,
+            axis     : int | None = None,
+            keepdims : bool       = False,
+            ) -> SensitiveFloat | SensitiveNDArray | PrivNDArray:
+        if axis is None or axis == self.distance_axis:
+            # Sum along distance_axis (or all axes) -> returns SensitiveFloat or SensitiveNDArray
+            if self._domain.norm_bound is None:
+                raise DPError("Norm bound is not set. Use clip_norm() before summing along the distance axis.")
 
-        if self._domain.norm_bound is None:
-            raise DPError("Norm bound is not set. Use clip_norm() before summing along the distance axis.")
+            new_distance = self.distance * float(self._domain.norm_bound)
+            result = self._value.sum(axis=axis, keepdims=keepdims)
 
-        new_distance = self.distance * float(self._domain.norm_bound)
-        result = self._value.sum(axis=axis)
+            if result.ndim == 0:
+                return SensitiveFloat(float(result), distance=new_distance, parents=[self])
+            else:
+                return SensitiveNDArray(value     = result,
+                                        distance  = new_distance,
+                                        norm_type = self._domain.norm_type,
+                                        parents   = [self])
 
-        if self.ndim == 1:
-            return SensitiveFloat(float(result), distance=new_distance, parents=[self])
         else:
-            return SensitiveNDArray(value     = result,
-                                    distance  = new_distance,
-                                    norm_type = self._domain.norm_type,
-                                    parents   = [self])
+            # Sum along non-distance axis -> returns PrivNDArray
+            if axis < 0:
+                axis = self.ndim + axis
+
+            if not (0 <= axis < self.ndim):
+                raise ValueError(f"axis {axis} is out of bounds for array of dimension {self.ndim}.")
+
+            if keepdims:
+                new_distance_axis = self.distance_axis
+            else:
+                if axis < self.distance_axis:
+                    new_distance_axis = self.distance_axis - 1
+                else:
+                    new_distance_axis = self.distance_axis
+
+            result = self._value.sum(axis=axis, keepdims=keepdims)
+
+            # Update value_range: sum of N elements scales the range by N
+            new_vr: ValueRange = None
+            if self.domain.value_range is not None:
+                lo, hi = self.domain.value_range
+                n = self.shape[axis]
+                assert isinstance(n, int)
+                new_lo = lo * n if lo is not None else None
+                new_hi = hi * n if hi is not None else None
+                new_vr = (new_lo, new_hi)
+
+            return PrivNDArray(value                  = result,
+                               distance               = self.distance,
+                               distance_axis          = new_distance_axis,
+                               domain                 = NDArrayDomain(value_range=new_vr),
+                               parents                = [self],
+                               inherit_axis_signature = True)
 
     @egrpc.method
     def max(self, axis: int | None = None, keepdims: bool = False) -> PrivNDArray:

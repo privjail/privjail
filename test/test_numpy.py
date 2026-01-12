@@ -296,6 +296,31 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
     assert summed._value.tolist() == pytest.approx(expected.tolist())
     assert summed.max_distance == pytest.approx(bound)
 
+def test_sum_along_non_distance_axis(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
+                           [4.0, 5.0, 6.0]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(0.0, 10.0)),
+                          accountant    = accountant)
+
+    # sum along axis=1 (non-distance axis)
+    result = arr.sum(axis=1)
+    assert isinstance(result, pnp.PrivNDArray)
+    assert _np.allclose(result._value, [6.0, 15.0])
+    assert result._value.shape == (2,)
+    assert result.distance_axis == 0
+    assert result.domain.value_range == (0.0, 30.0)  # 3 elements * (0, 10)
+    assert result.axis_signature == arr.axis_signature
+
+    # with keepdims=True
+    result_kd = arr.sum(axis=1, keepdims=True)
+    assert isinstance(result_kd, pnp.PrivNDArray)
+    assert _np.allclose(result_kd._value, [[6.0], [15.0]])
+    assert result_kd._value.shape == (2, 1)
+    assert result_kd.distance_axis == 0
+    assert result_kd.axis_signature == arr.axis_signature
+
 def test_max_min(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 5.0, 3.0],
                            [9.0, 2.0, 4.0],
