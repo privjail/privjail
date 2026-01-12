@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from . import util # noqa: F401
-from .array import PrivNDArray, SensitiveNDArray, histogram, histogramdd
+from .array import PrivNDArray, SensitiveNDArray
+from .functions import histogram, histogramdd
 from .domain import NDArrayDomain
 from .io import load
 from . import linalg
