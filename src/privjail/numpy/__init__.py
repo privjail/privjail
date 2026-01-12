@@ -14,7 +14,7 @@
 
 from . import util # noqa: F401
 from .array import PrivNDArray, SensitiveNDArray
-from .functions import histogram, histogramdd
+from .functions import histogram, histogramdd, maximum, minimum
 from .domain import NDArrayDomain
 from .io import load
 from . import linalg
@@ -27,4 +27,6 @@ __all__ = [
     "linalg",
     "histogram",
     "histogramdd",
+    "maximum",
+    "minimum",
 ]

@@ -446,6 +446,53 @@ def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
                                     norm_type  = "l2",
                                     accountant = accountant)
 
+def test_maximum_minimum(accountant: pj.ApproxAccountant) -> None:
+    arr = pnp.PrivNDArray([[-1.0, 2.0], [3.0, -4.0], [0.5, 0.5]],
+                          distance      = pj.RealExpr(1),
+                          distance_axis = 0,
+                          domain        = pnp.NDArrayDomain(value_range=(-5.0, 5.0)),
+                          accountant    = accountant)
+
+    # maximum with scalar
+    result = pnp.maximum(arr, 0.0)
+    assert isinstance(result, pnp.PrivNDArray)
+    assert _np.allclose(result._value, [[0.0, 2.0], [3.0, 0.0], [0.5, 0.5]])
+    assert result.domain.value_range == (0.0, 5.0)
+    assert result.axis_signature == arr.axis_signature
+
+    # minimum with scalar
+    result = pnp.minimum(arr, 1.0)
+    assert isinstance(result, pnp.PrivNDArray)
+    assert _np.allclose(result._value, [[-1.0, 1.0], [1.0, -4.0], [0.5, 0.5]])
+    assert result.domain.value_range == (-5.0, 1.0)
+    assert result.axis_signature == arr.axis_signature
+
+    # clip pattern: maximum then minimum
+    clipped = pnp.minimum(pnp.maximum(arr, -1.0), 1.0)
+    assert _np.allclose(clipped._value, [[-1.0, 1.0], [1.0, -1.0], [0.5, 0.5]])
+    assert clipped.domain.value_range == (-1.0, 1.0)
+
+    # maximum/minimum between two PrivNDArrays
+    arr2 = arr * 0.5  # same axis_signature
+    result = pnp.maximum(arr, arr2)
+    expected = _np.maximum(arr._value, arr2._value)
+    assert _np.allclose(result._value, expected)
+    assert result.axis_signature == arr.axis_signature
+
+    result = pnp.minimum(arr, arr2)
+    expected = _np.minimum(arr._value, arr2._value)
+    assert _np.allclose(result._value, expected)
+
+    # axis_signature mismatch should raise DPError
+    other = pnp.PrivNDArray([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]],
+                            distance      = pj.RealExpr(1),
+                            distance_axis = 0,
+                            accountant    = accountant)
+    with pytest.raises(pj.DPError):
+        pnp.maximum(arr, other)
+    with pytest.raises(pj.DPError):
+        pnp.minimum(arr, other)
+
 def test_histogram_basic(accountant: pj.ApproxAccountant) -> None:
     samples = pnp.PrivNDArray([0.1, 0.4, 0.8],
                               distance      = pj.RealExpr(1.0),

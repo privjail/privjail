@@ -21,6 +21,9 @@ import numpy.typing as _npt
 from .. import egrpc
 from ..util import DPError, realnum
 from .array import PrivNDArray, SensitiveNDArray
+from .domain import NDArrayDomain
+
+ValueRange = tuple[float | None, float | None] | None
 
 def _is_sequence(value: Any) -> TypeGuard[Sequence[Any]]:
     if isinstance(value, _np.ndarray):
@@ -85,3 +88,77 @@ def histogramdd(sample : PrivNDArray,
                                       parents   = [sample])
 
     return sensitive_hist, edges
+
+def _maximum_value_ranges(vr1: ValueRange, vr2: ValueRange) -> ValueRange:
+    if vr1 is None or vr2 is None:
+        return None
+    lo1, hi1 = vr1
+    lo2, hi2 = vr2
+    new_lo = max(lo1, lo2) if lo1 is not None and lo2 is not None else None
+    new_hi = max(hi1, hi2) if hi1 is not None and hi2 is not None else None
+    return (new_lo, new_hi)
+
+def _maximum_value_range_scalar(vr: ValueRange, c: float) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    new_lo = max(lo, c) if lo is not None else None
+    new_hi = max(hi, c) if hi is not None else None
+    return (new_lo, new_hi)
+
+def _minimum_value_ranges(vr1: ValueRange, vr2: ValueRange) -> ValueRange:
+    if vr1 is None or vr2 is None:
+        return None
+    lo1, hi1 = vr1
+    lo2, hi2 = vr2
+    new_lo = min(lo1, lo2) if lo1 is not None and lo2 is not None else None
+    new_hi = min(hi1, hi2) if hi1 is not None and hi2 is not None else None
+    return (new_lo, new_hi)
+
+def _minimum_value_range_scalar(vr: ValueRange, c: float) -> ValueRange:
+    if vr is None:
+        return None
+    lo, hi = vr
+    new_lo = min(lo, c) if lo is not None else None
+    new_hi = min(hi, c) if hi is not None else None
+    return (new_lo, new_hi)
+
+@egrpc.function
+def maximum(x1: PrivNDArray, x2: PrivNDArray | realnum) -> PrivNDArray:
+    if isinstance(x2, PrivNDArray):
+        x1._check_axis_aligned(x2)
+        new_vr = _maximum_value_ranges(x1.domain.value_range, x2.domain.value_range)
+        return PrivNDArray(value                  = _np.maximum(x1._value, x2._value),
+                           distance               = x1.distance,
+                           distance_axis          = x1.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [x1, x2],
+                           inherit_axis_signature = True)
+    else:
+        new_vr = _maximum_value_range_scalar(x1.domain.value_range, float(x2))
+        return PrivNDArray(value                  = _np.maximum(x1._value, x2),
+                           distance               = x1.distance,
+                           distance_axis          = x1.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [x1],
+                           inherit_axis_signature = True)
+
+@egrpc.function
+def minimum(x1: PrivNDArray, x2: PrivNDArray | realnum) -> PrivNDArray:
+    if isinstance(x2, PrivNDArray):
+        x1._check_axis_aligned(x2)
+        new_vr = _minimum_value_ranges(x1.domain.value_range, x2.domain.value_range)
+        return PrivNDArray(value                  = _np.minimum(x1._value, x2._value),
+                           distance               = x1.distance,
+                           distance_axis          = x1.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [x1, x2],
+                           inherit_axis_signature = True)
+    else:
+        new_vr = _minimum_value_range_scalar(x1.domain.value_range, float(x2))
+        return PrivNDArray(value                  = _np.minimum(x1._value, x2),
+                           distance               = x1.distance,
+                           distance_axis          = x1.distance_axis,
+                           domain                 = NDArrayDomain(value_range=new_vr),
+                           parents                = [x1],
+                           inherit_axis_signature = True)
