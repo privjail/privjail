@@ -406,6 +406,15 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                            parents                = [self],
                            inherit_axis_signature = True)
 
+    @egrpc.method
+    def copy(self) -> PrivNDArray:
+        return PrivNDArray(value                  = self._value.copy(),
+                           distance               = self.distance,
+                           distance_axis          = self.distance_axis,
+                           domain                 = self.domain,
+                           parents                = [self],
+                           inherit_axis_signature = True)
+
     @egrpc.multimethod
     def __matmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray:
         if self.ndim != 2 or other.ndim != 2:
