@@ -15,7 +15,7 @@
 from __future__ import annotations
 from typing import Any
 
-from .util import Accountant, ParallelAccountant
+from .util import Accountant, ParallelAccountant, SubsamplingAccountant
 from .. import egrpc
 
 DummyBudgetType = None
@@ -53,8 +53,12 @@ class DummyAccountant(Accountant[None]):
         return None
 
     @staticmethod
-    def parallel_accountant() -> type[Accountant[None]]:
+    def parallel_accountant() -> type[DummyParallelAccountant]:
         return DummyParallelAccountant
+
+    @staticmethod
+    def subsampling_accountant() -> type[SubsamplingAccountant[None]]:
+        raise NotImplementedError("Dummy subsampling accountant is not implemented")
 
 class DummyParallelAccountant(ParallelAccountant[None]):
     def __init__(self, *args: Any, **kwargs: Any):

@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 from typing import Any
+import math
 
-from .util import Accountant, ParallelAccountant
+from .util import Accountant, ParallelAccountant, SubsamplingAccountant
 from .. import egrpc
 
 ApproxBudgetType = tuple[float, float]
@@ -29,11 +30,12 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
     def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, ApproxParallelAccountant):
             parent.spend(next_budget_spent)
+        elif isinstance(parent, ApproxSubsamplingAccountant):
+            parent.spend(next_budget_spent)
         else:
             raise Exception
 
-    @staticmethod
-    def compose(budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> ApproxBudgetType:
+    def compose(self, budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> ApproxBudgetType:
         eps1, delta1 = budget1
         eps2, delta2 = budget2
         return (eps1 + eps2, delta1 + delta2)
@@ -66,8 +68,12 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
             raise TypeError("Approx accountant budget must be a tuple of two float values.")
 
     @staticmethod
-    def parallel_accountant() -> type[Accountant[ApproxBudgetType]]:
+    def parallel_accountant() -> type[ApproxParallelAccountant]:
         return ApproxParallelAccountant
+
+    @staticmethod
+    def subsampling_accountant() -> type[ApproxSubsamplingAccountant]:
+        return ApproxSubsamplingAccountant
 
 class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
     @staticmethod
@@ -82,11 +88,50 @@ class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
         else:
             raise Exception
 
-    @staticmethod
-    def compose(budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> ApproxBudgetType:
+    def compose(self, budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> ApproxBudgetType:
         eps1, delta1 = budget1
         eps2, delta2 = budget2
         return (max(eps1, eps2), max(delta1, delta2))
+
+    @staticmethod
+    def zero() -> ApproxBudgetType:
+        return (0.0, 0.0)
+
+    @staticmethod
+    def exceeds(budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
+        eps1, delta1 = budget1
+        eps2, delta2 = budget2
+        return eps1 > eps2 or delta1 > delta2
+
+    @staticmethod
+    def assert_budget(budget: ApproxBudgetType) -> None:
+        eps, delta = budget
+        assert eps >= 0 and delta >= 0
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> ApproxBudgetType | None:
+        return ApproxAccountant.normalize_budget(budget)
+
+class ApproxSubsamplingAccountant(SubsamplingAccountant[ApproxBudgetType]):
+    @staticmethod
+    def family_name() -> str:
+        return "approx"
+
+    def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
+        if isinstance(parent, ApproxAccountant):
+            prev_eps, prev_delta = self._budget_spent
+            next_eps, next_delta = next_budget_spent
+            parent.spend((next_eps - prev_eps, next_delta - prev_delta))
+        else:
+            raise Exception
+
+    def compose(self, budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> ApproxBudgetType:
+        q = self._sampling_rate
+        eps2, delta2 = budget2
+        amp_eps = math.log(1 + q * (math.exp(eps2) - 1))
+        amp_delta = q * delta2
+        assert budget1[0] <= amp_eps and budget1[1] <= amp_delta
+        return (amp_eps, amp_delta)
 
     @staticmethod
     def zero() -> ApproxBudgetType:

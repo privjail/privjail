@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 import math
 
-from .util import Accountant, ParallelAccountant
+from .util import Accountant, ParallelAccountant, SubsamplingAccountant
 from .approx import ApproxAccountant
 from .. import egrpc
 
@@ -86,8 +86,12 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
             raise TypeError("zCDP accountant budget must be a single float value.")
 
     @staticmethod
-    def parallel_accountant() -> type[Accountant[zCDPBudgetType]]:
+    def parallel_accountant() -> type[zCDPParallelAccountant]:
         return zCDPParallelAccountant
+
+    @staticmethod
+    def subsampling_accountant() -> type[SubsamplingAccountant[zCDPBudgetType]]:
+        raise NotImplementedError("zCDP subsampling accountant is not implemented")
 
 class zCDPParallelAccountant(ParallelAccountant[zCDPBudgetType]):
     @staticmethod

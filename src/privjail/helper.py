@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import overload
 
 import numpy as _np
 import numpy.typing as _npt
@@ -36,7 +37,9 @@ def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivN
 
     value_array = _np.asarray(arr._value, dtype=float)
 
-    if value_array.ndim == 1:
+    if value_array.size == 0:
+        clipped = value_array
+    elif value_array.ndim == 1:
         clipped = _np.clip(value_array, -float(bound), float(bound))
     else:
         nrows = value_array.shape[0]
@@ -70,7 +73,9 @@ def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
     eps = 1e-12
     value_array = _np.asarray(arr._value, dtype=float)
 
-    if value_array.ndim == 1:
+    if value_array.size == 0:
+        normalized = value_array
+    elif value_array.ndim == 1:
         norm = _np.linalg.norm(value_array, ord=ord_value)
         normalized = value_array / (norm + eps)
     else:
@@ -89,8 +94,16 @@ def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
                        parents                = [arr],
                        inherit_axis_signature = True)
 
-def sample(*arrays: PrivNDArray, q: float, method: str = "poisson") -> tuple[PrivNDArray, ...]:
-    return _sample_impl(arrays, q, method)
+@overload
+def sample(array: PrivNDArray, /, *, q: float, method: str = "poisson") -> PrivNDArray: ...
+@overload
+def sample(*arrays: PrivNDArray, q: float, method: str = "poisson") -> tuple[PrivNDArray, ...]: ...
+
+def sample(*arrays: PrivNDArray, q: float, method: str = "poisson") -> PrivNDArray | tuple[PrivNDArray, ...]:
+    result = _sample_impl(arrays, q, method)
+    if len(arrays) == 1:
+        return result[0]
+    return result
 
 @egrpc.function
 def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tuple[PrivNDArray, ...]:
@@ -114,7 +127,12 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
     n = first._value.shape[0]
     mask: _npt.NDArray[_np.bool_] = _np.random.random(n) < q
 
-    # TODO: implement subsampling accountant
+    # Create subsampling accountant based on the parent accountant's family
+    parent_accountant = first.accountant
+    SubsamplingAccountantType = type(parent_accountant).subsampling_accountant()
+    ChildAccountantType = type(parent_accountant)
+    subsampling_accountant = SubsamplingAccountantType(sampling_rate=q, parent=parent_accountant)
+    child_accountant = ChildAccountantType(parent=subsampling_accountant)
 
     sig = new_axis_signature()
     results: list[PrivNDArray] = []
@@ -124,6 +142,7 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
                           distance_axis          = arr.distance_axis,
                           domain                 = arr.domain,
                           parents                = [arr],
+                          accountant             = child_accountant,
                           inherit_axis_signature = False)
         out._axis_signature = sig
         results.append(out)

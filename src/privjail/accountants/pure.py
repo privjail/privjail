@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 from typing import Any
+import math
 
-from .util import Accountant, ParallelAccountant
+from .util import Accountant, ParallelAccountant, SubsamplingAccountant
 from .approx import ApproxAccountant
 from .. import egrpc
 
@@ -30,14 +31,15 @@ class PureAccountant(Accountant[PureBudgetType]):
     def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, PureParallelAccountant):
             parent.spend(next_budget_spent)
+        elif isinstance(parent, PureSubsamplingAccountant):
+            parent.spend(next_budget_spent)
         elif isinstance(parent, ApproxAccountant):
             # basic composition
             parent.spend((next_budget_spent - self._budget_spent, 0))
         else:
             raise Exception
 
-    @staticmethod
-    def compose(budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
+    def compose(self, budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
         return budget1 + budget2
 
     @staticmethod
@@ -64,8 +66,12 @@ class PureAccountant(Accountant[PureBudgetType]):
             raise TypeError("Pure accountant budget must be a single float value.")
 
     @staticmethod
-    def parallel_accountant() -> type[Accountant[PureBudgetType]]:
+    def parallel_accountant() -> type[PureParallelAccountant]:
         return PureParallelAccountant
+
+    @staticmethod
+    def subsampling_accountant() -> type[PureSubsamplingAccountant]:
+        return PureSubsamplingAccountant
 
 class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
     @staticmethod
@@ -78,9 +84,41 @@ class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
         else:
             raise Exception
 
-    @staticmethod
-    def compose(budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
+    def compose(self, budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
         return max(budget1, budget2)
+
+    @staticmethod
+    def zero() -> PureBudgetType:
+        return 0.0
+
+    @staticmethod
+    def exceeds(budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
+        return budget1 > budget2
+
+    @staticmethod
+    def assert_budget(budget: PureBudgetType) -> None:
+        assert budget >= 0
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> PureBudgetType | None:
+        return PureAccountant.normalize_budget(budget)
+
+class PureSubsamplingAccountant(SubsamplingAccountant[PureBudgetType]):
+    @staticmethod
+    def family_name() -> str:
+        return "pure"
+
+    def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
+        if isinstance(parent, PureAccountant):
+            parent.spend(next_budget_spent - self._budget_spent)
+        else:
+            raise Exception
+
+    def compose(self, budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
+        q = self._sampling_rate
+        amp = math.log(1 + q * (math.exp(budget2) - 1))
+        assert budget1 <= amp
+        return amp
 
     @staticmethod
     def zero() -> PureBudgetType:

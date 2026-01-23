@@ -83,14 +83,12 @@ class Accountant(ABC, Generic[T]):
         if accounting_group is not None:
             self._accounting_group = accounting_group
         elif parent is not None:
-            if isinstance(parent, ParallelAccountant):
-                # Child of ParallelAccountant: create new child AccountingGroup
+            if isinstance(parent, (ParallelAccountant, SubsamplingAccountant)):
                 parent_group = parent._accounting_group
                 self._accounting_group = parent_group.create_child(root_accountant=self) if parent_group is not None else AccountingGroup(root_accountant=self)
             else:
                 self._accounting_group = parent._accounting_group
         else:
-            # Root accountant: create new AccountingGroup automatically
             self._accounting_group = AccountingGroup(root_accountant=self)
 
         if register:
@@ -117,7 +115,7 @@ class Accountant(ABC, Generic[T]):
     def spend(self, budget: T) -> None:
         type(self).assert_budget(budget)
 
-        next_budget_spent = type(self).compose(self._budget_spent, budget)
+        next_budget_spent = self.compose(self._budget_spent, budget)
 
         if self._budget_limit is not None and type(self).exceeds(next_budget_spent, self._budget_limit):
             raise BudgetExceededError()
@@ -136,9 +134,8 @@ class Accountant(ABC, Generic[T]):
     def propagate(self, next_budget_spent: T, parent: Accountant[Any]) -> None:
         ...
 
-    @staticmethod
     @abstractmethod
-    def compose(budget1: T, budget2: T) -> T:
+    def compose(self, budget1: T, budget2: T) -> T:
         ...
 
     @staticmethod
@@ -163,12 +160,48 @@ class Accountant(ABC, Generic[T]):
 
     @staticmethod
     @abstractmethod
-    def parallel_accountant() -> type[Accountant[T]]:
+    def parallel_accountant() -> type[ParallelAccountant[T]]:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    def subsampling_accountant() -> type[SubsamplingAccountant[T]]:
         ...
 
 class ParallelAccountant(Generic[T], Accountant[T]):
     @staticmethod
-    def parallel_accountant() -> type[Accountant[T]]:
+    def parallel_accountant() -> type[ParallelAccountant[T]]:
+        raise Exception
+
+    @staticmethod
+    def subsampling_accountant() -> type[SubsamplingAccountant[T]]:
+        raise Exception
+
+class SubsamplingAccountant(Generic[T], Accountant[T]):
+    _sampling_rate: float
+
+    def __init__(self,
+                 *,
+                 sampling_rate    : float,
+                 budget_limit     : T | None               = None,
+                 parent           : Accountant[Any] | None = None,
+                 accounting_group : AccountingGroup | None = None,
+                 ):
+        if not (0.0 < sampling_rate <= 1.0):
+            raise ValueError("sampling_rate must be in (0, 1]")
+        self._sampling_rate = sampling_rate
+        super().__init__(budget_limit=budget_limit, parent=parent, accounting_group=accounting_group)
+
+    @egrpc.property
+    def sampling_rate(self) -> float:
+        return self._sampling_rate
+
+    @staticmethod
+    def parallel_accountant() -> type[ParallelAccountant[T]]:
+        raise Exception
+
+    @staticmethod
+    def subsampling_accountant() -> type[SubsamplingAccountant[T]]:
         raise Exception
 
 def get_lsca_of_same_family(accountants: Sequence[Accountant[Any]]) -> Accountant[Any]:

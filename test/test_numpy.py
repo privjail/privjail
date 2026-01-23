@@ -332,7 +332,7 @@ def test_sample(accountant: pj.ApproxAccountant) -> None:
                         accountant    = accountant)
 
     # Single array
-    (x_s,) = pj.sample(x, q=0.5)
+    x_s = pj.sample(x, q=0.5)
     assert isinstance(x_s, pnp.PrivNDArray)
     assert x_s.axis_signature != x.axis_signature
     assert x_s._value.shape[0] <= x._value.shape[0]
@@ -347,6 +347,77 @@ def test_sample(accountant: pj.ApproxAccountant) -> None:
     assert _np.allclose(y_s._value, x_s._value * 2)
     assert x_s._value.shape[0] <= x._value.shape[0]
     assert y_s._value.shape[0] == x_s._value.shape[0]
+
+def test_sample_subsampling_accountant_pure() -> None:
+    accountant = pj.PureAccountant()
+    accountant.set_as_root(name=str(uuid.uuid4()))
+
+    x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
+                        distance      = pj.RealExpr(1),
+                        distance_axis = 0,
+                        accountant    = accountant)
+
+    q = 0.5
+    x_s = pj.sample(x, q=q)
+
+    # Sampled array has a different accountant with a new accounting group
+    assert x_s.accountant is not x.accountant
+    assert x_s.accounting_group is not x.accounting_group
+    assert x_s.accounting_group is not None
+    assert x_s.accounting_group.parent is not None
+
+    # Spend budget twice to test composition: amp(ε1+ε2), not amp(ε1)+amp(ε2)
+    bound = 3.0
+    clipped = pj.clip_norm(x_s, bound=bound, ord=1)
+    clipped_sum = clipped.sum(axis=0)
+    assert isinstance(clipped_sum, pnp.SensitiveNDArray)
+    _ = pj.laplace_mechanism(clipped_sum, eps=1.0)
+    _ = pj.laplace_mechanism(clipped_sum, eps=1.0)
+
+    child_spent = x_s.accountant.budget_spent()
+    assert child_spent == pytest.approx(2.0)
+
+    # Parent should receive amp(2.0), not amp(1.0) + amp(1.0)
+    expected_eps = math.log(1 + q * (math.exp(2.0) - 1))
+    parent_spent = accountant.budget_spent()
+    assert parent_spent == pytest.approx(expected_eps)
+
+def test_sample_subsampling_accountant_approx() -> None:
+    accountant = pj.ApproxAccountant()
+    accountant.set_as_root(name=str(uuid.uuid4()))
+
+    x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
+                        distance      = pj.RealExpr(1),
+                        distance_axis = 0,
+                        accountant    = accountant)
+
+    q = 0.5
+    x_s = pj.sample(x, q=q)
+
+    # Sampled array has a different accountant with a new accounting group
+    assert x_s.accountant is not x.accountant
+    assert x_s.accounting_group is not x.accounting_group
+    assert x_s.accounting_group is not None
+    assert x_s.accounting_group.parent is not None
+
+    # Spend budget twice to test composition: amp(ε1+ε2), not amp(ε1)+amp(ε2)
+    bound = 5.0
+    clipped = pj.clip_norm(x_s, bound=bound, ord=2)
+    clipped_sum = clipped.sum(axis=0)
+    assert isinstance(clipped_sum, pnp.SensitiveNDArray)
+    _ = pj.gaussian_mechanism(clipped_sum, eps=1.0, delta=1e-5)
+    _ = pj.gaussian_mechanism(clipped_sum, eps=1.0, delta=1e-5)
+
+    child_spent = x_s.accountant.budget_spent()
+    assert child_spent[0] == pytest.approx(2.0)
+    assert child_spent[1] == pytest.approx(2e-5)
+
+    # Parent should receive amp(2.0, 2e-5), not amp(1.0, 1e-5) + amp(1.0, 1e-5)
+    expected_eps = math.log(1 + q * (math.exp(2.0) - 1))
+    expected_delta = q * 2e-5
+    parent_spent = accountant.budget_spent()
+    assert parent_spent[0] == pytest.approx(expected_eps)
+    assert parent_spent[1] == pytest.approx(expected_delta)
 
 def test_normalize_tensor(accountant: pj.ApproxAccountant) -> None:
     arr = pnp.PrivNDArray([[[ 3.0, 0.0, -4.0], [0.0,  0.0,  0.0]],
@@ -1266,4 +1337,3 @@ def test_one_hot(accountant: pj.ApproxAccountant) -> None:
                                     accountant    = accountant)
     with pytest.raises(pj.DPError):
         pnp.eye(5)[no_vr_indices]
-
