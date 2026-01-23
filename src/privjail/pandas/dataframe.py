@@ -685,17 +685,17 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         assert self._distance_group_axes is None
 
         if self._distributed_df is None:
-            accountant_type = type(self.accountant)
-            parallel_accountant = accountant_type.parallel_accountant()(parent=self.accountant)
-
             distances = self._ensure_partitioned_distances()
+            n_children = len(self.index) * len(self.columns)
+            child_accountants = iter(self.accountant.create_parallel_accountants(n_children))
 
             ddf = _pd.DataFrame(index=self.index, columns=self.columns)
 
             for col, dc in zip(self.columns, distances):
                 for idx, d in zip(self.index, dc.create_exclusive_children(len(self.index))):
+                    child_accountant = next(child_accountants)
                     ddf.loc[idx, col] = self._wrap_sensitive_value(self._value.loc[idx, col], column=col, distance=d, parents=[self], # type: ignore
-                                                                   accountant=accountant_type(parent=parallel_accountant))
+                                                                   accountant=child_accountant)
 
             self._distributed_df = ddf
 

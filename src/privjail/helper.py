@@ -127,12 +127,8 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
     n = first._value.shape[0]
     mask: _npt.NDArray[_np.bool_] = _np.random.random(n) < q
 
-    # Create subsampling accountant based on the parent accountant's family
     parent_accountant = first.accountant
-    SubsamplingAccountantType = type(parent_accountant).subsampling_accountant()
-    ChildAccountantType = type(parent_accountant)
-    subsampling_accountant = SubsamplingAccountantType(sampling_rate=q, parent=parent_accountant)
-    child_accountant = ChildAccountantType(parent=subsampling_accountant)
+    child_accountant = parent_accountant.create_subsampling_accountant(q)
 
     sig = new_axis_signature()
     results: list[PrivNDArray] = []

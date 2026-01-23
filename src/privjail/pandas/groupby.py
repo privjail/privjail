@@ -77,10 +77,8 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
             n_children = math.prod(len(ks) for ks in self._by_objs)
             assert len(self) == n_children
 
-            accountant_type = type(self._df.accountant)
-            parallel_accountant = accountant_type.parallel_accountant()(parent=self._df.accountant)
-
-            self._child_accountants = {o: accountant_type(parent=parallel_accountant) for o in itertools.product(*self._by_objs)}
+            child_accountants = self._df.accountant.create_parallel_accountants(n_children)
+            self._child_accountants = {o: acc for o, acc in zip(itertools.product(*self._by_objs), child_accountants)}
 
         return self._child_accountants
 

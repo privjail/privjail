@@ -58,20 +58,16 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
         else:
             raise Exception
 
-    @staticmethod
-    def compose(budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> zCDPBudgetType:
+    def compose(self, budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> zCDPBudgetType:
         return budget1 + budget2
 
-    @staticmethod
-    def zero() -> zCDPBudgetType:
+    def zero(self) -> zCDPBudgetType:
         return 0.0
 
-    @staticmethod
-    def exceeds(budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> bool:
+    def exceeds(self, budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> bool:
         return budget1 > budget2
 
-    @staticmethod
-    def assert_budget(budget: zCDPBudgetType) -> None:
+    def assert_budget(self, budget: zCDPBudgetType) -> None:
         assert budget >= 0
 
     @classmethod
@@ -80,7 +76,7 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
             return None
         elif isinstance(budget, (int, float)):
             normalized = float(budget)
-            cls.assert_budget(normalized)
+            assert normalized >= 0
             return normalized
         else:
             raise TypeError("zCDP accountant budget must be a single float value.")
@@ -104,20 +100,16 @@ class zCDPParallelAccountant(ParallelAccountant[zCDPBudgetType]):
         else:
             raise Exception
 
-    @staticmethod
-    def compose(budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> zCDPBudgetType:
+    def compose(self, budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> zCDPBudgetType:
         return max(budget1, budget2)
 
-    @staticmethod
-    def zero() -> zCDPBudgetType:
+    def zero(self) -> zCDPBudgetType:
         return 0.0
 
-    @staticmethod
-    def exceeds(budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> bool:
+    def exceeds(self, budget1: zCDPBudgetType, budget2: zCDPBudgetType) -> bool:
         return budget1 > budget2
 
-    @staticmethod
-    def assert_budget(budget: zCDPBudgetType) -> None:
+    def assert_budget(self, budget: zCDPBudgetType) -> None:
         assert budget >= 0
 
     @classmethod

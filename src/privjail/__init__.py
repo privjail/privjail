@@ -14,8 +14,8 @@
 
 from . import pandas
 from .util import DPError
-from .accountants import Accountant, PureAccountant, ApproxAccountant, zCDPAccountant, AccountantState, accountant_state, budgets_spent
-from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as max, _min as min, pureDP, approxDP, zCDP, create_accountant
+from .accountants import Accountant, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, AccountantState, accountant_state, budgets_spent
+from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as max, _min as min, pureDP, approxDP, zCDP, RDP, create_accountant
 from .array_base import SensitiveDimInt
 from .realexpr import RealExpr
 from .mechanism import laplace_mechanism, gaussian_mechanism, exponential_mechanism, argmax, argmin
@@ -29,6 +29,7 @@ __all__ = [
     "PureAccountant",
     "ApproxAccountant",
     "zCDPAccountant",
+    "RDPAccountant",
     "AccountantState",
     "accountant_state",
     "budgets_spent",
@@ -42,6 +43,7 @@ __all__ = [
     "pureDP",
     "approxDP",
     "zCDP",
+    "RDP",
     "create_accountant",
     "laplace_mechanism",
     "gaussian_mechanism",

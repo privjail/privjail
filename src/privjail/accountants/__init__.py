@@ -17,6 +17,7 @@ from .dummy import DummyAccountant, DummyParallelAccountant
 from .pure import PureAccountant, PureParallelAccountant, PureBudgetType
 from .approx import ApproxAccountant, ApproxParallelAccountant, ApproxBudgetType
 from .zcdp import zCDPAccountant, zCDPParallelAccountant, zCDPBudgetType
+from .rdp import RDPAccountant, RDPParallelAccountant, RDPBudgetType
 from .state import BudgetType, AccountantState, accountant_state, budgets_spent
 
 __all__ = [
@@ -32,10 +33,13 @@ __all__ = [
     "ApproxParallelAccountant",
     "zCDPAccountant",
     "zCDPParallelAccountant",
+    "RDPAccountant",
+    "RDPParallelAccountant",
     "get_lsca_of_same_family",
     "PureBudgetType",
     "ApproxBudgetType",
     "zCDPBudgetType",
+    "RDPBudgetType",
     "BudgetType",
     "AccountantState",
     "accountant_state",

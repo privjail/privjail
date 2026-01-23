@@ -20,7 +20,7 @@ import pandas as _pd
 import numpy.typing as _npt
 
 from .util import DPError, floating, realnum
-from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant
+from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
@@ -99,6 +99,15 @@ def sigma_from_rho(sensitivity: float, rho: float) -> float:
 def rho_from_sigma(sensitivity: float, sigma: float) -> float:
     return sensitivity * sensitivity / (2.0 * sigma * sigma)
 
+def rdp_eps_from_sigma(sensitivity: float, sigma: float, alpha: float) -> float:
+    # Rényi Differential Privacy
+    # https://arxiv.org/pdf/1702.07476
+    # Example 1: Gaussian mechanism satisfies (α, αΔ²/(2σ²))-RDP
+    return alpha * sensitivity * sensitivity / (2.0 * sigma * sigma)
+
+def sigma_from_rdp_eps(sensitivity: float, eps: float, alpha: float) -> float:
+    return sensitivity * math.sqrt(alpha / (2.0 * eps))
+
 def resolve_gaussian_params_approx(sensitivity : float,
                                    *,
                                    eps         : float | None = None,
@@ -154,6 +163,18 @@ def resolve_gaussian_params_zcdp(sensitivity : float,
 
     else:
         raise Exception
+
+def resolve_gaussian_params_rdp(sensitivity : float,
+                                alpha       : list[float],
+                                *,
+                                scale       : float | None = None,
+                                ) -> tuple[RDPBudgetType, float]:
+    if scale is None:
+        raise ValueError("scale must be specified when using the Gaussian mechanism under RDP.")
+
+    assert_gaussian_scale(scale)
+    budget = {a: rdp_eps_from_sigma(sensitivity, scale, a) for a in alpha}
+    return budget, scale
 
 @overload
 def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
@@ -387,6 +408,10 @@ def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
         resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
         budget = resolved_rho
 
+    elif isinstance(prisoner.accountant, RDPAccountant):
+        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, prisoner.accountant.alpha, scale=scale)
+        budget = rdp_budget
+
     else:
         raise RuntimeError
 
@@ -484,6 +509,30 @@ def _(prisoner : SensitiveSeries[realnum],
             resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = resolved_rho
+
+    elif isinstance(prisoner.accountant, RDPAccountant):
+        alpha = prisoner.accountant.alpha
+
+        if prisoner._distance_group_axes == (0,):
+            assert isinstance(prisoner._partitioned_distances, list)
+
+            assert scale is not None
+            assert_gaussian_scale(scale)
+            total_budget: RDPBudgetType = {a: 0.0 for a in alpha}
+            for distance in prisoner._partitioned_distances:
+                sensitivity = float(distance.max())
+                assert_sensitivity(sensitivity)
+                elem_budget, _ = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
+                for a in alpha:
+                    total_budget[a] += elem_budget[a]
+            data = _np.random.normal(loc=prisoner._value, scale=scale)
+            budget = total_budget
+
+        else:
+            sensitivity = float(prisoner.distance.max())
+            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
+            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
+            budget = rdp_budget
 
     else:
         raise RuntimeError
@@ -584,6 +633,30 @@ def _(prisoner : SensitiveDataFrame,
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = resolved_rho
 
+    elif isinstance(prisoner.accountant, RDPAccountant):
+        alpha = prisoner.accountant.alpha
+
+        if prisoner._distance_group_axes == (1,):
+            assert isinstance(prisoner._partitioned_distances, list)
+
+            assert scale is not None
+            assert_gaussian_scale(scale)
+            total_budget: RDPBudgetType = {a: 0.0 for a in alpha}
+            for distance in prisoner._partitioned_distances:
+                sensitivity = float(distance.max())
+                assert_sensitivity(sensitivity)
+                elem_budget, _ = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
+                for a in alpha:
+                    total_budget[a] += elem_budget[a]
+            data = _np.random.normal(loc=prisoner._value, scale=scale)
+            budget = total_budget
+
+        else:
+            sensitivity = float(prisoner.distance.max())
+            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
+            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
+            budget = rdp_budget
+
     else:
         raise RuntimeError
 
@@ -615,6 +688,10 @@ def _(prisoner : SensitiveNDArray,
     elif isinstance(prisoner.accountant, zCDPAccountant):
         resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
         budget = resolved_rho
+
+    elif isinstance(prisoner.accountant, RDPAccountant):
+        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, prisoner.accountant.alpha, scale=scale)
+        budget = rdp_budget
 
     else:
         raise RuntimeError

@@ -40,18 +40,15 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
         eps2, delta2 = budget2
         return (eps1 + eps2, delta1 + delta2)
 
-    @staticmethod
-    def zero() -> ApproxBudgetType:
+    def zero(self) -> ApproxBudgetType:
         return (0.0, 0.0)
 
-    @staticmethod
-    def exceeds(budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
+    def exceeds(self, budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
         eps1, delta1 = budget1
         eps2, delta2 = budget2
         return eps1 > eps2 or delta1 > delta2
 
-    @staticmethod
-    def assert_budget(budget: ApproxBudgetType) -> None:
+    def assert_budget(self, budget: ApproxBudgetType) -> None:
         eps, delta = budget
         assert eps >= 0 and delta >= 0
 
@@ -62,7 +59,7 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
         elif isinstance(budget, tuple) and len(budget) == 2:
             eps, delta = budget
             normalized = (float(eps), float(delta))
-            cls.assert_budget(normalized)
+            assert normalized[0] >= 0 and normalized[1] >= 0
             return normalized
         else:
             raise TypeError("Approx accountant budget must be a tuple of two float values.")
@@ -93,18 +90,15 @@ class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
         eps2, delta2 = budget2
         return (max(eps1, eps2), max(delta1, delta2))
 
-    @staticmethod
-    def zero() -> ApproxBudgetType:
+    def zero(self) -> ApproxBudgetType:
         return (0.0, 0.0)
 
-    @staticmethod
-    def exceeds(budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
+    def exceeds(self, budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
         eps1, delta1 = budget1
         eps2, delta2 = budget2
         return eps1 > eps2 or delta1 > delta2
 
-    @staticmethod
-    def assert_budget(budget: ApproxBudgetType) -> None:
+    def assert_budget(self, budget: ApproxBudgetType) -> None:
         eps, delta = budget
         assert eps >= 0 and delta >= 0
 
@@ -133,18 +127,15 @@ class ApproxSubsamplingAccountant(SubsamplingAccountant[ApproxBudgetType]):
         assert budget1[0] <= amp_eps and budget1[1] <= amp_delta
         return (amp_eps, amp_delta)
 
-    @staticmethod
-    def zero() -> ApproxBudgetType:
+    def zero(self) -> ApproxBudgetType:
         return (0.0, 0.0)
 
-    @staticmethod
-    def exceeds(budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
+    def exceeds(self, budget1: ApproxBudgetType, budget2: ApproxBudgetType) -> bool:
         eps1, delta1 = budget1
         eps2, delta2 = budget2
         return eps1 > eps2 or delta1 > delta2
 
-    @staticmethod
-    def assert_budget(budget: ApproxBudgetType) -> None:
+    def assert_budget(self, budget: ApproxBudgetType) -> None:
         eps, delta = budget
         assert eps >= 0 and delta >= 0
 

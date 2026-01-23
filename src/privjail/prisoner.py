@@ -20,7 +20,7 @@ import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating, DPError
 from .realexpr import RealExpr, _max as dmax
-from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, get_lsca_of_same_family, BudgetType, PureBudgetType, ApproxBudgetType, zCDPBudgetType, AccountingGroup
+from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, get_lsca_of_same_family, BudgetType, PureBudgetType, ApproxBudgetType, zCDPBudgetType, RDPBudgetType, AccountingGroup
 from . import egrpc
 
 T = TypeVar("T")
@@ -399,8 +399,9 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 def create_accountant(accountant_type : str,
                       *,
                       parent          : Accountant[Any],
-                      budget_limit    : BudgetType | None = None,
-                      delta           : float | None      = None,
+                      budget_limit    : BudgetType | None      = None,
+                      delta           : float | None           = None,
+                      alpha           : Sequence[float] | None = None,
                       ) -> Accountant[Any]:
     accountant_type_lower = accountant_type.lower()
     if accountant_type_lower == "pure":
@@ -412,16 +413,21 @@ def create_accountant(accountant_type : str,
     elif accountant_type_lower == "zcdp":
         assert budget_limit is None or isinstance(budget_limit, (int, float))
         return zCDPAccountant(budget_limit=budget_limit, parent=parent, delta=delta)
+    elif accountant_type_lower == "rdp":
+        assert budget_limit is None or isinstance(budget_limit, dict)
+        assert alpha is not None
+        return RDPAccountant(alpha=alpha, budget_limit=budget_limit, parent=parent, delta=delta)
     else:
-        raise ValueError(f"Unknown DP type: {accountant_type}. Expected 'pure', 'approx', or 'zcdp'.")
+        raise ValueError(f"Unknown DP type: {accountant_type}. Expected 'pure', 'approx', 'zcdp', or 'rdp'.")
 
 P = TypeVar("P", bound=Prisoner[Any])
 
 @contextlib.contextmanager
 def _dp_context(prisoners       : P | Sequence[P],
                 accountant_type : str,
-                budget_limit    : BudgetType | None = None,
-                delta           : float | None      = None,
+                budget_limit    : BudgetType | None      = None,
+                delta           : float | None           = None,
+                alpha           : Sequence[float] | None = None,
                 ) -> Iterator[P | Sequence[P]]:
     if isinstance(prisoners, Prisoner):
         prisoner_list: list[P] = [prisoners]  # type: ignore[list-item]
@@ -438,7 +444,7 @@ def _dp_context(prisoners       : P | Sequence[P],
             raise DPError("All prisoners must have the same accountant")
 
     old_accountants = [p.accountant for p in prisoner_list]
-    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, delta=delta)
+    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, delta=delta, alpha=alpha)
 
     for p in prisoner_list:
         p.set_accountant(new_accountant)
@@ -461,4 +467,9 @@ def approxDP(prisoners: P | Sequence[P], budget_limit: ApproxBudgetType | None =
 @contextlib.contextmanager
 def zCDP(prisoners: P | Sequence[P], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Iterator[P | Sequence[P]]:
     with _dp_context(prisoners, "zcdp", budget_limit, delta) as ctx:
+        yield ctx
+
+@contextlib.contextmanager
+def RDP(prisoners: P | Sequence[P], alpha: Sequence[float], budget_limit: RDPBudgetType | None = None, delta: float | None = None) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "rdp", budget_limit, delta, alpha) as ctx:
         yield ctx

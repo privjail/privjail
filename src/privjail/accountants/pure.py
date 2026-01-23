@@ -42,16 +42,13 @@ class PureAccountant(Accountant[PureBudgetType]):
     def compose(self, budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
         return budget1 + budget2
 
-    @staticmethod
-    def zero() -> PureBudgetType:
+    def zero(self) -> PureBudgetType:
         return 0.0
 
-    @staticmethod
-    def exceeds(budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
+    def exceeds(self, budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
         return budget1 > budget2
 
-    @staticmethod
-    def assert_budget(budget: PureBudgetType) -> None:
+    def assert_budget(self, budget: PureBudgetType) -> None:
         assert budget >= 0
 
     @classmethod
@@ -60,7 +57,7 @@ class PureAccountant(Accountant[PureBudgetType]):
             return None
         elif isinstance(budget, (int, float)):
             normalized = float(budget)
-            cls.assert_budget(normalized)
+            assert normalized >= 0
             return normalized
         else:
             raise TypeError("Pure accountant budget must be a single float value.")
@@ -87,16 +84,13 @@ class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
     def compose(self, budget1: PureBudgetType, budget2: PureBudgetType) -> PureBudgetType:
         return max(budget1, budget2)
 
-    @staticmethod
-    def zero() -> PureBudgetType:
+    def zero(self) -> PureBudgetType:
         return 0.0
 
-    @staticmethod
-    def exceeds(budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
+    def exceeds(self, budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
         return budget1 > budget2
 
-    @staticmethod
-    def assert_budget(budget: PureBudgetType) -> None:
+    def assert_budget(self, budget: PureBudgetType) -> None:
         assert budget >= 0
 
     @classmethod
@@ -120,16 +114,13 @@ class PureSubsamplingAccountant(SubsamplingAccountant[PureBudgetType]):
         assert budget1 <= amp
         return amp
 
-    @staticmethod
-    def zero() -> PureBudgetType:
+    def zero(self) -> PureBudgetType:
         return 0.0
 
-    @staticmethod
-    def exceeds(budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
+    def exceeds(self, budget1: PureBudgetType, budget2: PureBudgetType) -> bool:
         return budget1 > budget2
 
-    @staticmethod
-    def assert_budget(budget: PureBudgetType) -> None:
+    def assert_budget(self, budget: PureBudgetType) -> None:
         assert budget >= 0
 
     @classmethod

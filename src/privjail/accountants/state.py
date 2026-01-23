@@ -19,9 +19,10 @@ from .util import Accountant
 from .pure import PureBudgetType
 from .approx import ApproxBudgetType
 from .zcdp import zCDPBudgetType
+from .rdp import RDPBudgetType
 from .. import egrpc
 
-BudgetType = PureBudgetType | ApproxBudgetType | zCDPBudgetType
+BudgetType = PureBudgetType | ApproxBudgetType | zCDPBudgetType | RDPBudgetType
 
 @egrpc.dataclass
 class AccountantState:

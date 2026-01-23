@@ -194,3 +194,96 @@ def test_zCDP_accountant() -> None:
 
     with pytest.raises(Exception):
         a_zcdp.spend(-1.0)
+
+def test_rdp_accountant() -> None:
+    delta = 1e-6
+    alpha = [2.0, 4.0, 8.0, 16.0]
+
+    a0 = ApproxAccountant(budget_limit=(10.0, delta))
+    a0.set_as_root(name=str(uuid.uuid4()))
+
+    assert a0.budget_spent() == (0, 0)
+
+    # should raise error without delta
+    with pytest.raises(Exception):
+        RDPAccountant(alpha=alpha, parent=a0)
+
+    a_rdp = RDPAccountant(alpha=alpha, parent=a0, delta=delta)
+
+    assert a_rdp.budget_spent() == {alpha: 0.0 for alpha in alpha}
+    assert a_rdp.alpha == alpha
+
+    # After creating RDPAccountant, delta should be spent
+    assert a0.budget_spent() == pytest.approx((0, delta))
+
+    # RDP to (ε,δ)-DP conversion (Mironov 2017, Proposition 3)
+    def rdp_to_eps(rdp_budget: dict[float, float], delta: float) -> float:
+        return min(eps + math.log(1 / delta) / (alpha - 1)
+                   for alpha, eps in rdp_budget.items())
+
+    # Spend budget with eps for each alpha
+    budget1 = {alpha: 0.1 for alpha in alpha}
+    a_rdp.spend(budget1)
+
+    assert a_rdp.budget_spent() == budget1
+    expected_eps = rdp_to_eps(budget1, delta)
+    assert a0.budget_spent()[0] == pytest.approx(expected_eps)
+    assert a0.budget_spent()[1] == pytest.approx(delta)
+
+    # Spend more budget
+    budget2 = {alpha: 0.05 for alpha in alpha}
+    a_rdp.spend(budget2)
+
+    combined = {alpha: 0.15 for alpha in alpha}
+    assert a_rdp.budget_spent() == pytest.approx(combined)
+    expected_eps = rdp_to_eps(combined, delta)
+    assert a0.budget_spent()[0] == pytest.approx(expected_eps)
+
+    # Parallel composition
+    a_rdp_p = RDPParallelAccountant(parent=a_rdp)
+    a_rdp_p1 = RDPAccountant(alpha=alpha, parent=a_rdp_p)
+    a_rdp_p2 = RDPAccountant(alpha=alpha, parent=a_rdp_p)
+
+    budget3 = {alpha: 0.02 for alpha in alpha}
+    a_rdp_p1.spend(budget3)
+    a_rdp_p2.spend(budget3)
+
+    assert a_rdp_p1.budget_spent() == pytest.approx(budget3)
+    assert a_rdp_p2.budget_spent() == pytest.approx(budget3)
+    # Parallel composition takes max, so a_rdp should have 0.15 + 0.02 = 0.17
+    expected_rdp = {alpha: 0.17 for alpha in alpha}
+    assert a_rdp.budget_spent() == pytest.approx(expected_rdp)
+
+    # One branch spends more
+    budget4 = {alpha: 0.03 for alpha in alpha}
+    a_rdp_p1.spend(budget4)
+
+    assert a_rdp_p1.budget_spent() == pytest.approx({alpha: 0.05 for alpha in alpha})
+    assert a_rdp_p2.budget_spent() == pytest.approx(budget3)
+    # Parallel: max(0.05, 0.02) = 0.05, so a_rdp should have 0.15 + 0.05 = 0.20
+    expected_rdp = {alpha: 0.20 for alpha in alpha}
+    assert a_rdp.budget_spent() == pytest.approx(expected_rdp)
+
+    # Budget limit exceeded
+    a0_new = ApproxAccountant(budget_limit=(10.0, 1e-3))
+    a0_new.set_as_root(name=str(uuid.uuid4()))
+    a_rdp_limited = RDPAccountant(
+        alpha=alpha,
+        budget_limit={alpha: 0.1 for alpha in alpha},
+        parent=a0_new,
+        delta=delta,
+    )
+    a_rdp_limited.spend({alpha: 0.05 for alpha in alpha})
+    with pytest.raises(BudgetExceededError):
+        a_rdp_limited.spend({alpha: 0.1 for alpha in alpha})
+
+    # Invalid alpha (must be > 1)
+    with pytest.raises(ValueError):
+        RDPAccountant(alpha=[0.5, 2.0], parent=a0, delta=delta)
+
+    with pytest.raises(ValueError):
+        RDPAccountant(alpha=[1.0, 2.0], parent=a0, delta=delta)
+
+    # Empty alpha should raise error
+    with pytest.raises(ValueError):
+        RDPAccountant(alpha=[], parent=a0, delta=delta)

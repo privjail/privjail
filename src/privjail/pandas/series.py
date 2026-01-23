@@ -683,13 +683,11 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         assert self._distance_group_axes is None
 
         if self._distributed_ser is None:
-            accountant_type = type(self.accountant)
-            parallel_accountant = accountant_type.parallel_accountant()(parent=self.accountant)
-
             distances = self._ensure_partitioned_distances()
 
-            data = [self._wrap_sensitive_value(v, distance=d, parents=[self], accountant=accountant_type(parent=parallel_accountant))
-                    for v, d in zip(self._value, distances)]
+            child_accountants = self.accountant.create_parallel_accountants(len(distances))
+            data = [self._wrap_sensitive_value(v, distance=d, parents=[self], accountant=child_accountant)
+                    for v, d, child_accountant in zip(self._value, distances, child_accountants)]
 
             self._distributed_ser = _pd.Series(data, index=self.index, name=self.name)
 

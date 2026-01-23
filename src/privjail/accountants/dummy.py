@@ -32,20 +32,16 @@ class DummyAccountant(Accountant[None]):
     def propagate(self, next_budget_spent: None, parent: Accountant[Any]) -> None:
         pass
 
-    @staticmethod
-    def compose(budget1: None, budget2: None) -> None:
+    def compose(self, budget1: None, budget2: None) -> None:
         return None
 
-    @staticmethod
-    def zero() -> None:
+    def zero(self) -> None:
         return None
 
-    @staticmethod
-    def exceeds(budget1: None, budget2: None) -> bool:
+    def exceeds(self, budget1: None, budget2: None) -> bool:
         return False
 
-    @staticmethod
-    def assert_budget(budget: None) -> None:
+    def assert_budget(self, budget: None) -> None:
         pass
 
     @classmethod
@@ -71,22 +67,18 @@ class DummyParallelAccountant(ParallelAccountant[None]):
     def propagate(self, next_budget_spent: None, parent: Accountant[Any]) -> None:
         pass
 
-    @staticmethod
-    def compose(budget1: None, budget2: None) -> None:
+    def compose(self, budget1: None, budget2: None) -> None:
         return None
 
-    @staticmethod
-    def zero() -> None:
+    def zero(self) -> None:
         return None
 
-    @staticmethod
-    def exceeds(budget1: None, budget2: None) -> bool:
+    def exceeds(self, budget1: None, budget2: None) -> bool:
         return False
 
     @classmethod
     def normalize_budget(cls, budget: Any) -> None:
         return None
 
-    @staticmethod
-    def assert_budget(budget: None) -> None:
+    def assert_budget(self, budget: None) -> None:
         pass

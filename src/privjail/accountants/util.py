@@ -72,10 +72,10 @@ class Accountant(ABC, Generic[T]):
                  register         : bool                   = True,
                  ):
         if budget_limit is not None:
-            type(self).assert_budget(budget_limit)
+            self.assert_budget(budget_limit)
 
         self._budget_limit     = budget_limit
-        self._budget_spent     = type(self).zero()
+        self._budget_spent     = self.zero()
         self._parent           = parent
         self._root_name        = parent._root_name if parent is not None else ""
         self._depth            = parent._depth + 1 if parent is not None else 0
@@ -113,17 +113,34 @@ class Accountant(ABC, Generic[T]):
         return self._parent
 
     def spend(self, budget: T) -> None:
-        type(self).assert_budget(budget)
+        self.assert_budget(budget)
 
         next_budget_spent = self.compose(self._budget_spent, budget)
 
-        if self._budget_limit is not None and type(self).exceeds(next_budget_spent, self._budget_limit):
+        if self._budget_limit is not None and self.exceeds(next_budget_spent, self._budget_limit):
             raise BudgetExceededError()
 
         if self._parent is not None:
             self.propagate(next_budget_spent, self._parent)
 
         self._budget_spent = next_budget_spent
+
+    def create_parallel_accountants(self, n_children: int) -> list[Accountant[Any]]:
+        if n_children < 0:
+            raise ValueError("n_children must be non-negative")
+        if n_children == 0:
+            return []
+
+        parallel_accountant_type = type(self).parallel_accountant()
+        parallel_accountant = parallel_accountant_type(parent=self)
+        child_type = type(self)
+        return [child_type(parent=parallel_accountant) for _ in range(n_children)]
+
+    def create_subsampling_accountant(self, sampling_rate: float) -> Accountant[Any]:
+        subsampling_accountant_type = type(self).subsampling_accountant()
+        subsampling_accountant = subsampling_accountant_type(sampling_rate=sampling_rate, parent=self)
+        child_type = type(self)
+        return child_type(parent=subsampling_accountant)
 
     @staticmethod
     @abstractmethod
@@ -138,19 +155,16 @@ class Accountant(ABC, Generic[T]):
     def compose(self, budget1: T, budget2: T) -> T:
         ...
 
-    @staticmethod
     @abstractmethod
-    def zero() -> T:
+    def zero(self) -> T:
         ...
 
-    @staticmethod
     @abstractmethod
-    def exceeds(budget1: T, budget2: T) -> bool:
+    def exceeds(self, budget1: T, budget2: T) -> bool:
         ...
 
-    @staticmethod
     @abstractmethod
-    def assert_budget(budget: T) -> None:
+    def assert_budget(self, budget: T) -> None:
         ...
 
     @classmethod
