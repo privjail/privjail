@@ -399,10 +399,11 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
 def create_accountant(accountant_type : str,
                       *,
                       parent          : Accountant[Any],
-                      budget_limit    : BudgetType | None      = None,
-                      delta           : float | None           = None,
-                      alpha           : Sequence[float] | None = None,
+                      budget_limit    : BudgetType | None        = None,
+                      delta           : realnum | None           = None,
+                      alpha           : Sequence[realnum] | None = None,
                       ) -> Accountant[Any]:
+    delta_float = float(delta) if delta is not None else None
     accountant_type_lower = accountant_type.lower()
     if accountant_type_lower == "pure":
         assert budget_limit is None or isinstance(budget_limit, (int, float))
@@ -412,11 +413,12 @@ def create_accountant(accountant_type : str,
         return ApproxAccountant(budget_limit=budget_limit, parent=parent)
     elif accountant_type_lower == "zcdp":
         assert budget_limit is None or isinstance(budget_limit, (int, float))
-        return zCDPAccountant(budget_limit=budget_limit, parent=parent, delta=delta)
+        return zCDPAccountant(budget_limit=budget_limit, parent=parent, delta=delta_float)
     elif accountant_type_lower == "rdp":
         assert budget_limit is None or isinstance(budget_limit, dict)
         assert alpha is not None
-        return RDPAccountant(alpha=alpha, budget_limit=budget_limit, parent=parent, delta=delta)
+        alpha_float = [float(a) for a in alpha]
+        return RDPAccountant(alpha=alpha_float, budget_limit=budget_limit, parent=parent, delta=delta_float)
     else:
         raise ValueError(f"Unknown DP type: {accountant_type}. Expected 'pure', 'approx', 'zcdp', or 'rdp'.")
 
@@ -425,9 +427,9 @@ P = TypeVar("P", bound=Prisoner[Any])
 @contextlib.contextmanager
 def _dp_context(prisoners       : P | Sequence[P],
                 accountant_type : str,
-                budget_limit    : BudgetType | None      = None,
-                delta           : float | None           = None,
-                alpha           : Sequence[float] | None = None,
+                budget_limit    : BudgetType | None        = None,
+                delta           : realnum | None           = None,
+                alpha           : Sequence[realnum] | None = None,
                 ) -> Iterator[P | Sequence[P]]:
     if isinstance(prisoners, Prisoner):
         prisoner_list: list[P] = [prisoners]  # type: ignore[list-item]
@@ -465,11 +467,11 @@ def approxDP(prisoners: P | Sequence[P], budget_limit: ApproxBudgetType | None =
         yield ctx
 
 @contextlib.contextmanager
-def zCDP(prisoners: P | Sequence[P], budget_limit: zCDPBudgetType | None = None, delta: float | None = None) -> Iterator[P | Sequence[P]]:
+def zCDP(prisoners: P | Sequence[P], budget_limit: zCDPBudgetType | None = None, delta: realnum | None = None) -> Iterator[P | Sequence[P]]:
     with _dp_context(prisoners, "zcdp", budget_limit, delta) as ctx:
         yield ctx
 
 @contextlib.contextmanager
-def RDP(prisoners: P | Sequence[P], alpha: Sequence[float], budget_limit: RDPBudgetType | None = None, delta: float | None = None) -> Iterator[P | Sequence[P]]:
+def RDP(prisoners: P | Sequence[P], alpha: Sequence[realnum], budget_limit: RDPBudgetType | None = None, delta: realnum | None = None) -> Iterator[P | Sequence[P]]:
     with _dp_context(prisoners, "rdp", budget_limit, delta, alpha) as ctx:
         yield ctx
