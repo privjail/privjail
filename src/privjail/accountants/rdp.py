@@ -19,6 +19,7 @@ import math
 from .util import Accountant, ParallelAccountant, SubsamplingAccountant
 from .approx import ApproxAccountant
 from .. import egrpc
+from ..util import DPError
 
 # Budget type: {alpha: epsilon} mapping
 RDPBudgetType = dict[float, float]
@@ -40,16 +41,16 @@ class RDPAccountant(Accountant[RDPBudgetType]):
 
     def __init__(self,
                  *,
-                 alpha        : Sequence[float] | None,
+                 alpha        : Sequence[float] | None = None,
                  budget_limit : RDPBudgetType | None   = None,
                  parent       : Accountant[Any] | None = None,
                  delta        : float | None           = None,
                  ):
         if alpha is None:
-            if isinstance(parent, (RDPAccountant, RDPParallelAccountant)):
+            if isinstance(parent, (RDPAccountant, RDPParallelAccountant, RDPSubsamplingAccountant)):
                 self._alpha = parent._alpha
             else:
-                raise ValueError("alpha must be specified when parent is not RDPAccountant/RDPParallelAccountant")
+                raise ValueError("alpha must be specified when parent is not RDPAccountant/RDPParallelAccountant/RDPSubsamplingAccountant")
         else:
             if len(alpha) == 0:
                 raise ValueError("alpha must not be empty")
@@ -83,6 +84,8 @@ class RDPAccountant(Accountant[RDPBudgetType]):
 
     def propagate(self, next_budget_spent: RDPBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, RDPParallelAccountant):
+            parent.spend(next_budget_spent)
+        elif isinstance(parent, RDPSubsamplingAccountant):
             parent.spend(next_budget_spent)
         elif isinstance(parent, ApproxAccountant):
             prev_eps = rdp_to_approx_eps(self._budget_spent, self._delta)
@@ -126,7 +129,7 @@ class RDPAccountant(Accountant[RDPBudgetType]):
 
     @staticmethod
     def subsampling_accountant() -> type[SubsamplingAccountant[RDPBudgetType]]:
-        raise NotImplementedError
+        return RDPSubsamplingAccountant
 
 class RDPParallelAccountant(ParallelAccountant[RDPBudgetType]):
     _alpha: list[float]
@@ -166,6 +169,78 @@ class RDPParallelAccountant(ParallelAccountant[RDPBudgetType]):
     def compose(self, budget1: RDPBudgetType, budget2: RDPBudgetType) -> RDPBudgetType:
         # Parallel composition: take max for each alpha
         return {a: max(budget1[a], budget2[a]) for a in self._alpha}
+
+    def zero(self) -> RDPBudgetType:
+        return {a: 0.0 for a in self._alpha}
+
+    def exceeds(self, budget1: RDPBudgetType, budget2: RDPBudgetType) -> bool:
+        return any(budget1[a] > budget2[a] for a in self._alpha)
+
+    def assert_budget(self, budget: RDPBudgetType) -> None:
+        assert set(budget.keys()) == set(self._alpha)
+        for eps in budget.values():
+            assert eps >= 0
+
+    @classmethod
+    def normalize_budget(cls, budget: Any) -> RDPBudgetType | None:
+        return RDPAccountant.normalize_budget(budget)
+
+class RDPSubsamplingAccountant(SubsamplingAccountant[RDPBudgetType]):
+    """Subsampling accountant for RDP with Gaussian mechanism.
+
+    This accountant enforces single-use: only one spend() call is allowed,
+    because the subsampled Gaussian RDP formula assumes one mechanism
+    application per subsampling operation.
+
+    The budget passed to spend() should already be the subsampled RDP budget
+    (computed by the mechanism using the Mironov formula).
+    """
+    _alpha : list[float]
+    _used  : bool
+
+    def __init__(self,
+                 *,
+                 alpha         : Sequence[float] | None = None,
+                 sampling_rate : float,
+                 budget_limit  : RDPBudgetType | None   = None,
+                 parent        : Accountant[Any] | None = None,
+                 ):
+        if alpha is not None:
+            if len(set(alpha)) != len(alpha):
+                raise ValueError("alpha must be unique")
+            self._alpha = list(alpha)
+        elif isinstance(parent, RDPAccountant):
+            self._alpha = parent._alpha
+        elif isinstance(parent, RDPParallelAccountant):
+            self._alpha = parent._alpha
+        else:
+            raise ValueError("alpha must be specified or parent must be RDPAccountant/RDPParallelAccountant")
+
+        self._used = False
+        super().__init__(sampling_rate=sampling_rate, budget_limit=budget_limit, parent=parent)
+
+    @staticmethod
+    def family_name() -> str:
+        return "RDP"
+
+    def spend(self, budget: RDPBudgetType) -> None:
+        if self._used:
+            raise DPError(
+                "RDPSubsamplingAccountant can only be used once. "
+                "Subsampled Gaussian RDP assumes one mechanism application per subsampling."
+            )
+        self._used = True
+        super().spend(budget)
+
+    def propagate(self, next_budget_spent: RDPBudgetType, parent: Accountant[Any]) -> None:
+        if isinstance(parent, RDPAccountant):
+            parent.spend(next_budget_spent)
+        else:
+            raise Exception
+
+    def compose(self, budget1: RDPBudgetType, budget2: RDPBudgetType) -> RDPBudgetType:
+        del budget1
+        return budget2
 
     def zero(self) -> RDPBudgetType:
         return {a: 0.0 for a in self._alpha}

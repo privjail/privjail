@@ -107,6 +107,10 @@ class Accountant(ABC, Generic[T]):
     def accounting_group(self) -> AccountingGroup | None:
         return self._accounting_group
 
+    @egrpc.property
+    def parent(self) -> Accountant[Any] | None:
+        return self._parent
+
     def get_parent(self) -> Accountant[Any]:
         if self._parent is None:
             raise RuntimeError

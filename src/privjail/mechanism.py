@@ -20,7 +20,7 @@ import pandas as _pd
 import numpy.typing as _npt
 
 from .util import DPError, floating, realnum
-from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType
+from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType, RDPSubsamplingAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
@@ -105,8 +105,34 @@ def rdp_eps_from_sigma(sensitivity: float, sigma: float, alpha: float) -> float:
     # Example 1: Gaussian mechanism satisfies (α, αΔ²/(2σ²))-RDP
     return alpha * sensitivity * sensitivity / (2.0 * sigma * sigma)
 
-def sigma_from_rdp_eps(sensitivity: float, eps: float, alpha: float) -> float:
-    return sensitivity * math.sqrt(alpha / (2.0 * eps))
+def subsampled_rdp_eps_from_sigma(sensitivity   : float,
+                                  sigma         : float,
+                                  alpha         : float,
+                                  sampling_rate : float,
+                                  ) -> float:
+    if sampling_rate <= 0 or sampling_rate > 1:
+        raise ValueError("sampling_rate must be in (0, 1]")
+
+    if not float(alpha).is_integer() or alpha < 2:
+        raise ValueError("alpha must be an integer >= 2 for subsampled RDP")
+
+    if sampling_rate == 1.0:
+        return rdp_eps_from_sigma(sensitivity, sigma, alpha)
+
+    # Rényi Differential Privacy of the Sampled Gaussian Mechanism
+    # https://arxiv.org/abs/1908.10530
+    # Theorem 9: A_α = Σ_{k=0}^{α} C(α,k) (1-q)^{α-k} q^k exp((k²-k) Δ²/(2σ²))
+    # ε(α) = log(A_α) / (α-1)
+    alpha_int = int(alpha)
+    q = sampling_rate
+    c = (sensitivity ** 2) / (2.0 * sigma ** 2)
+
+    k = _np.arange(alpha_int + 1, dtype=float)
+    log_binom = _np.array([math.lgamma(alpha_int + 1) - math.lgamma(ki + 1) - math.lgamma(alpha_int - ki + 1) for ki in k])
+    log_terms = log_binom + (alpha_int - k) * _np.log(1 - q) + k * _np.log(q) + (k * k - k) * c
+    log_a: float = _np.logaddexp.reduce(log_terms)
+
+    return log_a / (alpha - 1)
 
 def resolve_gaussian_params_approx(sensitivity : float,
                                    *,
@@ -164,16 +190,22 @@ def resolve_gaussian_params_zcdp(sensitivity : float,
     else:
         raise Exception
 
-def resolve_gaussian_params_rdp(sensitivity : float,
-                                alpha       : list[float],
+def resolve_gaussian_params_rdp(sensitivity   : float,
+                                alpha         : list[float],
                                 *,
-                                scale       : float | None = None,
+                                scale         : float | None = None,
+                                sampling_rate : float | None = None,
                                 ) -> tuple[RDPBudgetType, float]:
     if scale is None:
         raise ValueError("scale must be specified when using the Gaussian mechanism under RDP.")
 
     assert_gaussian_scale(scale)
-    budget = {a: rdp_eps_from_sigma(sensitivity, scale, a) for a in alpha}
+
+    if sampling_rate is None:
+        budget = {a: rdp_eps_from_sigma(sensitivity, scale, a) for a in alpha}
+    else:
+        budget = {a: subsampled_rdp_eps_from_sigma(sensitivity, scale, a, sampling_rate) for a in alpha}
+
     return budget, scale
 
 @overload
@@ -409,7 +441,14 @@ def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
         budget = resolved_rho
 
     elif isinstance(prisoner.accountant, RDPAccountant):
-        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, prisoner.accountant.alpha, scale=scale)
+        # Check if under subsampling context
+        sampling_rate: float | None = None
+        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
+            sampling_rate = prisoner.accountant.parent.sampling_rate
+
+        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
+            sensitivity, prisoner.accountant.alpha, scale=scale, sampling_rate=sampling_rate
+        )
         budget = rdp_budget
 
     else:
@@ -513,8 +552,17 @@ def _(prisoner : SensitiveSeries[realnum],
     elif isinstance(prisoner.accountant, RDPAccountant):
         alpha = prisoner.accountant.alpha
 
+        # Check if under subsampling context
+        sampling_rate: float | None = None
+        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
+            sampling_rate = prisoner.accountant.parent.sampling_rate
+
         if prisoner._distance_group_axes == (0,):
             assert isinstance(prisoner._partitioned_distances, list)
+
+            # Subsampling not supported with partitioned distances
+            if sampling_rate is not None:
+                raise DPError("Subsampled RDP is not supported with partitioned distances")
 
             assert scale is not None
             assert_gaussian_scale(scale)
@@ -530,7 +578,9 @@ def _(prisoner : SensitiveSeries[realnum],
 
         else:
             sensitivity = float(prisoner.distance.max())
-            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
+            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
+                sensitivity, alpha, scale=scale, sampling_rate=sampling_rate
+            )
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = rdp_budget
 
@@ -636,8 +686,17 @@ def _(prisoner : SensitiveDataFrame,
     elif isinstance(prisoner.accountant, RDPAccountant):
         alpha = prisoner.accountant.alpha
 
+        # Check if under subsampling context
+        sampling_rate: float | None = None
+        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
+            sampling_rate = prisoner.accountant.parent.sampling_rate
+
         if prisoner._distance_group_axes == (1,):
             assert isinstance(prisoner._partitioned_distances, list)
+
+            # Subsampling not supported with partitioned distances
+            if sampling_rate is not None:
+                raise DPError("Subsampled RDP is not supported with partitioned distances")
 
             assert scale is not None
             assert_gaussian_scale(scale)
@@ -653,7 +712,9 @@ def _(prisoner : SensitiveDataFrame,
 
         else:
             sensitivity = float(prisoner.distance.max())
-            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
+            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
+                sensitivity, alpha, scale=scale, sampling_rate=sampling_rate
+            )
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = rdp_budget
 
@@ -690,7 +751,14 @@ def _(prisoner : SensitiveNDArray,
         budget = resolved_rho
 
     elif isinstance(prisoner.accountant, RDPAccountant):
-        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(sensitivity, prisoner.accountant.alpha, scale=scale)
+        # Check if under subsampling context
+        sampling_rate: float | None = None
+        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
+            sampling_rate = prisoner.accountant.parent.sampling_rate
+
+        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
+            sensitivity, prisoner.accountant.alpha, scale=scale, sampling_rate=sampling_rate
+        )
         budget = rdp_budget
 
     else:

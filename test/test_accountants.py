@@ -17,6 +17,7 @@ import uuid
 import math
 
 from privjail.accountants import *
+from privjail.util import DPError
 
 def test_pure_accountant() -> None:
     a0 = PureAccountant(budget_limit=1.0)
@@ -287,3 +288,29 @@ def test_rdp_accountant() -> None:
     # Empty alpha should raise error
     with pytest.raises(ValueError):
         RDPAccountant(alpha=[], parent=a0, delta=delta)
+
+def test_rdp_subsampling_accountant() -> None:
+    delta = 1e-6
+    alpha = [2.0, 4.0, 8.0, 16.0]  # Must be integers >= 2 for subsampled RDP
+
+    a0 = ApproxAccountant(budget_limit=(10.0, delta))
+    a0.set_as_root(name=str(uuid.uuid4()))
+
+    a_rdp = RDPAccountant(alpha=alpha, parent=a0, delta=delta)
+
+    # Create subsampling accountant
+    a_sub = a_rdp.create_subsampling_accountant(sampling_rate=0.01)
+
+    assert isinstance(a_sub, RDPAccountant)
+    assert a_sub.budget_spent() == {a: 0.0 for a in alpha}
+
+    # Spend budget (simulating subsampled mechanism)
+    budget1 = {a: 0.001 for a in alpha}
+    a_sub.spend(budget1)
+
+    assert a_sub.budget_spent() == pytest.approx(budget1)
+    assert a_rdp.budget_spent() == pytest.approx(budget1)
+
+    # Second spend should fail (single-use restriction)
+    with pytest.raises(DPError):
+        a_sub.spend(budget1)
