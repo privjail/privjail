@@ -124,6 +124,10 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
     # FIXME: support for distance_axis > 0
     assert all(arr.distance_axis == 0 for arr in arrays)
 
+    effective_max_distance = float(first.distance.max())
+    if effective_max_distance != 1.0:
+        raise DPError("Subsampling requires adjacent databases (max_distance=1)")
+
     n = first._value.shape[0]
     mask: _npt.NDArray[_np.bool_] = _np.random.random(n) < q
 

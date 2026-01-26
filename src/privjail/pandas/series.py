@@ -683,6 +683,10 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         assert self._distance_group_axes is None
 
         if self._distributed_ser is None:
+            effective_max_distance = float(self.distance.max())
+            if effective_max_distance != 1.0:
+                raise DPError("Parallel composition requires adjacent databases (max_distance=1)")
+
             distances = self._ensure_partitioned_distances()
 
             child_accountants = self.accountant.create_parallel_accountants(len(distances))

@@ -77,6 +77,14 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
             n_children = math.prod(len(ks) for ks in self._by_objs)
             assert len(self) == n_children
 
+            if self._df._is_uldp():
+                effective_max_distance = float(self._df.distance.max()) * float(self._df._user_max_freq.max())
+            else:
+                effective_max_distance = float(self._df.distance.max())
+
+            if effective_max_distance != 1.0:
+                raise DPError("Parallel composition requires adjacent databases (max_distance=1)")
+
             child_accountants = self._df.accountant.create_parallel_accountants(n_children)
             self._child_accountants = {o: acc for o, acc in zip(itertools.product(*self._by_objs), child_accountants)}
 

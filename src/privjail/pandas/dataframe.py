@@ -685,6 +685,10 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
         assert self._distance_group_axes is None
 
         if self._distributed_df is None:
+            effective_max_distance = float(self.distance.max())
+            if effective_max_distance != 1.0:
+                raise DPError("Parallel composition requires adjacent databases (max_distance=1)")
+
             distances = self._ensure_partitioned_distances()
             n_children = len(self.index) * len(self.columns)
             child_accountants = iter(self.accountant.create_parallel_accountants(n_children))

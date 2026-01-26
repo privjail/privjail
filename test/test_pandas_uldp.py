@@ -92,7 +92,8 @@ def test_uldp() -> None:
         pdf.shape[0].reveal(eps=0.1)
 
     # bound user contribution
-    k = 5
+    # k must be 1 for parallel composition to work (max_distance=1 required)
+    k = 1
     pdf = pdf.groupby("uid").head(k) # type: ignore
     df = df.groupby("uid").head(k)
 
