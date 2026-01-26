@@ -406,6 +406,8 @@ def create_accountant(accountant_type     : str,
                       ) -> Accountant[Any]:
     if parent_budget_limit is not None:
         parent = type(parent)(budget_limit=parent_budget_limit, parent=parent)
+        if delta is None and isinstance(parent_budget_limit, tuple):
+            delta = parent_budget_limit[1]
 
     delta_float = float(delta) if delta is not None else None
     accountant_type_lower = accountant_type.lower()
