@@ -29,13 +29,15 @@ class PureAccountant(Accountant[PureBudgetType]):
         return "pure"
 
     def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
-        if isinstance(parent, PureParallelAccountant):
+        diff = next_budget_spent - self._budget_spent
+        if isinstance(parent, PureAccountant):
+            parent.spend(diff)
+        elif isinstance(parent, PureParallelAccountant):
             parent.spend(next_budget_spent)
         elif isinstance(parent, PureSubsamplingAccountant):
             parent.spend(next_budget_spent)
         elif isinstance(parent, ApproxAccountant):
-            # basic composition
-            parent.spend((next_budget_spent - self._budget_spent, 0))
+            parent.spend((diff, 0))
         else:
             raise Exception
 

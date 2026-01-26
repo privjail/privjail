@@ -15,6 +15,7 @@
 import pytest
 import uuid
 import privjail as pj
+from privjail.accountants import ApproxAccountant, BudgetExceededError
 
 def new_sensitive_int(value: int) -> pj.SensitiveInt:
     # TODO: how to handle multimethod function types?
@@ -122,3 +123,25 @@ def test_min_max() -> None:
 
     with pytest.raises(ValueError): pj.max([])
     with pytest.raises(ValueError): pj.min([])
+
+def test_rdp_parent_budget_limit() -> None:
+    # RDP->Approx conversion (sensitivity=1.0, scale=1.0, delta=1e-6):
+    # ε_rdp(α) = α/2, ε_approx = min_α(ε_rdp(α) + log(1/δ)/(α-1))
+    # After 1st call: min(1+13.82, 2+4.61, 4+1.97) ≈ 5.97
+    # After 2nd call: min(2+13.82, 4+4.61, 8+1.97) ≈ 8.61
+    # With parent_budget_limit=(8.0, 1e-6), 1st call OK, 2nd call raises error
+    accountant = ApproxAccountant(budget_limit=(100.0, 1e-4))
+    accountant.set_as_root(name=str(uuid.uuid4()))
+    x = pj.SensitiveFloat(1.0, distance=pj.RealExpr(1), accountant=accountant)
+
+    with pj.RDP(x, alpha=[2, 4, 8], parent_budget_limit=(8.0, 1e-6), delta=1e-6) as x_rdp:
+        assert isinstance(x_rdp, pj.SensitiveFloat)
+        assert x_rdp.accountant.parent is not None
+        assert x_rdp.accountant.parent._budget_limit == (8.0, 1e-6)
+
+        pj.gaussian_mechanism(x_rdp, scale=1.0)
+        eps_spent = x_rdp.accountant.parent.budget_spent()[0]
+        assert 5.9 < eps_spent < 6.0
+
+        with pytest.raises(BudgetExceededError):
+            pj.gaussian_mechanism(x_rdp, scale=1.0)

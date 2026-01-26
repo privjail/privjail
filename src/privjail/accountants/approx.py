@@ -28,7 +28,10 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
         return "approx"
 
     def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
-        if isinstance(parent, ApproxParallelAccountant):
+        diff = (next_budget_spent[0] - self._budget_spent[0], next_budget_spent[1] - self._budget_spent[1])
+        if isinstance(parent, ApproxAccountant):
+            parent.spend(diff)
+        elif isinstance(parent, ApproxParallelAccountant):
             parent.spend(next_budget_spent)
         elif isinstance(parent, ApproxSubsamplingAccountant):
             parent.spend(next_budget_spent)

@@ -396,13 +396,17 @@ def _min(*args: Iterable[SensitiveInt | SensitiveFloat] | SensitiveInt | Sensiti
     return result
 
 @egrpc.function
-def create_accountant(accountant_type : str,
+def create_accountant(accountant_type     : str,
                       *,
-                      parent          : Accountant[Any],
-                      budget_limit    : BudgetType | None        = None,
-                      delta           : realnum | None           = None,
-                      alpha           : Sequence[realnum] | None = None,
+                      parent              : Accountant[Any],
+                      budget_limit        : BudgetType | None        = None,
+                      parent_budget_limit : BudgetType | None        = None,
+                      delta               : realnum | None           = None,
+                      alpha               : Sequence[realnum] | None = None,
                       ) -> Accountant[Any]:
+    if parent_budget_limit is not None:
+        parent = type(parent)(budget_limit=parent_budget_limit, parent=parent)
+
     delta_float = float(delta) if delta is not None else None
     accountant_type_lower = accountant_type.lower()
     if accountant_type_lower == "pure":
@@ -425,11 +429,12 @@ def create_accountant(accountant_type : str,
 P = TypeVar("P", bound=Prisoner[Any])
 
 @contextlib.contextmanager
-def _dp_context(prisoners       : P | Sequence[P],
-                accountant_type : str,
-                budget_limit    : BudgetType | None        = None,
-                delta           : realnum | None           = None,
-                alpha           : Sequence[realnum] | None = None,
+def _dp_context(prisoners           : P | Sequence[P],
+                accountant_type     : str,
+                budget_limit        : BudgetType | None        = None,
+                parent_budget_limit : BudgetType | None        = None,
+                delta               : realnum | None           = None,
+                alpha               : Sequence[realnum] | None = None,
                 ) -> Iterator[P | Sequence[P]]:
     if isinstance(prisoners, Prisoner):
         prisoner_list: list[P] = [prisoners]  # type: ignore[list-item]
@@ -446,7 +451,7 @@ def _dp_context(prisoners       : P | Sequence[P],
             raise DPError("All prisoners must have the same accountant")
 
     old_accountants = [p.accountant for p in prisoner_list]
-    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, delta=delta, alpha=alpha)
+    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, alpha=alpha)
 
     for p in prisoner_list:
         p.set_accountant(new_accountant)
@@ -457,21 +462,36 @@ def _dp_context(prisoners       : P | Sequence[P],
             p.set_accountant(old_acc)
 
 @contextlib.contextmanager
-def pureDP(prisoners: P | Sequence[P], budget_limit: PureBudgetType | None = None) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "pure", budget_limit) as ctx:
+def pureDP(prisoners           : P | Sequence[P],
+           budget_limit        : PureBudgetType | None = None,
+           parent_budget_limit : BudgetType | None     = None,
+           ) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "pure", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit) as ctx:
         yield ctx
 
 @contextlib.contextmanager
-def approxDP(prisoners: P | Sequence[P], budget_limit: ApproxBudgetType | None = None) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "approx", budget_limit) as ctx:
+def approxDP(prisoners           : P | Sequence[P],
+             budget_limit        : ApproxBudgetType | None = None,
+             parent_budget_limit : BudgetType | None       = None,
+             ) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "approx", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit) as ctx:
         yield ctx
 
 @contextlib.contextmanager
-def zCDP(prisoners: P | Sequence[P], budget_limit: zCDPBudgetType | None = None, delta: realnum | None = None) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "zcdp", budget_limit, delta) as ctx:
+def zCDP(prisoners           : P | Sequence[P],
+         budget_limit        : zCDPBudgetType | None = None,
+         parent_budget_limit : BudgetType | None     = None,
+         delta               : realnum | None        = None,
+         ) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "zcdp", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta) as ctx:
         yield ctx
 
 @contextlib.contextmanager
-def RDP(prisoners: P | Sequence[P], alpha: Sequence[realnum], budget_limit: RDPBudgetType | None = None, delta: realnum | None = None) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "rdp", budget_limit, delta, alpha) as ctx:
+def RDP(prisoners           : P | Sequence[P],
+        alpha               : Sequence[realnum],
+        budget_limit        : RDPBudgetType | None = None,
+        parent_budget_limit : BudgetType | None    = None,
+        delta               : realnum | None       = None,
+        ) -> Iterator[P | Sequence[P]]:
+    with _dp_context(prisoners, "rdp", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, alpha=alpha) as ctx:
         yield ctx
