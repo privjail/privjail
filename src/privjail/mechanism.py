@@ -130,7 +130,7 @@ def subsampled_rdp_eps_from_sigma(sensitivity   : float,
     k = _np.arange(alpha_int + 1, dtype=float)
     log_binom = _np.array([math.lgamma(alpha_int + 1) - math.lgamma(ki + 1) - math.lgamma(alpha_int - ki + 1) for ki in k])
     log_terms = log_binom + (alpha_int - k) * _np.log(1 - q) + k * _np.log(q) + (k * k - k) * c
-    log_a: float = _np.logaddexp.reduce(log_terms)
+    log_a = float(_np.logaddexp.reduce(log_terms))
 
     return log_a / (alpha - 1)
 

@@ -15,7 +15,7 @@
 import pytest
 import uuid
 import privjail as pj
-from privjail.accountants import ApproxAccountant, BudgetExceededError
+from privjail.accountants import ApproxAccountant
 
 def new_sensitive_int(value: int) -> pj.SensitiveInt:
     # TODO: how to handle multimethod function types?
@@ -143,5 +143,5 @@ def test_rdp_parent_budget_limit() -> None:
         eps_spent = x_rdp.accountant.parent.budget_spent()[0]
         assert 5.9 < eps_spent < 6.0
 
-        with pytest.raises(BudgetExceededError):
+        with pytest.raises(pj.BudgetExceededError):
             pj.gaussian_mechanism(x_rdp, scale=1.0)
