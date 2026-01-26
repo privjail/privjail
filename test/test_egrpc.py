@@ -376,9 +376,6 @@ def raise_type_error(msg: str) -> None:
 class CustomError(Exception):
     pass
 
-class AnotherCustomError(Exception):
-    pass
-
 @egrpc.function
 def raise_custom_error(msg: str) -> None:
     raise CustomError(msg)
