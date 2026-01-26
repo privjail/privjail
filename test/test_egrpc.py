@@ -364,3 +364,55 @@ def test_inheritance(server: Any) -> None:
     assert isinstance(animal, Animal)
     assert animal.name == "X"
     assert animal.speak() == "..."
+
+@egrpc.function
+def raise_value_error(msg: str) -> None:
+    raise ValueError(msg)
+
+@egrpc.function
+def raise_type_error(msg: str) -> None:
+    raise TypeError(msg)
+
+class CustomError(Exception):
+    pass
+
+class AnotherCustomError(Exception):
+    pass
+
+@egrpc.function
+def raise_custom_error(msg: str) -> None:
+    raise CustomError(msg)
+
+@egrpc.remoteclass
+class ErrorThrower:
+    @egrpc.method
+    def __init__(self, value: int):
+        self._value = value
+
+    @egrpc.method
+    def raise_if_negative(self) -> int:
+        if self._value < 0:
+            raise ValueError(f"value must be non-negative, got {self._value}")
+        return self._value
+
+def test_exception_propagation(server: Any) -> None:
+    with pytest.raises(ValueError) as exc_info_ve:
+        raise_value_error("test value error")
+    assert str(exc_info_ve.value) == "test value error"
+
+    with pytest.raises(TypeError) as exc_info_te:
+        raise_type_error("test type error")
+    assert str(exc_info_te.value) == "test type error"
+
+    with pytest.raises(CustomError) as exc_info_ce:
+        raise_custom_error("test custom error")
+    assert str(exc_info_ce.value) == "test custom error"
+
+def test_exception_propagation_method(server: Any) -> None:
+    obj = ErrorThrower(10)
+    assert obj.raise_if_negative() == 10
+
+    obj_neg = ErrorThrower(-5)
+    with pytest.raises(ValueError) as exc_info:
+        obj_neg.raise_if_negative()
+    assert "value must be non-negative" in str(exc_info.value)

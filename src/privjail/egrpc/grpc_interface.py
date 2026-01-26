@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar, Callable, Type, Any, ParamSpec
+from typing import TypeVar, Callable, Type, Any, ParamSpec, NoReturn
 from types import ModuleType
 from concurrent import futures
 import traceback
@@ -20,6 +20,7 @@ import grpc # type: ignore[import-untyped]
 
 from . import names
 from .proto_interface import ProtoMsg
+from .exception import serialize_exception, deserialize_exception
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -40,39 +41,40 @@ HandlerType = Callable[[Any, ProtoMsg, Any], ProtoMsg]
 
 proto_handlers: dict[str, dict[str, HandlerType]] = {}
 
+def _abort_with_exception(context: Any, exc: Exception) -> NoReturn:
+    traceback.print_exc()
+    key, value = serialize_exception(exc)
+    context.set_trailing_metadata([(key, value)])
+    context.abort(grpc.StatusCode.INTERNAL, str(exc))
+    raise AssertionError("unreachable")  # context.abort() raises, but type checker doesn't know
+
 def grpc_register_function(func: Callable[P, R], handler: HandlerType) -> None:
     proto_service_name = names.proto_function_service_name(func)
     proto_rpc_name = names.proto_function_rpc_name(func)
 
-    # for debugging
     def wrapper(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
         try:
             return handler(self, proto_req, context)
-        except:
-            traceback.print_exc()
-            raise
+        except Exception as exc:
+            _abort_with_exception(context, exc)
 
     global proto_handlers
     assert proto_service_name not in proto_handlers
-    # proto_handlers[proto_service_name] = {proto_rpc_name: handler}
     proto_handlers[proto_service_name] = {proto_rpc_name: wrapper}
 
 def grpc_register_method(cls: Type[T], method: Callable[P, R], handler: HandlerType) -> None:
     proto_service_name = names.proto_remoteclass_service_name(cls)
     proto_rpc_name = names.proto_method_rpc_name(cls, method)
 
-    # for debugging
     def wrapper(self: Any, proto_req: ProtoMsg, context: Any) -> ProtoMsg:
         try:
             return handler(self, proto_req, context)
-        except:
-            traceback.print_exc()
-            raise
+        except Exception as exc:
+            _abort_with_exception(context, exc)
 
     global proto_handlers
     if proto_service_name not in proto_handlers:
         proto_handlers[proto_service_name] = {}
-    # proto_handlers[proto_service_name][proto_rpc_name] = handler
     proto_handlers[proto_service_name][proto_rpc_name] = wrapper
 
 MAX_MESSAGE_LENGTH = 256 * 1024 * 1024  # 256MB
@@ -132,7 +134,10 @@ def grpc_function_call(func: Callable[P, R], proto_req: ProtoMsg) -> ProtoMsg:
 
     channel = get_client_channel()
     stub = getattr(get_grpc_module(), f"{proto_service_name}Stub")(channel)
-    proto_res = getattr(stub, proto_rpc_name)(proto_req)
+    try:
+        proto_res = getattr(stub, proto_rpc_name)(proto_req)
+    except grpc.RpcError as e:
+        raise deserialize_exception(e.trailing_metadata()) from None
 
     return proto_res
 
@@ -142,6 +147,9 @@ def grpc_method_call(cls: Type[T], method: Callable[P, R], proto_req: ProtoMsg) 
 
     channel = get_client_channel()
     stub = getattr(get_grpc_module(), f"{proto_service_name}Stub")(channel)
-    proto_res = getattr(stub, proto_rpc_name)(proto_req)
+    try:
+        proto_res = getattr(stub, proto_rpc_name)(proto_req)
+    except grpc.RpcError as e:
+        raise deserialize_exception(e.trailing_metadata()) from None
 
     return proto_res
