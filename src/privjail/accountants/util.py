@@ -61,6 +61,7 @@ class Accountant(ABC, Generic[T]):
     _root_name        : str
     _depth            : int
     _accounting_group : AccountingGroup | None
+    _prepaid          : bool
 
     accountant_registry: ClassVar[weakref.WeakSet[Accountant[Any]]] = weakref.WeakSet()
 
@@ -70,6 +71,7 @@ class Accountant(ABC, Generic[T]):
                  parent           : Accountant[Any] | None = None,
                  accounting_group : AccountingGroup | None = None,
                  register         : bool                   = True,
+                 prepaid          : bool                   = False,
                  ):
         if budget_limit is not None:
             self.assert_budget(budget_limit)
@@ -79,6 +81,7 @@ class Accountant(ABC, Generic[T]):
         self._parent           = parent
         self._root_name        = parent._root_name if parent is not None else ""
         self._depth            = parent._depth + 1 if parent is not None else 0
+        self._prepaid          = prepaid
 
         if accounting_group is not None:
             self._accounting_group = accounting_group
@@ -93,6 +96,10 @@ class Accountant(ABC, Generic[T]):
 
         if register:
             Accountant.accountant_registry.add(self)
+
+        # Prepaid mode: spend budget_limit to parent upfront
+        if prepaid and parent is not None and budget_limit is not None:
+            self.propagate(budget_limit, parent)
 
     def set_as_root(self, name: str) -> None:
         assert self._root_name == ""
@@ -124,7 +131,7 @@ class Accountant(ABC, Generic[T]):
         if self._budget_limit is not None and self.exceeds(next_budget_spent, self._budget_limit):
             raise BudgetExceededError()
 
-        if self._parent is not None:
+        if self._parent is not None and not self._prepaid:
             self.propagate(next_budget_spent, self._parent)
 
         self._budget_spent = next_budget_spent

@@ -45,6 +45,7 @@ class RDPAccountant(Accountant[RDPBudgetType]):
                  budget_limit : RDPBudgetType | None   = None,
                  parent       : Accountant[Any] | None = None,
                  delta        : float | None           = None,
+                 prepaid      : bool                   = False,
                  ):
         if alpha is None:
             if isinstance(parent, (RDPAccountant, RDPParallelAccountant, RDPSubsamplingAccountant)):
@@ -72,7 +73,7 @@ class RDPAccountant(Accountant[RDPBudgetType]):
         else:
             self._delta = 0.0  # Not used when parent is not ApproxAccountant
 
-        super().__init__(budget_limit=budget_limit, parent=parent)
+        super().__init__(budget_limit=budget_limit, parent=parent, prepaid=prepaid)
 
     @egrpc.property
     def alpha(self) -> list[float]:

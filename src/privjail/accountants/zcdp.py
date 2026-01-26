@@ -29,6 +29,7 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
                  budget_limit : zCDPBudgetType | None  = None,
                  parent       : Accountant[Any] | None = None,
                  delta        : float | None           = None,
+                 prepaid      : bool                   = False,
                  ):
         if isinstance(parent, ApproxAccountant):
             if delta is None:
@@ -42,7 +43,7 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
 
             self._delta = delta
 
-        super().__init__(budget_limit=budget_limit, parent=parent)
+        super().__init__(budget_limit=budget_limit, parent=parent, prepaid=prepaid)
 
     @staticmethod
     def family_name() -> str:

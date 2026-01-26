@@ -403,28 +403,35 @@ def create_accountant(accountant_type     : str,
                       parent_budget_limit : BudgetType | None        = None,
                       delta               : realnum | None           = None,
                       alpha               : Sequence[realnum] | None = None,
+                      prepaid             : bool                     = False,
                       ) -> Accountant[Any]:
     if parent_budget_limit is not None:
-        parent = type(parent)(budget_limit=parent_budget_limit, parent=parent)
+        # Create intermediate accountant with prepaid if specified
+        parent = type(parent)(budget_limit=parent_budget_limit, parent=parent, prepaid=prepaid)
         if delta is None and isinstance(parent_budget_limit, tuple):
             delta = parent_budget_limit[1]
+        # The child accountant doesn't need prepaid since the intermediate handles it
+        child_prepaid = False
+    else:
+        # No intermediate accountant; child accountant gets prepaid directly
+        child_prepaid = prepaid
 
     delta_float = float(delta) if delta is not None else None
     accountant_type_lower = accountant_type.lower()
     if accountant_type_lower == "pure":
         assert budget_limit is None or isinstance(budget_limit, (int, float))
-        return PureAccountant(budget_limit=budget_limit, parent=parent)
+        return PureAccountant(budget_limit=budget_limit, parent=parent, prepaid=child_prepaid)
     elif accountant_type_lower == "approx":
         assert budget_limit is None or isinstance(budget_limit, tuple)
-        return ApproxAccountant(budget_limit=budget_limit, parent=parent)
+        return ApproxAccountant(budget_limit=budget_limit, parent=parent, prepaid=child_prepaid)
     elif accountant_type_lower == "zcdp":
         assert budget_limit is None or isinstance(budget_limit, (int, float))
-        return zCDPAccountant(budget_limit=budget_limit, parent=parent, delta=delta_float)
+        return zCDPAccountant(budget_limit=budget_limit, parent=parent, delta=delta_float, prepaid=child_prepaid)
     elif accountant_type_lower == "rdp":
         assert budget_limit is None or isinstance(budget_limit, dict)
         assert alpha is not None
         alpha_float = [float(a) for a in alpha]
-        return RDPAccountant(alpha=alpha_float, budget_limit=budget_limit, parent=parent, delta=delta_float)
+        return RDPAccountant(alpha=alpha_float, budget_limit=budget_limit, parent=parent, delta=delta_float, prepaid=child_prepaid)
     else:
         raise ValueError(f"Unknown DP type: {accountant_type}. Expected 'pure', 'approx', 'zcdp', or 'rdp'.")
 
@@ -437,6 +444,7 @@ def _dp_context(prisoners           : P | Sequence[P],
                 parent_budget_limit : BudgetType | None        = None,
                 delta               : realnum | None           = None,
                 alpha               : Sequence[realnum] | None = None,
+                prepaid             : bool                     = False,
                 ) -> Iterator[P | Sequence[P]]:
     if isinstance(prisoners, Prisoner):
         prisoner_list: list[P] = [prisoners]  # type: ignore[list-item]
@@ -453,7 +461,7 @@ def _dp_context(prisoners           : P | Sequence[P],
             raise DPError("All prisoners must have the same accountant")
 
     old_accountants = [p.accountant for p in prisoner_list]
-    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, alpha=alpha)
+    new_accountant = create_accountant(accountant_type, parent=first_accountant, budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, alpha=alpha, prepaid=prepaid)
 
     for p in prisoner_list:
         p.set_accountant(new_accountant)
@@ -467,16 +475,18 @@ def _dp_context(prisoners           : P | Sequence[P],
 def pureDP(prisoners           : P | Sequence[P],
            budget_limit        : PureBudgetType | None = None,
            parent_budget_limit : BudgetType | None     = None,
+           prepaid             : bool                  = False,
            ) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "pure", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit) as ctx:
+    with _dp_context(prisoners, "pure", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, prepaid=prepaid) as ctx:
         yield ctx
 
 @contextlib.contextmanager
 def approxDP(prisoners           : P | Sequence[P],
              budget_limit        : ApproxBudgetType | None = None,
              parent_budget_limit : BudgetType | None       = None,
+             prepaid             : bool                    = False,
              ) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "approx", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit) as ctx:
+    with _dp_context(prisoners, "approx", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, prepaid=prepaid) as ctx:
         yield ctx
 
 @contextlib.contextmanager
@@ -484,8 +494,9 @@ def zCDP(prisoners           : P | Sequence[P],
          budget_limit        : zCDPBudgetType | None = None,
          parent_budget_limit : BudgetType | None     = None,
          delta               : realnum | None        = None,
+         prepaid             : bool                  = False,
          ) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "zcdp", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta) as ctx:
+    with _dp_context(prisoners, "zcdp", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, prepaid=prepaid) as ctx:
         yield ctx
 
 @contextlib.contextmanager
@@ -494,6 +505,7 @@ def RDP(prisoners           : P | Sequence[P],
         budget_limit        : RDPBudgetType | None = None,
         parent_budget_limit : BudgetType | None    = None,
         delta               : realnum | None       = None,
+        prepaid             : bool                 = False,
         ) -> Iterator[P | Sequence[P]]:
-    with _dp_context(prisoners, "rdp", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, alpha=alpha) as ctx:
+    with _dp_context(prisoners, "rdp", budget_limit=budget_limit, parent_budget_limit=parent_budget_limit, delta=delta, alpha=alpha, prepaid=prepaid) as ctx:
         yield ctx
