@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 from typing import Any
+import gc
 
 from .util import Accountant
 from .pure import PureBudgetType
@@ -29,6 +30,7 @@ class AccountantState:
     name         : str
     budget_limit : BudgetType | None
     budget_spent : BudgetType | None
+    prepaid      : bool
     children     : list[AccountantState]
 
     def __repr__(self) -> str:
@@ -40,6 +42,8 @@ class AccountantState:
         label = f"{self.name}[spent={self.budget_spent}"
         if self.budget_limit is not None:
             label += f", limit={self.budget_limit}"
+        if self.prepaid:
+            label += ", prepaid=True"
         label += "]"
         return label
 
@@ -56,6 +60,7 @@ def get_all_root_accountants() -> dict[str, Accountant[Any]]:
 
 @egrpc.function
 def accountant_state() -> dict[str, AccountantState]:
+    gc.collect()
     roots = get_all_root_accountants()
 
     children: dict[Accountant[Any], list[Accountant[Any]]] = {}
@@ -68,6 +73,7 @@ def accountant_state() -> dict[str, AccountantState]:
         return AccountantState(name         = type(node).__name__,
                                budget_limit = node._budget_limit,
                                budget_spent = node._budget_spent,
+                               prepaid      = node._prepaid,
                                children     = [build(child) for child in children.get(node, [])])
 
     return {root_name: build(acc) for root_name, acc in roots.items()}
