@@ -124,17 +124,17 @@ def test_min_max() -> None:
     with pytest.raises(ValueError): pj.max([])
     with pytest.raises(ValueError): pj.min([])
 
-def test_rdp_parent_budget_limit() -> None:
+def test_rdp_budget_limit() -> None:
     # RDP->Approx conversion (sensitivity=1.0, scale=1.0, delta=1e-6):
     # ε_rdp(α) = α/2, ε_approx = min_α(ε_rdp(α) + log(1/δ)/(α-1))
     # After 1st call: min(1+13.82, 2+4.61, 4+1.97) ≈ 5.97
     # After 2nd call: min(2+13.82, 4+4.61, 8+1.97) ≈ 8.61
-    # With parent_budget_limit=(8.0, 1e-6), 1st call OK, 2nd call raises error
+    # With budget_limit=(8.0, 1e-6), 1st call OK, 2nd call raises error
     accountant = ApproxAccountant(budget_limit=(100.0, 1e-4))
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.SensitiveFloat(1.0, distance=pj.RealExpr(1), accountant=accountant)
 
-    with pj.RDP(x, alpha=[2, 4, 8], parent_budget_limit=(8.0, 1e-6)) as x_rdp:
+    with pj.RDP(x, alpha=[2, 4, 8], budget_limit=(8.0, 1e-6)) as x_rdp:
         assert isinstance(x_rdp, pj.SensitiveFloat)
         assert x_rdp.accountant.parent is not None
         assert x_rdp.accountant.parent._budget_limit == (8.0, 1e-6)
@@ -152,10 +152,10 @@ def test_prepaid() -> None:
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.SensitiveFloat(1.0, distance=pj.RealExpr(1), accountant=accountant)
 
-    # With prepaid=True and parent_budget_limit=(10.0, 1e-6):
+    # With prepaid=True and budget_limit=(10.0, 1e-6):
     # - (10.0, 1e-6) is spent to root accountant upfront
     # - Subsequent spending only updates the intermediate accountant locally
-    with pj.RDP(x, alpha=[2, 4, 8], parent_budget_limit=(10.0, 1e-6), prepaid=True) as x_rdp:
+    with pj.RDP(x, alpha=[2, 4, 8], budget_limit=(10.0, 1e-6), prepaid=True) as x_rdp:
         assert isinstance(x_rdp, pj.SensitiveFloat)
 
         # Check that budget was spent upfront to root
