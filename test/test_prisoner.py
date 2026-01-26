@@ -134,7 +134,7 @@ def test_rdp_budget_limit() -> None:
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.SensitiveFloat(1.0, distance=pj.RealExpr(1), accountant=accountant)
 
-    with pj.RDP(x, alpha=[2, 4, 8], budget_limit=(8.0, 1e-6)) as x_rdp:
+    with pj.RDP(x, alpha=[2, 4, 8], budget_limit=(8.0, 1e-6), prepaid=True) as x_rdp:
         assert isinstance(x_rdp, pj.SensitiveFloat)
         assert x_rdp.accountant.parent is not None
         assert x_rdp.accountant.parent._budget_limit == (8.0, 1e-6)

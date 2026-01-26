@@ -404,6 +404,19 @@ def create_accountant(accountant_type : str,
                       alpha           : Sequence[realnum] | None = None,
                       prepaid         : bool                     = False,
                       ) -> Accountant[Any]:
+    if prepaid and budget_limit is None:
+        raise ValueError("prepaid=True requires budget_limit to be specified")
+
+    accountant_type_lower = accountant_type.lower()
+
+    # zCDP/RDP odometer (non-prepaid mode) is not implemented
+    if accountant_type_lower in ("zcdp", "rdp"):
+        if budget_limit is None or not prepaid:
+            raise NotImplementedError(
+                f"{accountant_type_lower.upper()} odometer is not implemented. "
+                "Use prepaid=True with budget_limit to use filter mode."
+            )
+
     # budget_limit creates an intermediate accountant of the parent's type
     if budget_limit is not None:
         parent = type(parent)(budget_limit=budget_limit, parent=parent, prepaid=prepaid)
@@ -411,7 +424,6 @@ def create_accountant(accountant_type : str,
             delta = budget_limit[1]
 
     delta_float = float(delta) if delta is not None else None
-    accountant_type_lower = accountant_type.lower()
     if accountant_type_lower == "pure":
         return PureAccountant(parent=parent)
     elif accountant_type_lower == "approx":
