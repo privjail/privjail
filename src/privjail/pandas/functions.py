@@ -22,7 +22,7 @@ from .. import egrpc
 from ..util import DPError, ElementType, realnum
 from ..alignment import assert_distance_axis
 from ..realexpr import RealExpr
-from ..accountants import BudgetType, Accountant, PureAccountant, ApproxAccountant
+from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
@@ -70,9 +70,9 @@ def read_csv(filepath     : str,
     acc: Accountant[Any]
 
     if accountant == "pure":
-        acc = PureAccountant(budget_limit=PureAccountant.normalize_budget(budget_limit))
+        acc = PureDPAccountant(budget_limit=PureDPAccountant.normalize_budget(budget_limit))
     elif accountant == "approx":
-        acc = ApproxAccountant(budget_limit=ApproxAccountant.normalize_budget(budget_limit))
+        acc = ApproxDPAccountant(budget_limit=ApproxDPAccountant.normalize_budget(budget_limit))
     else:
         raise ValueError(f"Unknown accountant: '{accountant}'")
 

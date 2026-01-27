@@ -22,18 +22,18 @@ from .. import egrpc
 ApproxBudgetType = tuple[float, float]
 
 @egrpc.remoteclass
-class ApproxAccountant(Accountant[ApproxBudgetType]):
+class ApproxDPAccountant(Accountant[ApproxBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "approx"
 
     def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
         diff = (next_budget_spent[0] - self._budget_spent[0], next_budget_spent[1] - self._budget_spent[1])
-        if isinstance(parent, ApproxAccountant):
+        if isinstance(parent, ApproxDPAccountant):
             parent.spend(diff)
-        elif isinstance(parent, ApproxParallelAccountant):
+        elif isinstance(parent, ApproxDPParallelAccountant):
             parent.spend(next_budget_spent)
-        elif isinstance(parent, ApproxSubsamplingAccountant):
+        elif isinstance(parent, ApproxDPSubsamplingAccountant):
             parent.spend(next_budget_spent)
         else:
             raise Exception
@@ -68,20 +68,20 @@ class ApproxAccountant(Accountant[ApproxBudgetType]):
             raise TypeError("Approx accountant budget must be a tuple of two float values.")
 
     @staticmethod
-    def parallel_accountant() -> type[ApproxParallelAccountant]:
-        return ApproxParallelAccountant
+    def parallel_accountant() -> type[ApproxDPParallelAccountant]:
+        return ApproxDPParallelAccountant
 
     @staticmethod
-    def subsampling_accountant() -> type[ApproxSubsamplingAccountant]:
-        return ApproxSubsamplingAccountant
+    def subsampling_accountant() -> type[ApproxDPSubsamplingAccountant]:
+        return ApproxDPSubsamplingAccountant
 
-class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
+class ApproxDPParallelAccountant(ParallelAccountant[ApproxBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "approx"
 
     def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
-        if isinstance(parent, ApproxAccountant):
+        if isinstance(parent, ApproxDPAccountant):
             eps, delta = self._budget_spent
             next_eps, next_delta = next_budget_spent
             parent.spend((next_eps - eps, next_delta - delta))
@@ -107,15 +107,15 @@ class ApproxParallelAccountant(ParallelAccountant[ApproxBudgetType]):
 
     @classmethod
     def normalize_budget(cls, budget: Any) -> ApproxBudgetType | None:
-        return ApproxAccountant.normalize_budget(budget)
+        return ApproxDPAccountant.normalize_budget(budget)
 
-class ApproxSubsamplingAccountant(SubsamplingAccountant[ApproxBudgetType]):
+class ApproxDPSubsamplingAccountant(SubsamplingAccountant[ApproxBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "approx"
 
     def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
-        if isinstance(parent, ApproxAccountant):
+        if isinstance(parent, ApproxDPAccountant):
             prev_eps, prev_delta = self._budget_spent
             next_eps, next_delta = next_budget_spent
             parent.spend((next_eps - prev_eps, next_delta - prev_delta))
@@ -144,4 +144,4 @@ class ApproxSubsamplingAccountant(SubsamplingAccountant[ApproxBudgetType]):
 
     @classmethod
     def normalize_budget(cls, budget: Any) -> ApproxBudgetType | None:
-        return ApproxAccountant.normalize_budget(budget)
+        return ApproxDPAccountant.normalize_budget(budget)

@@ -23,12 +23,12 @@ import privjail as pj
 import privjail.numpy as pnp
 
 @pytest.fixture
-def accountant() -> pj.ApproxAccountant:
-    acc = pj.ApproxAccountant()
+def accountant() -> pj.ApproxDPAccountant:
+    acc = pj.ApproxDPAccountant()
     acc.set_as_root(name=str(uuid.uuid4()))
     return acc
 
-def test_gaussian_mechanism_over_rows(accountant: pj.ApproxAccountant) -> None:
+def test_gaussian_mechanism_over_rows(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, -1.0, 0.5],
                            [2.0, -2.0, 1.0],
                            [3.0, -3.0, 1.5],
@@ -71,7 +71,7 @@ def test_gaussian_mechanism_over_rows(accountant: pj.ApproxAccountant) -> None:
     assert spent_kind == "approx"
     assert spent_budget == pytest.approx((1.0, 1e-5))
 
-def test_transpose(accountant: pj.ApproxAccountant) -> None:
+def test_transpose(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                            [4.0, 5.0, 6.0]],
                           distance      = pj.RealExpr(1),
@@ -91,7 +91,7 @@ def test_transpose(accountant: pj.ApproxAccountant) -> None:
     assert arr_tt._value.tolist() == [[1.0, 2.0, 3.0],
                                       [4.0, 5.0, 6.0]]
 
-def test_swapaxes(accountant: pj.ApproxAccountant) -> None:
+def test_swapaxes(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0]],
                            [[5.0, 6.0], [7.0, 8.0]]],
                           distance      = pj.RealExpr(1),
@@ -116,7 +116,7 @@ def test_swapaxes(accountant: pj.ApproxAccountant) -> None:
     assert swapped_12._value.tolist() == [[[1.0, 3.0], [2.0, 4.0]],
                                           [[5.0, 7.0], [6.0, 8.0]]]
 
-def test_getitem(accountant: pj.ApproxAccountant) -> None:
+def test_getitem(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
                            [[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]]],
                           distance      = pj.RealExpr(1),
@@ -221,7 +221,7 @@ def test_getitem(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(IndexError):
         arr[..., ...]
 
-def test_clip_norm_scalar_rows(accountant: pj.ApproxAccountant) -> None:
+def test_clip_norm_scalar_rows(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([1.0, -2.5, 0.5, 4.0, -6.0],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -233,7 +233,7 @@ def test_clip_norm_scalar_rows(accountant: pj.ApproxAccountant) -> None:
     assert clipped._value.tolist() == pytest.approx([1.0, -2.0, 0.5, 2.0, -2.0])
     assert arr._value.tolist() == [1.0, -2.5, 0.5, 4.0, -6.0]
 
-def test_clip_norm_matrix_rows(accountant: pj.ApproxAccountant) -> None:
+def test_clip_norm_matrix_rows(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[ 3.0, 4.0,  0.0],
                            [ 0.0, 0.0,  0.0],
                            [ 6.0, 8.0,  2.0],
@@ -254,7 +254,7 @@ def test_clip_norm_matrix_rows(accountant: pj.ApproxAccountant) -> None:
     assert norms[3] == pytest.approx(3.0)
     assert arr._value.tolist() == [[3.0, 4.0, 0.0], [0.0, 0.0, 0.0], [6.0, 8.0, 2.0], [-1.0, 2.0, -2.0]]
 
-def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
+def test_clip_norm_tensor_rows(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[[ 3.0, 0.0, -4.0], [0.0,  0.0,  0.0]],
                            [[-5.0, 0.0,  0.0], [0.0, 12.0,  0.0]],
                            [[ 0.0, 0.0,  0.0], [8.0,  0.0, 15.0]]],
@@ -286,7 +286,7 @@ def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
                 [[ 0.0, 0.0,  0.0], [8.0,  0.0, 15.0]]]
     assert arr._value.tolist() == expected
 
-# def test_clip_norm_axis_argument(accountant: pj.ApproxAccountant) -> None:
+# def test_clip_norm_axis_argument(accountant: pj.ApproxDPAccountant) -> None:
 #     arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
 #                           distance      = pj.RealExpr(1),
 #                           distance_axis = 0,
@@ -305,7 +305,7 @@ def test_clip_norm_tensor_rows(accountant: pj.ApproxAccountant) -> None:
 #     with pytest.raises(pj.DPError):
 #         arr.clip_norm(bound=2.5, ord=2, axis=1)
 
-def test_normalize(accountant: pj.ApproxAccountant) -> None:
+def test_normalize(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[3.0, 4.0],
                            [0.0, 5.0],
                            [1.0, 0.0]],
@@ -325,7 +325,7 @@ def test_normalize(accountant: pj.ApproxAccountant) -> None:
     row_norms = _np.linalg.norm(normalized._value, ord=2, axis=1)
     assert _np.allclose(row_norms, [1.0, 1.0, 1.0])
 
-def test_sample(accountant: pj.ApproxAccountant) -> None:
+def test_sample(accountant: pj.ApproxDPAccountant) -> None:
     x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
                         distance      = pj.RealExpr(1),
                         distance_axis = 0,
@@ -349,7 +349,7 @@ def test_sample(accountant: pj.ApproxAccountant) -> None:
     assert y_s._value.shape[0] == x_s._value.shape[0]
 
 def test_sample_subsampling_accountant_pure() -> None:
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
 
     x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
@@ -383,7 +383,7 @@ def test_sample_subsampling_accountant_pure() -> None:
     assert parent_spent == pytest.approx(expected_eps)
 
 def test_sample_subsampling_accountant_approx() -> None:
-    accountant = pj.ApproxAccountant()
+    accountant = pj.ApproxDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
 
     x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
@@ -419,7 +419,7 @@ def test_sample_subsampling_accountant_approx() -> None:
     assert parent_spent[0] == pytest.approx(expected_eps)
     assert parent_spent[1] == pytest.approx(expected_delta)
 
-def test_normalize_tensor(accountant: pj.ApproxAccountant) -> None:
+def test_normalize_tensor(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[[ 3.0, 0.0, -4.0], [0.0,  0.0,  0.0]],
                            [[-5.0, 0.0,  0.0], [0.0, 12.0,  0.0]],
                            [[ 0.0, 0.0,  0.0], [8.0,  0.0, 15.0]]],
@@ -438,7 +438,7 @@ def test_normalize_tensor(accountant: pj.ApproxAccountant) -> None:
     assert normalized._domain.norm_bound == 1.0
     assert normalized._domain.value_range == (-1.0, 1.0)
 
-def test_sum_returns_sensitive_float(accountant: pj.ApproxAccountant) -> None:
+def test_sum_returns_sensitive_float(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([1.0, -1.5, 0.5, 2.0],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -452,7 +452,7 @@ def test_sum_returns_sensitive_float(accountant: pj.ApproxAccountant) -> None:
     assert total._value == pytest.approx(clipped._value.sum())
     assert total.max_distance == pytest.approx(bound)
 
-def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
+def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0,  2.0, -1.5],
                            [0.5, -4.0,  3.0],
                            [2.0,  1.0, -0.5]],
@@ -472,7 +472,7 @@ def test_sum_returns_sensitive_ndarray(accountant: pj.ApproxAccountant) -> None:
     assert summed._value.tolist() == pytest.approx(expected.tolist())
     assert summed.max_distance == pytest.approx(bound)
 
-def test_sum_along_non_distance_axis(accountant: pj.ApproxAccountant) -> None:
+def test_sum_along_non_distance_axis(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                            [4.0, 5.0, 6.0]],
                           distance      = pj.RealExpr(1),
@@ -497,7 +497,7 @@ def test_sum_along_non_distance_axis(accountant: pj.ApproxAccountant) -> None:
     assert result_kd.distance_axis == 0
     assert result_kd.axis_signature == arr.axis_signature
 
-def test_max_min(accountant: pj.ApproxAccountant) -> None:
+def test_max_min(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 5.0, 3.0],
                            [9.0, 2.0, 4.0],
                            [6.0, 8.0, 7.0]],
@@ -559,7 +559,7 @@ def test_max_min(accountant: pj.ApproxAccountant) -> None:
         assert result3d_kd.distance_axis == 2
         assert _np.allclose(result3d_kd._value, expected3d_kd)
 
-def test_linalg_norm(accountant: pj.ApproxAccountant) -> None:
+def test_linalg_norm(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([10.0, -20.0, 30.0, 40.0],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -572,7 +572,7 @@ def test_linalg_norm(accountant: pj.ApproxAccountant) -> None:
     assert l1norm._value == pytest.approx(20.0)
     assert l1norm.max_distance == pytest.approx(5.0)
 
-def test_matmul_priv_left(accountant: pj.ApproxAccountant) -> None:
+def test_matmul_priv_left(accountant: pj.ApproxDPAccountant) -> None:
     priv = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                             [4.0, 5.0, 6.0]],
                            distance      = pj.RealExpr(1),
@@ -596,7 +596,7 @@ def test_matmul_priv_left(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         priv.T @ other
 
-def test_matmul_priv_right(accountant: pj.ApproxAccountant) -> None:
+def test_matmul_priv_right(accountant: pj.ApproxDPAccountant) -> None:
     priv = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                             [4.0, 5.0, 6.0]],
                            distance      = pj.RealExpr(1),
@@ -621,7 +621,7 @@ def test_matmul_priv_right(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         other @ priv.T
 
-def test_matmul_priv_priv(accountant: pj.ApproxAccountant) -> None:
+def test_matmul_priv_priv(accountant: pj.ApproxDPAccountant) -> None:
     # x.T @ x where x is normalized: left has distance_axis=1, right has distance_axis=0
     x = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                          [4.0, 5.0, 6.0],
@@ -638,7 +638,7 @@ def test_matmul_priv_priv(accountant: pj.ApproxAccountant) -> None:
     assert result.max_distance == pytest.approx(1.0)
     assert _np.allclose(result._value, x_norm._value.T @ x_norm._value)
 
-def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
+def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxDPAccountant) -> None:
     arr1 = pnp.SensitiveNDArray([4.0, 6.0],
                                 distance   = pj.RealExpr(1.0),
                                 norm_type  = "l1",
@@ -709,7 +709,7 @@ def test_sensitive_ndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
                                     norm_type  = "l2",
                                     accountant = accountant)
 
-def test_maximum_minimum(accountant: pj.ApproxAccountant) -> None:
+def test_maximum_minimum(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[-1.0, 2.0], [3.0, -4.0], [0.5, 0.5]],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -756,7 +756,7 @@ def test_maximum_minimum(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         pnp.minimum(arr, other)
 
-def test_concatenate(accountant: pj.ApproxAccountant) -> None:
+def test_concatenate(accountant: pj.ApproxDPAccountant) -> None:
     arr1 = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
                            distance      = pj.RealExpr(1),
                            distance_axis = 0,
@@ -819,7 +819,7 @@ def test_concatenate(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(ValueError):
         pnp.concatenate([])
 
-def test_exp(accountant: pj.ApproxAccountant) -> None:
+def test_exp(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[0.0, 1.0], [2.0, -1.0]],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -834,7 +834,7 @@ def test_exp(accountant: pj.ApproxAccountant) -> None:
     assert result.domain.value_range[1] == pytest.approx(_np.exp(2.0))
     assert result.axis_signature == arr.axis_signature
 
-def test_log(accountant: pj.ApproxAccountant) -> None:
+def test_log(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -858,7 +858,7 @@ def test_log(accountant: pj.ApproxAccountant) -> None:
     result_neg = pnp.log(arr_neg)
     assert result_neg.domain.value_range is None
 
-def test_histogram_basic(accountant: pj.ApproxAccountant) -> None:
+def test_histogram_basic(accountant: pj.ApproxDPAccountant) -> None:
     samples = pnp.PrivNDArray([0.1, 0.4, 0.8],
                               distance      = pj.RealExpr(1.0),
                               distance_axis = 0,
@@ -885,7 +885,7 @@ def test_histogram_basic(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(ValueError):
         pnp.histogram(samples, bins=explicit_edges, range=(0.0, 0.9))
 
-def test_histogramdd_basic(accountant: pj.ApproxAccountant) -> None:
+def test_histogramdd_basic(accountant: pj.ApproxDPAccountant) -> None:
     samples = pnp.PrivNDArray([[0.1, 0.2 ],
                                [0.4, 0.8 ],
                                [0.9, 0.05]],
@@ -921,7 +921,7 @@ def test_histogramdd_basic(accountant: pj.ApproxAccountant) -> None:
                         bins  = grid,
                         range = [(0.0, 1.0), (0.0, 1.0)])
 
-def test_sensitive_dim_int_basic(accountant: pj.ApproxAccountant) -> None:
+def test_sensitive_dim_int_basic(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                            [4.0, 5.0, 6.0],
                            [7.0, 8.0, 9.0]],
@@ -1041,7 +1041,7 @@ def test_sensitive_dim_int_basic(accountant: pj.ApproxAccountant) -> None:
     revealed = n.reveal(eps=1.0)
     assert isinstance(revealed, (int, float))
 
-def test_reshape_basic(accountant: pj.ApproxAccountant) -> None:
+def test_reshape_basic(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0, 3.0],
                            [4.0, 5.0, 6.0]],
                           distance      = pj.RealExpr(1),
@@ -1109,7 +1109,7 @@ def test_reshape_basic(accountant: pj.ApproxAccountant) -> None:
     reshaped_args_inferred = arr.reshape(-1, 3)
     assert reshaped_args_inferred._value.shape == (2, 3)
 
-def test_reshape_errors(accountant: pj.ApproxAccountant) -> None:
+def test_reshape_errors(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -1149,7 +1149,7 @@ def test_reshape_errors(accountant: pj.ApproxAccountant) -> None:
         arr3.reshape((n3, 16))
 
 
-def test_privndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
+def test_privndarray_arithmetic(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0]],
                           distance      = pj.RealExpr(1),
                           distance_axis = 0,
@@ -1261,7 +1261,7 @@ def test_privndarray_arithmetic(accountant: pj.ApproxAccountant) -> None:
     with pytest.raises(pj.DPError):
         arr + other
 
-def test_broadcast_alignment(accountant: pj.ApproxAccountant) -> None:
+def test_broadcast_alignment(accountant: pj.ApproxDPAccountant) -> None:
     arr2x2 = pnp.PrivNDArray([[1.0, 2.0],
                               [3.0, 4.0]],
                              distance      = pj.RealExpr(1),
@@ -1299,7 +1299,7 @@ def test_broadcast_alignment(accountant: pj.ApproxAccountant) -> None:
     assert _np.allclose(result_222._value, [[[-1.0, 0.0], [-1.0, 0.0]],
                                             [[-1.0, 0.0], [-1.0, 0.0]]])
 
-def test_one_hot(accountant: pj.ApproxAccountant) -> None:
+def test_one_hot(accountant: pj.ApproxDPAccountant) -> None:
     eye5 = pnp.eye(5)
     assert isinstance(eye5, pnp.SensitiveNDArray)
     assert eye5.shape == (5, 5)

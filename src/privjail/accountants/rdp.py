@@ -17,7 +17,7 @@ from typing import Any, Sequence
 import math
 
 from .util import Accountant, ParallelAccountant, SubsamplingAccountant
-from .approx import ApproxAccountant
+from .approx import ApproxDPAccountant
 from .. import egrpc
 from ..util import DPError
 
@@ -62,16 +62,16 @@ class RDPAccountant(Accountant[RDPBudgetType]):
                 raise ValueError("alpha must be unique")
             self._alpha = list(alpha)
 
-        if isinstance(parent, ApproxAccountant):
+        if isinstance(parent, ApproxDPAccountant):
             if delta is None:
-                raise ValueError("delta must be specified when parent is ApproxAccountant")
+                raise ValueError("delta must be specified when parent is ApproxDPAccountant")
             if not (0 < delta < 1):
                 raise ValueError("delta must be in (0, 1)")
             # Spend delta ahead of time (same pattern as zCDPAccountant)
             parent.spend((0, delta))
             self._delta = delta
         else:
-            self._delta = 0.0  # Not used when parent is not ApproxAccountant
+            self._delta = 0.0  # Not used when parent is not ApproxDPAccountant
 
         super().__init__(budget_limit=budget_limit, parent=parent, prepaid=prepaid)
 
@@ -88,7 +88,7 @@ class RDPAccountant(Accountant[RDPBudgetType]):
             parent.spend(next_budget_spent)
         elif isinstance(parent, RDPSubsamplingAccountant):
             parent.spend(next_budget_spent)
-        elif isinstance(parent, ApproxAccountant):
+        elif isinstance(parent, ApproxDPAccountant):
             prev_eps = rdp_to_approx_eps(self._budget_spent, self._delta)
             next_eps = rdp_to_approx_eps(next_budget_spent, self._delta)
             parent.spend((next_eps - prev_eps, 0))

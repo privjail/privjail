@@ -20,7 +20,7 @@ from privjail.accountants import *
 from privjail.util import DPError
 
 def test_pure_accountant() -> None:
-    a0 = PureAccountant(budget_limit=1.0)
+    a0 = PureDPAccountant(budget_limit=1.0)
     a0.set_as_root(name=str(uuid.uuid4()))
 
     assert a0.budget_spent() == 0
@@ -34,9 +34,9 @@ def test_pure_accountant() -> None:
     assert a0.budget_spent() == pytest.approx(eps * 2)
 
     # parallel composition
-    ap = PureParallelAccountant(parent=a0)
-    ap1 = PureAccountant(parent=ap)
-    ap2 = PureAccountant(parent=ap)
+    ap = PureDPParallelAccountant(parent=a0)
+    ap1 = PureDPAccountant(parent=ap)
+    ap2 = PureDPAccountant(parent=ap)
 
     ap1.spend(eps)
     ap2.spend(eps)
@@ -68,7 +68,7 @@ def test_pure_accountant() -> None:
         a0.spend(-1.0)
 
 def test_approx_accountant() -> None:
-    a0 = ApproxAccountant(budget_limit=(1.0, 1e-6))
+    a0 = ApproxDPAccountant(budget_limit=(1.0, 1e-6))
     a0.set_as_root(name=str(uuid.uuid4()))
 
     assert a0.budget_spent() == (0, 0)
@@ -83,9 +83,9 @@ def test_approx_accountant() -> None:
     assert a0.budget_spent() == pytest.approx((eps * 2, delta))
 
     # parallel composition
-    ap = ApproxParallelAccountant(parent=a0)
-    ap1 = ApproxAccountant(parent=ap)
-    ap2 = ApproxAccountant(parent=ap)
+    ap = ApproxDPParallelAccountant(parent=a0)
+    ap1 = ApproxDPAccountant(parent=ap)
+    ap2 = ApproxDPAccountant(parent=ap)
 
     ap1.spend((eps, delta))
     ap2.spend((eps, delta))
@@ -122,7 +122,7 @@ def test_approx_accountant() -> None:
         a0.spend((0, -delta))
 
     # pure -> approx
-    a_pure = PureAccountant(parent=a0)
+    a_pure = PureDPAccountant(parent=a0)
 
     a_pure.spend(eps)
 
@@ -137,7 +137,7 @@ def test_approx_accountant() -> None:
 def test_zCDP_accountant() -> None:
     delta = 1e-6
 
-    a0 = ApproxAccountant(budget_limit=(1.0, delta))
+    a0 = ApproxDPAccountant(budget_limit=(1.0, delta))
     a0.set_as_root(name=str(uuid.uuid4()))
 
     assert a0.budget_spent() == (0, 0)
@@ -200,7 +200,7 @@ def test_rdp_accountant() -> None:
     delta = 1e-6
     alpha = [2.0, 4.0, 8.0, 16.0]
 
-    a0 = ApproxAccountant(budget_limit=(10.0, delta))
+    a0 = ApproxDPAccountant(budget_limit=(10.0, delta))
     a0.set_as_root(name=str(uuid.uuid4()))
 
     assert a0.budget_spent() == (0, 0)
@@ -266,7 +266,7 @@ def test_rdp_accountant() -> None:
     assert a_rdp.budget_spent() == pytest.approx(expected_rdp)
 
     # Budget limit exceeded
-    a0_new = ApproxAccountant(budget_limit=(10.0, 1e-3))
+    a0_new = ApproxDPAccountant(budget_limit=(10.0, 1e-3))
     a0_new.set_as_root(name=str(uuid.uuid4()))
     a_rdp_limited = RDPAccountant(
         alpha=alpha,
@@ -293,7 +293,7 @@ def test_rdp_subsampling_accountant() -> None:
     delta = 1e-6
     alpha = [2.0, 4.0, 8.0, 16.0]  # Must be integers >= 2 for subsampled RDP
 
-    a0 = ApproxAccountant(budget_limit=(10.0, delta))
+    a0 = ApproxDPAccountant(budget_limit=(10.0, delta))
     a0.set_as_root(name=str(uuid.uuid4()))
 
     a_rdp = RDPAccountant(alpha=alpha, parent=a0, delta=delta)

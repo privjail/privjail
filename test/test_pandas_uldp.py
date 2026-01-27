@@ -65,7 +65,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "c"   : ppd.CategoryDomain(categories=["x", "y", "z", "w"]), # "w" does not appear in data
     }
 
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
     pdf = ppd.PrivDataFrame(data,
                             columns=columns,

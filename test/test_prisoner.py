@@ -15,11 +15,11 @@
 import pytest
 import uuid
 import privjail as pj
-from privjail.accountants import ApproxAccountant
+from privjail.accountants import ApproxDPAccountant
 
 def new_sensitive_int(value: int) -> pj.SensitiveInt:
     # TODO: how to handle multimethod function types?
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
     return pj.SensitiveInt(value, distance=pj.RealExpr(1), accountant=accountant) + 0 # type: ignore[no-any-return]
 
@@ -130,7 +130,7 @@ def test_rdp_budget_limit() -> None:
     # After 1st call: min(1+13.82, 2+4.61, 4+1.97) ≈ 5.97
     # After 2nd call: min(2+13.82, 4+4.61, 8+1.97) ≈ 8.61
     # With budget_limit=(8.0, 1e-6), 1st call OK, 2nd call raises error
-    accountant = ApproxAccountant(budget_limit=(100.0, 1e-4))
+    accountant = ApproxDPAccountant(budget_limit=(100.0, 1e-4))
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.SensitiveFloat(1.0, distance=pj.RealExpr(1), accountant=accountant)
 
@@ -148,7 +148,7 @@ def test_rdp_budget_limit() -> None:
 
 def test_prepaid() -> None:
     # Test prepaid mode: budget is consumed upfront, subsequent spending doesn't propagate
-    accountant = ApproxAccountant(budget_limit=(100.0, 1e-4))
+    accountant = ApproxDPAccountant(budget_limit=(100.0, 1e-4))
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.SensitiveFloat(1.0, distance=pj.RealExpr(1), accountant=accountant)
 

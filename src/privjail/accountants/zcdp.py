@@ -17,7 +17,7 @@ from typing import Any
 import math
 
 from .util import Accountant, ParallelAccountant, SubsamplingAccountant
-from .approx import ApproxAccountant
+from .approx import ApproxDPAccountant
 from .. import egrpc
 
 zCDPBudgetType = float
@@ -31,7 +31,7 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
                  delta        : float | None           = None,
                  prepaid      : bool                   = False,
                  ):
-        if isinstance(parent, ApproxAccountant):
+        if isinstance(parent, ApproxDPAccountant):
             if delta is None:
                 raise ValueError("delta must be specified")
 
@@ -52,7 +52,7 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
     def propagate(self, next_budget_spent: zCDPBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, zCDPParallelAccountant):
             parent.spend(next_budget_spent)
-        elif isinstance(parent, ApproxAccountant):
+        elif isinstance(parent, ApproxDPAccountant):
             eps = eps_from_rho_delta(self._budget_spent, self._delta)
             next_eps = eps_from_rho_delta(next_budget_spent, self._delta)
             parent.spend((next_eps - eps, 0))

@@ -32,7 +32,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
         "a": ppd.RealDomain(dtype="int64", range=(None, None)),
         "b": ppd.RealDomain(dtype="int64", range=(None, None)),
     }
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
     pdf = ppd.PrivDataFrame(data, domains=domains, distance=pj.RealExpr(1), accountant=accountant)
     df = pd.DataFrame(data)
@@ -135,7 +135,7 @@ def test_priv_dataframe_comp() -> None:
     with pytest.raises(TypeError): pdf["a"] >  [0, 1, 2, 3, 4]
     with pytest.raises(TypeError): pdf["a"] >= [0, 1, 2, 3, 4]
 
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
@@ -208,7 +208,7 @@ def test_priv_dataframe_getitem() -> None:
     with pytest.raises(pj.DPError):
         pdf["a"][pdf_["a"] > 3]
 
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 
@@ -271,7 +271,7 @@ def test_priv_dataframe_setitem() -> None:
     assert (pdf.columns == df.columns).all()
     assert (pdf._value == df).all().all()
 
-    accountant = pj.PureAccountant()
+    accountant = pj.PureDPAccountant()
     accountant.set_as_root(name=str(uuid.uuid4()))
     x = pj.Prisoner(value=0, distance=pj.RealExpr(1), accountant=accountant)
 

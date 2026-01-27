@@ -20,7 +20,7 @@ import pandas as _pd
 import numpy.typing as _npt
 
 from .util import DPError, floating, realnum
-from .accountants import BudgetType, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType, RDPSubsamplingAccountant
+from .accountants import BudgetType, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType, RDPSubsamplingAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
@@ -249,9 +249,9 @@ def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
 
     result = float(_np.random.laplace(loc=prisoner._value, scale=resolved_scale))
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         prisoner.accountant.spend(resolved_eps)
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         prisoner.accountant.spend((resolved_eps, 0.0))
     else:
         raise RuntimeError
@@ -299,9 +299,9 @@ def _(prisoner : SensitiveSeries[realnum],
         data = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
         spent_eps = resolved_eps
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         prisoner.accountant.spend(spent_eps)
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         prisoner.accountant.spend((spent_eps, 0.0))
     else:
         raise RuntimeError
@@ -349,9 +349,9 @@ def _(prisoner : SensitiveDataFrame,
         data = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
         spent_eps = resolved_eps
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         prisoner.accountant.spend(spent_eps)
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         prisoner.accountant.spend((spent_eps, 0.0))
     else:
         raise RuntimeError
@@ -370,9 +370,9 @@ def _(prisoner : SensitiveNDArray,
     resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
     samples = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         prisoner.accountant.spend(resolved_eps)
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         prisoner.accountant.spend((resolved_eps, 0.0))
     else:
         raise RuntimeError
@@ -428,10 +428,10 @@ def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
 
     budget : BudgetType
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         raise DPError("Gaussian mechanism cannot be used under Pure DP")
 
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
         assert delta is not None
         budget = (resolved_eps, delta)
@@ -470,10 +470,10 @@ def _(prisoner : SensitiveSeries[realnum],
       ) -> _pd.Series: # type: ignore[type-arg]
     budget : BudgetType
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         raise DPError("Gaussian mechanism cannot be used under Pure DP")
 
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         assert delta is not None
 
         if prisoner._distance_group_axes == (0,):
@@ -601,10 +601,10 @@ def _(prisoner : SensitiveDataFrame,
       ) -> _pd.DataFrame:
     budget : BudgetType
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         raise DPError("Gaussian mechanism cannot be used under Pure DP")
 
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         assert delta is not None
 
         if prisoner._distance_group_axes == (1,):
@@ -738,10 +738,10 @@ def _(prisoner : SensitiveNDArray,
 
     budget: BudgetType
 
-    if isinstance(prisoner.accountant, PureAccountant):
+    if isinstance(prisoner.accountant, PureDPAccountant):
         raise DPError("Gaussian mechanism cannot be used under Pure DP")
 
-    elif isinstance(prisoner.accountant, ApproxAccountant):
+    elif isinstance(prisoner.accountant, ApproxDPAccountant):
         resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
         assert delta is not None
         budget = (resolved_eps, delta)
@@ -787,12 +787,12 @@ def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
 
     budget : BudgetType
 
-    if isinstance(prisoner_dummy.accountant, PureAccountant):
+    if isinstance(prisoner_dummy.accountant, PureDPAccountant):
         assert eps is not None
         assert_eps(eps)
         budget = eps
 
-    elif isinstance(prisoner_dummy.accountant, ApproxAccountant):
+    elif isinstance(prisoner_dummy.accountant, ApproxDPAccountant):
         assert eps is not None
         assert_eps(eps)
         budget = (eps, 0.0)

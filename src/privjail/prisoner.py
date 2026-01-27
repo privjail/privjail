@@ -20,7 +20,7 @@ import numpy as _np
 
 from .util import integer, floating, realnum, is_integer, is_floating, DPError
 from .realexpr import RealExpr, _max as dmax
-from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureAccountant, ApproxAccountant, zCDPAccountant, RDPAccountant, get_lsca_of_same_family, BudgetType, AccountingGroup
+from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, get_lsca_of_same_family, BudgetType, AccountingGroup
 from . import egrpc
 
 T = TypeVar("T")
@@ -425,9 +425,9 @@ def create_accountant(accountant_type : str,
 
     delta_float = float(delta) if delta is not None else None
     if accountant_type_lower == "pure":
-        return PureAccountant(parent=parent)
+        return PureDPAccountant(parent=parent)
     elif accountant_type_lower == "approx":
-        return ApproxAccountant(parent=parent)
+        return ApproxDPAccountant(parent=parent)
     elif accountant_type_lower == "zcdp":
         return zCDPAccountant(parent=parent, delta=delta_float)
     elif accountant_type_lower == "rdp":

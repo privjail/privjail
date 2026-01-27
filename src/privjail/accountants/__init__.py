@@ -14,8 +14,8 @@
 
 from .util import BudgetExceededError, Accountant, ParallelAccountant, get_lsca_of_same_family, AccountingGroup
 from .dummy import DummyAccountant, DummyParallelAccountant
-from .pure import PureAccountant, PureParallelAccountant, PureSubsamplingAccountant, PureBudgetType
-from .approx import ApproxAccountant, ApproxParallelAccountant, ApproxSubsamplingAccountant, ApproxBudgetType
+from .pure import PureDPAccountant, PureDPParallelAccountant, PureDPSubsamplingAccountant, PureBudgetType
+from .approx import ApproxDPAccountant, ApproxDPParallelAccountant, ApproxDPSubsamplingAccountant, ApproxBudgetType
 from .zcdp import zCDPAccountant, zCDPParallelAccountant, zCDPBudgetType
 from .rdp import RDPAccountant, RDPParallelAccountant, RDPSubsamplingAccountant, RDPBudgetType
 from .state import BudgetType, AccountantState, accountant_state, budgets_spent
@@ -27,12 +27,12 @@ __all__ = [
     "AccountingGroup",
     "DummyAccountant",
     "DummyParallelAccountant",
-    "PureAccountant",
-    "PureParallelAccountant",
-    "PureSubsamplingAccountant",
-    "ApproxAccountant",
-    "ApproxParallelAccountant",
-    "ApproxSubsamplingAccountant",
+    "PureDPAccountant",
+    "PureDPParallelAccountant",
+    "PureDPSubsamplingAccountant",
+    "ApproxDPAccountant",
+    "ApproxDPParallelAccountant",
+    "ApproxDPSubsamplingAccountant",
     "zCDPAccountant",
     "zCDPParallelAccountant",
     "RDPAccountant",

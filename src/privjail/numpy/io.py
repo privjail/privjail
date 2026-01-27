@@ -21,7 +21,7 @@ import numpy.typing as _npt
 
 from .. import egrpc
 from ..realexpr import RealExpr
-from ..accountants import BudgetType, Accountant, PureAccountant, ApproxAccountant
+from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .array import PrivNDArray
 from .domain import NDArrayDomain
 
@@ -49,9 +49,9 @@ def load(file         : str,
 
     acc: Accountant[Any]
     if accountant == "pure":
-        acc = PureAccountant(budget_limit=PureAccountant.normalize_budget(budget_limit))
+        acc = PureDPAccountant(budget_limit=PureDPAccountant.normalize_budget(budget_limit))
     elif accountant == "approx":
-        acc = ApproxAccountant(budget_limit=ApproxAccountant.normalize_budget(budget_limit))
+        acc = ApproxDPAccountant(budget_limit=ApproxDPAccountant.normalize_budget(budget_limit))
     else:
         raise ValueError(f"Unknown accountant: '{accountant}'")
 

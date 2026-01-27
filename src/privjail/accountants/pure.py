@@ -17,26 +17,26 @@ from typing import Any
 import math
 
 from .util import Accountant, ParallelAccountant, SubsamplingAccountant
-from .approx import ApproxAccountant
+from .approx import ApproxDPAccountant
 from .. import egrpc
 
 PureBudgetType = float
 
 @egrpc.remoteclass
-class PureAccountant(Accountant[PureBudgetType]):
+class PureDPAccountant(Accountant[PureBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "pure"
 
     def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         diff = next_budget_spent - self._budget_spent
-        if isinstance(parent, PureAccountant):
+        if isinstance(parent, PureDPAccountant):
             parent.spend(diff)
-        elif isinstance(parent, PureParallelAccountant):
+        elif isinstance(parent, PureDPParallelAccountant):
             parent.spend(next_budget_spent)
-        elif isinstance(parent, PureSubsamplingAccountant):
+        elif isinstance(parent, PureDPSubsamplingAccountant):
             parent.spend(next_budget_spent)
-        elif isinstance(parent, ApproxAccountant):
+        elif isinstance(parent, ApproxDPAccountant):
             parent.spend((diff, 0))
         else:
             raise Exception
@@ -65,20 +65,20 @@ class PureAccountant(Accountant[PureBudgetType]):
             raise TypeError("Pure accountant budget must be a single float value.")
 
     @staticmethod
-    def parallel_accountant() -> type[PureParallelAccountant]:
-        return PureParallelAccountant
+    def parallel_accountant() -> type[PureDPParallelAccountant]:
+        return PureDPParallelAccountant
 
     @staticmethod
-    def subsampling_accountant() -> type[PureSubsamplingAccountant]:
-        return PureSubsamplingAccountant
+    def subsampling_accountant() -> type[PureDPSubsamplingAccountant]:
+        return PureDPSubsamplingAccountant
 
-class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
+class PureDPParallelAccountant(ParallelAccountant[PureBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "pure"
 
     def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
-        if isinstance(parent, PureAccountant):
+        if isinstance(parent, PureDPAccountant):
             parent.spend(next_budget_spent - self._budget_spent)
         else:
             raise Exception
@@ -97,15 +97,15 @@ class PureParallelAccountant(ParallelAccountant[PureBudgetType]):
 
     @classmethod
     def normalize_budget(cls, budget: Any) -> PureBudgetType | None:
-        return PureAccountant.normalize_budget(budget)
+        return PureDPAccountant.normalize_budget(budget)
 
-class PureSubsamplingAccountant(SubsamplingAccountant[PureBudgetType]):
+class PureDPSubsamplingAccountant(SubsamplingAccountant[PureBudgetType]):
     @staticmethod
     def family_name() -> str:
         return "pure"
 
     def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
-        if isinstance(parent, PureAccountant):
+        if isinstance(parent, PureDPAccountant):
             parent.spend(next_budget_spent - self._budget_spent)
         else:
             raise Exception
@@ -127,4 +127,4 @@ class PureSubsamplingAccountant(SubsamplingAccountant[PureBudgetType]):
 
     @classmethod
     def normalize_budget(cls, budget: Any) -> PureBudgetType | None:
-        return PureAccountant.normalize_budget(budget)
+        return PureDPAccountant.normalize_budget(budget)
