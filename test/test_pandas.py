@@ -68,13 +68,13 @@ def test_priv_dataframe_size() -> None:
     assert len(pdf.shape) == len(df.shape) == 2
     assert isinstance(pdf.shape[0], pj.Prisoner)
     assert pdf.shape[0]._value == df.shape[0]
-    assert pdf.shape[0].distance.max() == 1
+    assert pdf.shape[0].max_distance == 1
     assert pdf.shape[1] == len(pdf.columns) == len(df.columns)
 
     # The `size` member should be a sensitive value
     assert isinstance(pdf.size, pj.Prisoner)
     assert pdf.size._value == df.size
-    assert pdf.size.distance.max() == len(pdf.columns) == len(df.columns)
+    assert pdf.size.max_distance == len(pdf.columns) == len(df.columns)
 
     # Builtin `len()` function should raise an error because it must be an integer value
     with pytest.raises(pj.DPError):
@@ -381,24 +381,24 @@ def test_priv_series_value_counts() -> None:
     pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[2, 3, 4])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({2: 1, 3: 1, 4: 3}))
-    assert counts[2].distance.max() == 1
+    assert counts[2].max_distance == 1
 
     # Should return correct counts when only a part of possible values are provided
     pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[3, 4])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({3: 1, 4: 3}))
-    assert counts[3].distance.max() == 1
+    assert counts[3].max_distance == 1
 
     # Should return correct counts when non-existent values are provided
     pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 3, 4, 5])}) # FIXME: use public API
     counts = pdf["b"].value_counts(sort=False)
     assert_equal_sensitive_series(counts, pd.Series({1: 0, 3: 1, 4: 3, 5: 0}))
-    assert counts[1].distance.max() == 1
+    assert counts[1].max_distance == 1
 
     # Should be able to get a sensitive value from a sensitive series
     c4 = counts[4]
     assert isinstance(c4, pj.Prisoner)
-    assert c4.distance.max() == 1
+    assert c4.max_distance == 1
     assert c4._value == 3
 
     # FIXME
@@ -407,7 +407,7 @@ def test_priv_series_value_counts() -> None:
     # c4 = counts[1:3][4]
     # assert isinstance(c3, pj.Prisoner)
     # assert isinstance(c4, pj.Prisoner)
-    # assert c3.distance.max() == c4.distance.max() == 1
+    # assert c3.max_distance == c4.max_distance == 1
     # assert c3._value == 1
     # assert c4._value == 3
 
@@ -661,11 +661,11 @@ def test_privacy_budget_parallel_composition() -> None:
     for idx in crosstab.index:
         for col in crosstab.columns:
             s += crosstab[col][idx]
-    assert s.distance.max() == 1
+    assert s.max_distance == 1
     pj.laplace_mechanism(s, eps=eps)
     assert_budget_spent(pdf, eps * 4)
 
-    assert crosstab[5][1].distance.max() == 1
+    assert crosstab[5][1].max_distance == 1
     pj.laplace_mechanism(crosstab[5][1], eps=eps)
     assert_budget_spent(pdf, eps * 5)
 
@@ -678,7 +678,7 @@ def test_privacy_budget_parallel_composition() -> None:
     for key, pdf_ in pdf.groupby("b"):
         s += pdf_.shape[0]
         print(s._value)
-    assert s.distance.max() == 1
+    assert s.max_distance == 1
     assert s._value == len(pdf._value)
     pj.laplace_mechanism(s, eps=eps)
     assert_budget_spent(pdf, eps * 6)
@@ -686,6 +686,6 @@ def test_privacy_budget_parallel_composition() -> None:
     s = pj.SensitiveInt(0)
     for key, pdf_ in pdf.groupby("b"):
         s += key * pdf_.shape[0]
-    assert s.distance.max() == 5
+    assert s.max_distance == 5
     pj.laplace_mechanism(s, eps=eps)
     assert_budget_spent(pdf, eps * 7)

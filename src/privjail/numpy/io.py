@@ -25,12 +25,12 @@ from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAcco
 from .array import PrivNDArray
 from .domain import NDArrayDomain
 
-def _find_distance_axis(shape: list[int | None] | None) -> int:
+def _find_privacy_axis(shape: list[int | None] | None) -> int:
     if shape is None:
         return 0
     null_indices = [i for i, dim in enumerate(shape) if dim is None]
     if len(null_indices) != 1:
-        raise ValueError("shape must contain exactly one null for distance_axis")
+        raise ValueError("shape must contain exactly one null for privacy_axis")
     return null_indices[0]
 
 @egrpc.function
@@ -80,7 +80,7 @@ def load(file         : str,
                 if schema_dim is not None and schema_dim != actual_dim:
                     raise ValueError(f"shape mismatch for '{name}' at axis {i}: schema={schema_dim}, actual={actual_dim}")
 
-        distance_axis = _find_distance_axis(shape)
+        privacy_axis = _find_privacy_axis(shape)
 
         value_range_spec = arr_schema.get("value_range")
         if value_range_spec is not None:
@@ -89,19 +89,19 @@ def load(file         : str,
             domain = NDArrayDomain()
 
         priv_arr = PrivNDArray(
-            value         = arr,
-            distance      = RealExpr(1),
-            distance_axis = distance_axis,
-            domain        = domain,
-            accountant    = acc,
+            value        = arr,
+            distance     = RealExpr(1),
+            privacy_axis = privacy_axis,
+            domain       = domain,
+            accountant   = acc,
         )
 
         align_sig = arr_schema.get("alignment_signature")
         if align_sig is not None:
             if align_sig not in signature_map:
-                signature_map[align_sig] = priv_arr._axis_signature
+                signature_map[align_sig] = priv_arr._alignment_signature
             else:
-                priv_arr._axis_signature = signature_map[align_sig]
+                priv_arr._alignment_signature = signature_map[align_sig]
 
         result[name] = priv_arr
 

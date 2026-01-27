@@ -25,7 +25,7 @@ from ..realexpr import RealExpr
 from ..accountants import Accountant
 from ..prisoner import Prisoner, SensitiveFloat
 from .domain import NDArrayDomain, ValueRange
-from .util import PrivShape, NDIndex, infer_missing_dim, check_broadcast_distance_axis
+from .util import PrivShape, NDIndex, infer_missing_dim, check_broadcast_privacy_axis
 
 def _negate_value_range(vr: ValueRange) -> ValueRange:
     if vr is None:
@@ -124,14 +124,14 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
     _domain: NDArrayDomain
 
     def __init__(self,
-                 value                  : Any,
-                 distance               : RealExpr,
-                 distance_axis          : int,
-                 domain                 : NDArrayDomain | None         = None,
+                 value          : Any,
+                 distance       : RealExpr,
+                 privacy_axis   : int,
+                 domain         : NDArrayDomain | None         = None,
                  *,
-                 parents                : Sequence[PrivArrayBase[Any]] = [],
-                 accountant             : Accountant[Any] | None       = None,
-                 inherit_axis_signature : bool                         = False,
+                 parents        : Sequence[PrivArrayBase[Any]] = [],
+                 accountant     : Accountant[Any] | None       = None,
+                 keep_alignment : bool                         = False,
                  ) -> None:
         array = _np.asarray(value)
         if not _np.issubdtype(array.dtype, _np.number):
@@ -141,27 +141,27 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
 
         self._domain = domain if domain is not None else NDArrayDomain()
 
-        if distance_axis < 0:
-            distance_axis += array.ndim
-        if not 0 <= distance_axis < array.ndim:
-            raise ValueError("distance_axis is out of bounds for the array dimension.")
+        if privacy_axis < 0:
+            privacy_axis += array.ndim
+        if not 0 <= privacy_axis < array.ndim:
+            raise ValueError("privacy_axis is out of bounds for the array dimension.")
 
-        super().__init__(value                  = array,
-                         distance               = distance,
-                         distance_axis          = distance_axis,
-                         parents                = list(parents),
-                         accountant             = accountant,
-                         inherit_axis_signature = inherit_axis_signature)
+        super().__init__(value          = array,
+                         distance       = distance,
+                         privacy_axis   = privacy_axis,
+                         parents        = list(parents),
+                         accountant     = accountant,
+                         keep_alignment = keep_alignment)
 
     @egrpc.property
     def shape(self) -> PrivShape:
         return tuple(
-            SensitiveDimInt(value          = int(dim),
-                            distance       = self.distance,
-                            axis_signature = self._axis_signature,
-                            scale          = 1,
-                            parents        = [self])
-            if i == self.distance_axis else int(dim)
+            SensitiveDimInt(value               = int(dim),
+                            distance            = self._distance,
+                            alignment_signature = self._alignment_signature,
+                            scale               = 1,
+                            parents             = [self])
+            if i == self._privacy_axis else int(dim)
             for i, dim in enumerate(self._value.shape)
         )
 
@@ -189,12 +189,12 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         if sorted(axes_tuple) != list(range(self.ndim)):
             raise ValueError("axes must be a permutation of current axes.")
 
-        return PrivNDArray(value                  = self._value.transpose(axes_tuple),
-                           distance               = self.distance,
-                           distance_axis          = axes_tuple.index(self.distance_axis),
-                           domain                 = self._domain,
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value.transpose(axes_tuple),
+                           distance       = self._distance,
+                           privacy_axis   = axes_tuple.index(self._privacy_axis),
+                           domain         = self._domain,
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.method
     def swapaxes(self, axis1: int, axis2: int) -> PrivNDArray:
@@ -203,19 +203,19 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         if not (0 <= axis1 < self.ndim) or not (0 <= axis2 < self.ndim):
             raise ValueError("axis index out of bounds.")
 
-        if axis1 == self.distance_axis:
-            new_distance_axis = axis2
-        elif axis2 == self.distance_axis:
-            new_distance_axis = axis1
+        if axis1 == self._privacy_axis:
+            new_privacy_axis = axis2
+        elif axis2 == self._privacy_axis:
+            new_privacy_axis = axis1
         else:
-            new_distance_axis = self.distance_axis
+            new_privacy_axis = self._privacy_axis
 
-        return PrivNDArray(value                  = self._value.swapaxes(axis1, axis2),
-                           distance               = self.distance,
-                           distance_axis          = new_distance_axis,
-                           domain                 = self._domain,
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value.swapaxes(axis1, axis2),
+                           distance       = self._distance,
+                           privacy_axis   = new_privacy_axis,
+                           domain         = self._domain,
+                           parents        = [self],
+                           keep_alignment = True)
 
     def reshape(self,
                 *shape : int | SensitiveDimInt | PrivShape,
@@ -246,10 +246,10 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
             if val <= 0:
                 raise ValueError("All dimensions and scale must be positive for reshape.")
 
-        if output_priv_dim.axis_signature != self.axis_signature:
-            raise DPError("SensitiveDimInt's axis_signature does not match the array's axis_signature.")
+        if output_priv_dim.alignment_signature != self.alignment_signature:
+            raise DPError("SensitiveDimInt's alignment_signature does not match the array's alignment_signature.")
 
-        input_axis = self.distance_axis
+        input_axis = self._privacy_axis
 
         P_in = 1
         for d in self.shape[:input_axis]:
@@ -281,24 +281,24 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         )
         reshaped_arr = self._value.reshape(final_shape, order="C")
 
-        return PrivNDArray(value                  = reshaped_arr,
-                           distance               = self.distance * scale,
-                           distance_axis          = output_axis,
-                           domain                 = self._domain,
-                           parents                = [self],
-                           inherit_axis_signature = (scale == 1))
+        return PrivNDArray(value          = reshaped_arr,
+                           distance       = self._distance * scale,
+                           privacy_axis   = output_axis,
+                           domain         = self._domain,
+                           parents        = [self],
+                           keep_alignment = (scale == 1))
 
     @egrpc.method
     def sum(self,
             axis     : int | None = None,
             keepdims : bool       = False,
             ) -> SensitiveFloat | SensitiveNDArray | PrivNDArray:
-        if axis is None or axis == self.distance_axis:
-            # Sum along distance_axis (or all axes) -> returns SensitiveFloat or SensitiveNDArray
+        if axis is None or axis == self._privacy_axis:
+            # Sum along privacy_axis (or all axes) -> returns SensitiveFloat or SensitiveNDArray
             if self._domain.norm_bound is None:
                 raise DPError("Norm bound is not set. Use clip_norm() before summing along the distance axis.")
 
-            new_distance = self.distance * float(self._domain.norm_bound)
+            new_distance = self._distance * float(self._domain.norm_bound)
             result = self._value.sum(axis=axis, keepdims=keepdims)
 
             if result.ndim == 0:
@@ -318,12 +318,12 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                 raise ValueError(f"axis {axis} is out of bounds for array of dimension {self.ndim}.")
 
             if keepdims:
-                new_distance_axis = self.distance_axis
+                new_privacy_axis = self._privacy_axis
             else:
-                if axis < self.distance_axis:
-                    new_distance_axis = self.distance_axis - 1
+                if axis < self._privacy_axis:
+                    new_privacy_axis = self._privacy_axis - 1
                 else:
-                    new_distance_axis = self.distance_axis
+                    new_privacy_axis = self._privacy_axis
 
             result = self._value.sum(axis=axis, keepdims=keepdims)
 
@@ -337,12 +337,12 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
                 new_hi = hi * n if hi is not None else None
                 new_vr = (new_lo, new_hi)
 
-            return PrivNDArray(value                  = result,
-                               distance               = self.distance,
-                               distance_axis          = new_distance_axis,
-                               domain                 = NDArrayDomain(value_range=new_vr),
-                               parents                = [self],
-                               inherit_axis_signature = True)
+            return PrivNDArray(value          = result,
+                               distance       = self._distance,
+                               privacy_axis   = new_privacy_axis,
+                               domain         = NDArrayDomain(value_range=new_vr),
+                               parents        = [self],
+                               keep_alignment = True)
 
     @egrpc.method
     def max(self, axis: int | None = None, keepdims: bool = False) -> PrivNDArray:
@@ -355,25 +355,25 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         if not (0 <= axis < self.ndim):
             raise ValueError(f"axis {axis} is out of bounds for array of dimension {self.ndim}.")
 
-        if axis == self.distance_axis:
+        if axis == self._privacy_axis:
             raise DPError("max() along the distance axis is not allowed.")
 
         if keepdims:
-            new_distance_axis = self.distance_axis
+            new_privacy_axis = self._privacy_axis
         else:
-            if axis < self.distance_axis:
-                new_distance_axis = self.distance_axis - 1
+            if axis < self._privacy_axis:
+                new_privacy_axis = self._privacy_axis - 1
             else:
-                new_distance_axis = self.distance_axis
+                new_privacy_axis = self._privacy_axis
 
         result = self._value.max(axis=axis, keepdims=keepdims)
 
-        return PrivNDArray(value                  = result,
-                           distance               = self.distance,
-                           distance_axis          = new_distance_axis,
-                           domain                 = NDArrayDomain(value_range=self._domain.value_range),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = result,
+                           distance       = self._distance,
+                           privacy_axis   = new_privacy_axis,
+                           domain         = NDArrayDomain(value_range=self._domain.value_range),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.method
     def min(self, axis: int | None = None, keepdims: bool = False) -> PrivNDArray:
@@ -386,72 +386,72 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         if not (0 <= axis < self.ndim):
             raise ValueError(f"axis {axis} is out of bounds for array of dimension {self.ndim}.")
 
-        if axis == self.distance_axis:
+        if axis == self._privacy_axis:
             raise DPError("min() along the distance axis is not allowed.")
 
         if keepdims:
-            new_distance_axis = self.distance_axis
+            new_privacy_axis = self._privacy_axis
         else:
-            if axis < self.distance_axis:
-                new_distance_axis = self.distance_axis - 1
+            if axis < self._privacy_axis:
+                new_privacy_axis = self._privacy_axis - 1
             else:
-                new_distance_axis = self.distance_axis
+                new_privacy_axis = self._privacy_axis
 
         result = self._value.min(axis=axis, keepdims=keepdims)
 
-        return PrivNDArray(value                  = result,
-                           distance               = self.distance,
-                           distance_axis          = new_distance_axis,
-                           domain                 = NDArrayDomain(value_range=self._domain.value_range),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = result,
+                           distance       = self._distance,
+                           privacy_axis   = new_privacy_axis,
+                           domain         = NDArrayDomain(value_range=self._domain.value_range),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.method
     def copy(self) -> PrivNDArray:
-        return PrivNDArray(value                  = self._value.copy(),
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = self.domain,
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value.copy(),
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = self.domain,
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.multimethod
     def __matmul__(self, other: _npt.NDArray[Any]) -> PrivNDArray:
         if self.ndim != 2 or other.ndim != 2:
             raise NotImplementedError("matmul currently supports 2D operands only.")
 
-        if self.distance_axis != 0:
+        if self._privacy_axis != 0:
             raise DPError("Matmul would contract the distance axis.")
 
         if self.shape[1] != other.shape[0]:
             raise ValueError("Shape mismatch for matrix multiplication.")
 
-        return PrivNDArray(value                  = self._value @ other,
-                           distance               = self.distance,
-                           domain                 = NDArrayDomain(),
-                           parents                = [self],
-                           distance_axis          = self.distance_axis,
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value @ other,
+                           distance       = self._distance,
+                           domain         = NDArrayDomain(),
+                           parents        = [self],
+                           privacy_axis   = self._privacy_axis,
+                           keep_alignment = True)
 
     @__matmul__.register
     def _(self, other: PrivNDArray) -> SensitiveNDArray:
         if self.ndim != 2 or other.ndim != 2:
             raise NotImplementedError("matmul currently supports 2D operands only.")
 
-        if self.distance_axis != 1:
-            raise DPError("Left operand distance_axis must be 1 (the contracting axis).")
-        if other.distance_axis != 0:
-            raise DPError("Right operand distance_axis must be 0 (the contracting axis).")
+        if self._privacy_axis != 1:
+            raise DPError("Left operand privacy_axis must be 1 (the contracting axis).")
+        if other._privacy_axis != 0:
+            raise DPError("Right operand privacy_axis must be 0 (the contracting axis).")
 
-        if self.axis_signature != other.axis_signature:
-            raise DPError("axis_signature mismatch in PrivNDArray matmul.")
+        if self.alignment_signature != other.alignment_signature:
+            raise DPError("alignment_signature mismatch in PrivNDArray matmul.")
 
         if self.domain.norm_bound is None:
             raise DPError("Left operand norm_bound is not set.")
         if other.domain.norm_bound is None:
             raise DPError("Right operand norm_bound is not set.")
 
-        new_distance = self.distance * self.domain.norm_bound * other.domain.norm_bound
+        new_distance = self._distance * self.domain.norm_bound * other.domain.norm_bound
         return SensitiveNDArray(value     = self._value @ other._value,
                                 distance  = new_distance,
                                 norm_type = "l2",
@@ -462,159 +462,159 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         if self.ndim != 2 or other.ndim != 2:
             raise NotImplementedError("matmul currently supports 2D operands only.")
 
-        if self.distance_axis != 1:
+        if self._privacy_axis != 1:
             raise DPError("Matmul would contract the distance axis.")
 
         if self.shape[0] != other.shape[1]:
             raise ValueError("Shape mismatch for matrix multiplication.")
 
-        return PrivNDArray(value                  = other @ self._value,
-                           distance               = self.distance,
-                           domain                 = NDArrayDomain(),
-                           parents                = [self],
-                           distance_axis          = self.distance_axis,
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = other @ self._value,
+                           distance       = self._distance,
+                           domain         = NDArrayDomain(),
+                           parents        = [self],
+                           privacy_axis   = self._privacy_axis,
+                           keep_alignment = True)
 
     @egrpc.method
     def __neg__(self) -> PrivNDArray:
         new_vr = _negate_value_range(self._domain.value_range)
-        return PrivNDArray(value                  = -self._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = -self._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     def _check_axis_aligned(self, other: PrivNDArray) -> None:
-        if self.axis_signature != other.axis_signature:
-            raise DPError("axis_signature mismatch in PrivNDArray operation.")
-        check_broadcast_distance_axis(self.shape, other.shape)
+        if self.alignment_signature != other.alignment_signature:
+            raise DPError("alignment_signature mismatch in PrivNDArray operation.")
+        check_broadcast_privacy_axis(self.shape, other.shape)
 
     @egrpc.multimethod
     def __add__(self, other: realnum) -> PrivNDArray:
         new_vr = _shift_value_range(self._domain.value_range, float(other))
-        return PrivNDArray(value                  = self._value + other,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value + other,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @__add__.register
     def _(self, other: PrivNDArray) -> PrivNDArray:
         self._check_axis_aligned(other)
         new_vr = _add_value_ranges(self._domain.value_range, other._domain.value_range)
-        return PrivNDArray(value                  = self._value + other._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self, other],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value + other._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self, other],
+                           keep_alignment = True)
 
     @egrpc.method
     def __radd__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         new_vr = _shift_value_range(self._domain.value_range, float(other))
-        return PrivNDArray(value                  = other + self._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = other + self._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.multimethod
     def __sub__(self, other: realnum) -> PrivNDArray:
         new_vr = _shift_value_range(self._domain.value_range, -float(other))
-        return PrivNDArray(value                  = self._value - other,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value - other,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @__sub__.register
     def _(self, other: PrivNDArray) -> PrivNDArray:
         self._check_axis_aligned(other)
         new_vr = _sub_value_ranges(self._domain.value_range, other._domain.value_range)
-        return PrivNDArray(value                  = self._value - other._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self, other],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value - other._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self, other],
+                           keep_alignment = True)
 
     @egrpc.method
     def __rsub__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         new_vr = _rshift_value_range(float(other), self._domain.value_range)
-        return PrivNDArray(value                  = other - self._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = other - self._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.multimethod
     def __mul__(self, other: realnum) -> PrivNDArray:
         new_vr = _scale_value_range(self._domain.value_range, float(other))
-        return PrivNDArray(value                  = self._value * other,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value * other,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @__mul__.register
     def _(self, other: PrivNDArray) -> PrivNDArray:
         self._check_axis_aligned(other)
         new_vr = _mul_value_ranges(self._domain.value_range, other._domain.value_range)
-        return PrivNDArray(value                  = self._value * other._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self, other],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value * other._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self, other],
+                           keep_alignment = True)
 
     @egrpc.method
     def __rmul__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         new_vr = _scale_value_range(self._domain.value_range, float(other))
-        return PrivNDArray(value                  = other * self._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = other * self._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @egrpc.multimethod
     def __truediv__(self, other: realnum) -> PrivNDArray:
         if other == 0:
             raise ZeroDivisionError("division by zero")
         new_vr = _scale_value_range(self._domain.value_range, 1.0 / float(other))
-        return PrivNDArray(value                  = self._value / other,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value / other,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     @__truediv__.register
     def _(self, other: PrivNDArray) -> PrivNDArray:
         self._check_axis_aligned(other)
         new_vr = _div_value_ranges(self._domain.value_range, other._domain.value_range)
-        return PrivNDArray(value                  = self._value / other._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self, other],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value / other._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self, other],
+                           keep_alignment = True)
 
     @egrpc.method
     def __rtruediv__(self, other: realnum) -> PrivNDArray:  # type: ignore[misc]
         new_vr = _rdiv_value_range(float(other), self._domain.value_range)
-        return PrivNDArray(value                  = other / self._value,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = other / self._value,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [self],
+                           keep_alignment = True)
 
     def _compare(self, other: realnum | PrivNDArray, op: str) -> PrivNDArray:
         other_value: _npt.NDArray[Any] | realnum
@@ -641,12 +641,12 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         else:
             raise RuntimeError
 
-        return PrivNDArray(value                  = result,
-                           distance               = self.distance,
-                           distance_axis          = self.distance_axis,
-                           domain                 = NDArrayDomain(value_range=(0.0, 1.0)), # TODO: support bool domain
-                           parents                = parents,
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = result,
+                           distance       = self._distance,
+                           privacy_axis   = self._privacy_axis,
+                           domain         = NDArrayDomain(value_range=(0.0, 1.0)), # TODO: support bool domain
+                           parents        = parents,
+                           keep_alignment = True)
 
     @egrpc.multimethod
     def __eq__(self, other: realnum) -> PrivNDArray:
@@ -720,39 +720,39 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         )
         return expanded  # type: ignore[return-value]
 
-    def _validate_index_at_distance_axis(self, index: tuple[int | slice | None, ...]) -> None:
+    def _validate_index_at_privacy_axis(self, index: tuple[int | slice | None, ...]) -> None:
         axis_indices = [idx for idx in index if idx is not None]
-        if self.distance_axis < len(axis_indices):
-            idx = axis_indices[self.distance_axis]
+        if self._privacy_axis < len(axis_indices):
+            idx = axis_indices[self._privacy_axis]
             if not (isinstance(idx, slice) and idx == slice(None)):
-                raise DPError("Cannot index distance_axis with anything other than ':'")
+                raise DPError("Cannot index privacy_axis with anything other than ':'")
 
-    def _compute_new_distance_axis(self, index: tuple[int | slice | None, ...]) -> int:
+    def _compute_new_privacy_axis(self, index: tuple[int | slice | None, ...]) -> int:
         offset = 0
         orig_axis = 0
         for idx in index:
-            if orig_axis > self.distance_axis:
+            if orig_axis > self._privacy_axis:
                 break
             if idx is None:
                 offset += 1
             else:
-                if orig_axis < self.distance_axis and isinstance(idx, int):
+                if orig_axis < self._privacy_axis and isinstance(idx, int):
                     offset -= 1
                 orig_axis += 1
-        return self.distance_axis + offset
+        return self._privacy_axis + offset
 
     @egrpc.method
     def __getitem__(self, index: NDIndex) -> PrivNDArray:
         normalized = self._normalize_index(index)
-        self._validate_index_at_distance_axis(normalized)
-        new_distance_axis = self._compute_new_distance_axis(normalized)
+        self._validate_index_at_privacy_axis(normalized)
+        new_privacy_axis = self._compute_new_privacy_axis(normalized)
 
-        return PrivNDArray(value                  = self._value[index],
-                           distance               = self.distance,
-                           distance_axis          = new_distance_axis,
-                           domain                 = NDArrayDomain(value_range=self.domain.value_range),
-                           parents                = [self],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = self._value[index],
+                           distance       = self._distance,
+                           privacy_axis   = new_privacy_axis,
+                           domain         = NDArrayDomain(value_range=self.domain.value_range),
+                           parents        = [self],
+                           keep_alignment = True)
 
 @egrpc.remoteclass
 class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
@@ -787,14 +787,14 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
     @egrpc.method
     def __neg__(self) -> SensitiveNDArray:
         return SensitiveNDArray(value     = -self._value,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
     @egrpc.multimethod
     def __add__(self, other: realnum) -> SensitiveNDArray:
         return SensitiveNDArray(value     = self._value + other,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -804,7 +804,7 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
         if self.shape != other.shape:
             raise ValueError("Shape mismatch in SensitiveNDArray addition.")
         return SensitiveNDArray(value     = self._value + other,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -815,14 +815,14 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
         if self.norm_type != other.norm_type:
             raise ValueError("Norm type mismatch in SensitiveNDArray addition.")
         return SensitiveNDArray(value     = self._value + other._value,
-                                distance  = self.distance + other.distance,
+                                distance  = self._distance + other._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self, other])
 
     @egrpc.multimethod
     def __radd__(self, other: realnum) -> SensitiveNDArray:  # type: ignore[misc]
         return SensitiveNDArray(value     = other + self._value,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -831,14 +831,14 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
         if self.shape != other.shape:
             raise ValueError("Shape mismatch in SensitiveNDArray addition.")
         return SensitiveNDArray(value     = other + self._value,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
     @egrpc.multimethod
     def __sub__(self, other: realnum) -> SensitiveNDArray:
         return SensitiveNDArray(value     = self._value - other,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -847,7 +847,7 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
         if self.shape != other.shape:
             raise ValueError("Shape mismatch in SensitiveNDArray subtraction.")
         return SensitiveNDArray(value     = self._value - other,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -858,14 +858,14 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
         if self.norm_type != other.norm_type:
             raise ValueError("Norm type mismatch in SensitiveNDArray subtraction.")
         return SensitiveNDArray(value     = self._value - other._value,
-                                distance  = self.distance + other.distance,
+                                distance  = self._distance + other._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self, other])
 
     @egrpc.multimethod
     def __rsub__(self, other: realnum) -> SensitiveNDArray:  # type: ignore[misc]
         return SensitiveNDArray(value     = other - self._value,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -874,7 +874,7 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
         if self.shape != other.shape:
             raise ValueError("Shape mismatch in SensitiveNDArray subtraction.")
         return SensitiveNDArray(value     = other - self._value,
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -882,7 +882,7 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
     @egrpc.method
     def flatten(self, order: str = "C") -> SensitiveNDArray:
         return SensitiveNDArray(value     = self._value.flatten(order=order), # type: ignore
-                                distance  = self.distance,
+                                distance  = self._distance,
                                 norm_type = self.norm_type,
                                 parents   = [self])
 
@@ -912,7 +912,7 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
     @egrpc.multimethod
     def __getitem__(self, index: PrivNDArray) -> PrivNDArray:
         # TODO: support more types of indexing
-        if self.distance.expr != 0:
+        if self._distance.expr != 0:
             raise DPError("Indexing with PrivNDArray requires distance=0")
 
         if index.ndim != 1:
@@ -929,9 +929,9 @@ class SensitiveNDArray(Prisoner[_npt.NDArray[_np.floating[Any]]]):
 
         result = self._value[index._value.astype(int)]
 
-        return PrivNDArray(value                  = result,
-                           distance               = index.distance,
-                           distance_axis          = index.distance_axis,
-                           domain                 = NDArrayDomain(), # TODO: calculate domain
-                           parents                = [index],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = result,
+                           distance       = index._distance,
+                           privacy_axis   = index._privacy_axis,
+                           domain         = NDArrayDomain(), # TODO: calculate domain
+                           parents        = [index],
+                           keep_alignment = True)

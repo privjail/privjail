@@ -90,17 +90,17 @@ def infer_missing_dim(input_shape: PrivShape, output_shape: PrivShape) -> PrivSh
 
     return tuple(resolved if dim == -1 else dim for dim in output_shape)
 
-def check_broadcast_distance_axis(shape1: PrivShape, shape2: PrivShape) -> None:
+def check_broadcast_privacy_axis(shape1: PrivShape, shape2: PrivShape) -> None:
     max_ndim = max(len(shape1), len(shape2))
     padded1: PrivShape = (1,) * (max_ndim - len(shape1)) + shape1
     padded2: PrivShape = (1,) * (max_ndim - len(shape2)) + shape2
 
     for d1, d2 in zip(padded1, padded2):
         if isinstance(d1, SensitiveDimInt) and isinstance(d2, SensitiveDimInt):
-            continue  # Same axis_signature means same size
+            continue  # Same alignment_signature means same size
         if isinstance(d1, int) and isinstance(d2, int):
             if d1 == d2 or d1 == 1 or d2 == 1:
                 continue
             raise DPError(f"Shapes are not broadcastable: {d1} vs {d2}.")
         # SensitiveDimInt vs int: always NG
-        raise DPError("Broadcasting to/from distance_axis is not allowed.")
+        raise DPError("Broadcasting to/from privacy_axis is not allowed.")

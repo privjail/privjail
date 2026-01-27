@@ -20,7 +20,7 @@ import pandas as _pd
 
 from .. import egrpc
 from ..util import DPError, ElementType, realnum
-from ..alignment import assert_distance_axis
+from ..alignment import assert_privacy_axis
 from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
@@ -127,7 +127,7 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
     #     # TODO: consider handling for pd.NA
     #     warnings.warn("Counts for NaN will be dropped from the result because NaN is not included in `rowvalues`/`colvalues`", UserWarning)
 
-    assert_distance_axis(index, columns)
+    assert_privacy_axis(index, columns)
 
     counts = _pd.crosstab(index._value, columns._value,
                           values=None, rownames=rownames, colnames=colnames,
@@ -141,7 +141,7 @@ def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[Pr
 
     return SensitiveDataFrame(data                = counts,
                               distance_group_axes = None,
-                              distance            = index.distance,
+                              distance            = index._distance,
                               parents             = [index, columns])
 
 # TODO: change multifunction -> function by type checking in egrpc.function
@@ -161,8 +161,8 @@ def cut(x              : PrivSeries[Any],
 
     new_domain = CategoryDomain(categories=list(ser.dtype.categories))
 
-    return PrivSeries[Any](data                   = ser,
-                           domain                 = new_domain,
-                           distance               = x.distance,
-                           parents                = [x],
-                           inherit_axis_signature = True)
+    return PrivSeries[Any](data           = ser,
+                           domain         = new_domain,
+                           distance       = x._distance,
+                           parents        = [x],
+                           keep_alignment = True)

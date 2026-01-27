@@ -48,7 +48,7 @@ def histogram(a     : PrivNDArray,
     hist, edges = _np.histogram(a._value, bins=bins, range=range) # type: ignore
 
     sensitive_hist = SensitiveNDArray(value     = hist,
-                                      distance  = a.distance,
+                                      distance  = a._distance,
                                       norm_type = "l1",
                                       parents   = [a])
 
@@ -82,7 +82,7 @@ def histogramdd(sample : PrivNDArray,
     hist, edges = _np.histogramdd(sample._value, bins=bins, range=range) # type: ignore
 
     sensitive_hist = SensitiveNDArray(value     = hist,
-                                      distance  = sample.distance,
+                                      distance  = sample._distance,
                                       norm_type = "l1",
                                       parents   = [sample])
 
@@ -145,60 +145,60 @@ def maximum(x1: PrivNDArray, x2: PrivNDArray | realnum) -> PrivNDArray:
     if isinstance(x2, PrivNDArray):
         x1._check_axis_aligned(x2)
         new_vr = _maximum_value_ranges(x1.domain.value_range, x2.domain.value_range)
-        return PrivNDArray(value                  = _np.maximum(x1._value, x2._value),
-                           distance               = x1.distance,
-                           distance_axis          = x1.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [x1, x2],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = _np.maximum(x1._value, x2._value),
+                           distance       = x1._distance,
+                           privacy_axis   = x1._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [x1, x2],
+                           keep_alignment = True)
     else:
         new_vr = _maximum_value_range_scalar(x1.domain.value_range, float(x2))
-        return PrivNDArray(value                  = _np.maximum(x1._value, x2),
-                           distance               = x1.distance,
-                           distance_axis          = x1.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [x1],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = _np.maximum(x1._value, x2),
+                           distance       = x1._distance,
+                           privacy_axis   = x1._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [x1],
+                           keep_alignment = True)
 
 @egrpc.function
 def minimum(x1: PrivNDArray, x2: PrivNDArray | realnum) -> PrivNDArray:
     if isinstance(x2, PrivNDArray):
         x1._check_axis_aligned(x2)
         new_vr = _minimum_value_ranges(x1.domain.value_range, x2.domain.value_range)
-        return PrivNDArray(value                  = _np.minimum(x1._value, x2._value),
-                           distance               = x1.distance,
-                           distance_axis          = x1.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [x1, x2],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = _np.minimum(x1._value, x2._value),
+                           distance       = x1._distance,
+                           privacy_axis   = x1._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [x1, x2],
+                           keep_alignment = True)
     else:
         new_vr = _minimum_value_range_scalar(x1.domain.value_range, float(x2))
-        return PrivNDArray(value                  = _np.minimum(x1._value, x2),
-                           distance               = x1.distance,
-                           distance_axis          = x1.distance_axis,
-                           domain                 = NDArrayDomain(value_range=new_vr),
-                           parents                = [x1],
-                           inherit_axis_signature = True)
+        return PrivNDArray(value          = _np.minimum(x1._value, x2),
+                           distance       = x1._distance,
+                           privacy_axis   = x1._privacy_axis,
+                           domain         = NDArrayDomain(value_range=new_vr),
+                           parents        = [x1],
+                           keep_alignment = True)
 
 @egrpc.function
 def exp(x: PrivNDArray) -> PrivNDArray:
     new_vr = _exp_value_range(x.domain.value_range)
-    return PrivNDArray(value                  = _np.exp(x._value),
-                       distance               = x.distance,
-                       distance_axis          = x.distance_axis,
-                       domain                 = NDArrayDomain(value_range=new_vr),
-                       parents                = [x],
-                       inherit_axis_signature = True)
+    return PrivNDArray(value          = _np.exp(x._value),
+                       distance       = x._distance,
+                       privacy_axis   = x._privacy_axis,
+                       domain         = NDArrayDomain(value_range=new_vr),
+                       parents        = [x],
+                       keep_alignment = True)
 
 @egrpc.function
 def log(x: PrivNDArray) -> PrivNDArray:
     new_vr = _log_value_range(x.domain.value_range)
-    return PrivNDArray(value                  = _np.log(x._value),
-                       distance               = x.distance,
-                       distance_axis          = x.distance_axis,
-                       domain                 = NDArrayDomain(value_range=new_vr),
-                       parents                = [x],
-                       inherit_axis_signature = True)
+    return PrivNDArray(value          = _np.log(x._value),
+                       distance       = x._distance,
+                       privacy_axis   = x._privacy_axis,
+                       domain         = NDArrayDomain(value_range=new_vr),
+                       parents        = [x],
+                       keep_alignment = True)
 
 @egrpc.function
 def eye(N: int, M: int | None = None, k: int = 0) -> SensitiveNDArray:
@@ -218,28 +218,28 @@ def concatenate(arrays: Sequence[PrivNDArray], axis: int = 0) -> PrivNDArray:
         raise ValueError("need at least one array to concatenate")
 
     first = arrays[0]
-    distance_axis = first.distance_axis
-    axis_signature = first.axis_signature
+    privacy_axis = first._privacy_axis
+    alignment_signature = first.alignment_signature
 
     if axis < 0:
         axis = first.ndim + axis
 
     for arr in arrays[1:]:
-        if arr.axis_signature != axis_signature:
-            raise DPError("All arrays must have the same axis_signature.")
-        if arr.distance_axis != distance_axis:
-            raise DPError("All arrays must have the same distance_axis.")
+        if arr.alignment_signature != alignment_signature:
+            raise DPError("All arrays must have the same alignment_signature.")
+        if arr._privacy_axis != privacy_axis:
+            raise DPError("All arrays must have the same privacy_axis.")
 
-    if axis == distance_axis:
-        # TODO: support concatenation along distance_axis by summing distances
-        raise DPError("Cannot concatenate along distance_axis.")
+    if axis == privacy_axis:
+        # TODO: support concatenation along privacy_axis by summing distances
+        raise DPError("Cannot concatenate along privacy_axis.")
 
     new_vr = _union_value_ranges([arr.domain.value_range for arr in arrays])
 
     result = _np.concatenate([arr._value for arr in arrays], axis=axis)
-    return PrivNDArray(value                  = result,
-                       distance               = first.distance,
-                       distance_axis          = distance_axis,
-                       domain                 = NDArrayDomain(value_range=new_vr),
-                       parents                = list(arrays),
-                       inherit_axis_signature = True)
+    return PrivNDArray(value          = result,
+                       distance       = first._distance,
+                       privacy_axis   = privacy_axis,
+                       domain         = NDArrayDomain(value_range=new_vr),
+                       parents        = list(arrays),
+                       keep_alignment = True)

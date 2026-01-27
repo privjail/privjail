@@ -40,11 +40,11 @@ def norm(x: PrivNDArray, ord: int | None = None) -> SensitiveFloat:
     bound = domain.norm_bound
     if bound is None:
         raise DPError("Norm bound is not set. Use clip_norm() before calling norm().")
-    if x.distance.is_inf():
+    if x._distance.is_inf():
         raise DPError("Unbounded distance")
 
     value = float(_np.linalg.norm(x._value, ord=ord_value))
-    new_distance = x.distance * float(bound)
+    new_distance = x._distance * float(bound)
     return SensitiveFloat(value, distance=new_distance, parents=[x])
 
 @norm.register
@@ -62,6 +62,6 @@ def _(x: SensitiveNDArray, ord: int | None = None) -> SensitiveFloat:
 
     value = float(_np.linalg.norm(x._value, ord=ord_value))
 
-    new_distance = x.distance
+    new_distance = x._distance
 
     return SensitiveFloat(value, distance=new_distance, parents=[x])

@@ -17,25 +17,25 @@ from typing import Protocol, runtime_checkable
 
 from .util import DPError
 
-AxisSignature = int
+AlignmentSignature = int
 
-_axis_signature_counter: AxisSignature = 0
+_alignment_signature_counter: AlignmentSignature = 0
 
-def new_axis_signature() -> AxisSignature:
-    global _axis_signature_counter
-    _axis_signature_counter += 1
-    return _axis_signature_counter
+def new_alignment_signature() -> AlignmentSignature:
+    global _alignment_signature_counter
+    _alignment_signature_counter += 1
+    return _alignment_signature_counter
 
 @runtime_checkable
 class AxisAligned(Protocol):
-    _distance_axis  : int
-    _axis_signature : AxisSignature
+    _privacy_axis        : int
+    _alignment_signature : AlignmentSignature
 
-def assert_axis_signature(*arrays: AxisAligned) -> None:
-    if len(arrays) > 0 and not all(arrays[0]._axis_signature == arr._axis_signature for arr in arrays):
-        raise DPError("Axis signatures do not match")
+def assert_alignment_signature(*arrays: AxisAligned) -> None:
+    if len(arrays) > 0 and not all(arrays[0]._alignment_signature == arr._alignment_signature for arr in arrays):
+        raise DPError("Alignment signatures do not match")
 
-def assert_distance_axis(*arrays: AxisAligned) -> None:
-    if len(arrays) > 0 and not all(arrays[0]._distance_axis == arr._distance_axis for arr in arrays):
-        raise DPError("Distance axes do not match")
-    assert_axis_signature(*arrays)
+def assert_privacy_axis(*arrays: AxisAligned) -> None:
+    if len(arrays) > 0 and not all(arrays[0]._privacy_axis == arr._privacy_axis for arr in arrays):
+        raise DPError("Privacy axes do not match")
+    assert_alignment_signature(*arrays)

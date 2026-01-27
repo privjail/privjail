@@ -20,7 +20,7 @@ import numpy.typing as _npt
 
 from .util import realnum, DPError
 from .numpy import PrivNDArray, NDArrayDomain
-from .alignment import new_axis_signature
+from .alignment import new_alignment_signature
 from . import egrpc
 
 @egrpc.function
@@ -32,8 +32,8 @@ def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivN
     if ord_value not in (1, 2):
         raise ValueError("`ord` must be 1, 2, or None.")
 
-    # FIXME: support for distance_axis > 0
-    assert arr.distance_axis == 0
+    # FIXME: support for privacy_axis > 0
+    assert arr._privacy_axis == 0
 
     value_array = _np.asarray(arr._value, dtype=float)
 
@@ -54,12 +54,12 @@ def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivN
 
     norm_type = "l1" if ord_value == 1 else "l2"
     new_domain = NDArrayDomain(norm_type=norm_type, norm_bound=float(bound))
-    return PrivNDArray(value                  = clipped,
-                       distance               = arr.distance,
-                       distance_axis          = arr.distance_axis,
-                       domain                 = new_domain,
-                       parents                = [arr],
-                       inherit_axis_signature = True)
+    return PrivNDArray(value          = clipped,
+                       distance       = arr._distance,
+                       privacy_axis   = arr._privacy_axis,
+                       domain         = new_domain,
+                       parents        = [arr],
+                       keep_alignment = True)
 
 @egrpc.function
 def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
@@ -67,8 +67,8 @@ def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
     if ord_value not in (1, 2):
         raise ValueError("`ord` must be 1, 2, or None.")
 
-    # FIXME: support for distance_axis > 0
-    assert arr.distance_axis == 0
+    # FIXME: support for privacy_axis > 0
+    assert arr._privacy_axis == 0
 
     eps = 1e-12
     value_array = _np.asarray(arr._value, dtype=float)
@@ -87,12 +87,12 @@ def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
 
     norm_type = "l1" if ord_value == 1 else "l2"
     new_domain = NDArrayDomain(norm_type=norm_type, norm_bound=1.0, value_range=(-1.0, 1.0))
-    return PrivNDArray(value                  = normalized,
-                       distance               = arr.distance,
-                       distance_axis          = arr.distance_axis,
-                       domain                 = new_domain,
-                       parents                = [arr],
-                       inherit_axis_signature = True)
+    return PrivNDArray(value          = normalized,
+                       distance       = arr._distance,
+                       privacy_axis   = arr._privacy_axis,
+                       domain         = new_domain,
+                       parents        = [arr],
+                       keep_alignment = True)
 
 @overload
 def sample(array: PrivNDArray, /, *, q: float, method: str = "poisson") -> PrivNDArray: ...
@@ -118,13 +118,13 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
 
     first = arrays[0]
 
-    if not all(arr.axis_signature == first.axis_signature for arr in arrays[1:]):
-        raise DPError("All arrays must have the same axis_signature.")
+    if not all(arr.alignment_signature == first.alignment_signature for arr in arrays[1:]):
+        raise DPError("All arrays must have the same alignment_signature.")
 
-    # FIXME: support for distance_axis > 0
-    assert all(arr.distance_axis == 0 for arr in arrays)
+    # FIXME: support for privacy_axis > 0
+    assert all(arr._privacy_axis == 0 for arr in arrays)
 
-    effective_max_distance = float(first.distance.max())
+    effective_max_distance = float(first._distance.max())
     if effective_max_distance != 1.0:
         raise DPError("Subsampling requires adjacent databases (max_distance=1)")
 
@@ -134,17 +134,17 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
     parent_accountant = first.accountant
     child_accountant = parent_accountant.create_subsampling_accountant(q)
 
-    sig = new_axis_signature()
+    sig = new_alignment_signature()
     results: list[PrivNDArray] = []
     for arr in arrays:
-        out = PrivNDArray(value                  = arr._value[mask],
-                          distance               = arr.distance,
-                          distance_axis          = arr.distance_axis,
-                          domain                 = arr.domain,
-                          parents                = [arr],
-                          accountant             = child_accountant,
-                          inherit_axis_signature = False)
-        out._axis_signature = sig
+        out = PrivNDArray(value          = arr._value[mask],
+                          distance       = arr._distance,
+                          privacy_axis   = arr._privacy_axis,
+                          domain         = arr.domain,
+                          parents        = [arr],
+                          accountant     = child_accountant,
+                          keep_alignment = False)
+        out._alignment_signature = sig
         results.append(out)
 
     return tuple(results)

@@ -242,7 +242,7 @@ def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                       eps      : float | None = None,
                       scale    : float | None = None,
                       ) -> float:
-    sensitivity = float(prisoner.distance.max())
+    sensitivity = float(prisoner._distance.max())
     assert_sensitivity(sensitivity)
 
     resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
@@ -294,7 +294,7 @@ def _(prisoner : SensitiveSeries[realnum],
             raise Exception
 
     else:
-        sensitivity = float(prisoner.distance.max())
+        sensitivity = float(prisoner._distance.max())
         resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
         data = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
         spent_eps = resolved_eps
@@ -344,7 +344,7 @@ def _(prisoner : SensitiveDataFrame,
             raise Exception
 
     else:
-        sensitivity = float(prisoner.distance.max())
+        sensitivity = float(prisoner._distance.max())
         resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
         data = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
         spent_eps = resolved_eps
@@ -364,7 +364,7 @@ def _(prisoner : SensitiveNDArray,
       eps      : float | None = None,
       scale    : float | None = None,
       ) -> _npt.NDArray[Any]:
-    sensitivity = float(prisoner.distance.max())
+    sensitivity = float(prisoner._distance.max())
     assert_sensitivity(sensitivity)
 
     resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
@@ -423,7 +423,7 @@ def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                        rho      : float | None = None,
                        scale    : float | None = None,
                        ) -> float:
-    sensitivity = float(prisoner.distance.max())
+    sensitivity = float(prisoner._distance.max())
     assert_sensitivity(sensitivity)
 
     budget : BudgetType
@@ -509,7 +509,7 @@ def _(prisoner : SensitiveSeries[realnum],
             budget = (spent_eps, delta)
 
         else:
-            sensitivity = float(prisoner.distance.max())
+            sensitivity = float(prisoner._distance.max())
             resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = (resolved_eps, delta)
@@ -544,7 +544,7 @@ def _(prisoner : SensitiveSeries[realnum],
             budget = spent_rho
 
         else:
-            sensitivity = float(prisoner.distance.max())
+            sensitivity = float(prisoner._distance.max())
             resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = resolved_rho
@@ -577,7 +577,7 @@ def _(prisoner : SensitiveSeries[realnum],
             budget = total_budget
 
         else:
-            sensitivity = float(prisoner.distance.max())
+            sensitivity = float(prisoner._distance.max())
             rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
                 sensitivity, alpha, scale=scale, sampling_rate=sampling_rate
             )
@@ -640,7 +640,7 @@ def _(prisoner : SensitiveDataFrame,
             budget = (spent_eps, delta)
 
         else:
-            sensitivity = float(prisoner.distance.max())
+            sensitivity = float(prisoner._distance.max())
             resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = (resolved_eps, delta)
@@ -678,7 +678,7 @@ def _(prisoner : SensitiveDataFrame,
             budget = spent_rho
 
         else:
-            sensitivity = float(prisoner.distance.max())
+            sensitivity = float(prisoner._distance.max())
             resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
             data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
             budget = resolved_rho
@@ -711,7 +711,7 @@ def _(prisoner : SensitiveDataFrame,
             budget = total_budget
 
         else:
-            sensitivity = float(prisoner.distance.max())
+            sensitivity = float(prisoner._distance.max())
             rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
                 sensitivity, alpha, scale=scale, sampling_rate=sampling_rate
             )
@@ -733,7 +733,7 @@ def _(prisoner : SensitiveNDArray,
       rho      : float | None = None,
       scale    : float | None = None,
       ) -> _npt.NDArray[Any]:
-    sensitivity = float(prisoner.distance.max())
+    sensitivity = float(prisoner._distance.max())
     assert_sensitivity(sensitivity)
 
     budget: BudgetType
@@ -779,11 +779,11 @@ def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
 
-    sensitivity = max([v.distance.max() for v in scores]) # type: ignore[type-var]
+    sensitivity = max([v._distance.max() for v in scores]) # type: ignore[type-var]
     assert_sensitivity(sensitivity)
 
     # create a dummy prisoner to propagate budget consumption to all prisoners
-    prisoner_dummy = Prisoner(0, scores[0].distance, parents=scores)
+    prisoner_dummy = Prisoner(0, scores[0]._distance, parents=scores)
 
     budget : BudgetType
 

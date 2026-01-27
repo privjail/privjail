@@ -56,7 +56,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         self._by_objs           = by_objs
         self._variable_exprs    = variable_exprs
         self._child_accountants = child_accountants
-        super().__init__(value=obj, distance=df.distance, parents=[df])
+        super().__init__(value=obj, distance=df._distance, parents=[df])
 
     def _get_variable_exprs(self) -> dict[tuple[ElementType, ...], RealExpr]:
         if self._variable_exprs is None:
@@ -66,7 +66,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
             if self._df._is_uldp():
                 exprs = self._df._user_max_freq.create_exclusive_children(n_children)
             else:
-                exprs = self._df.distance.create_exclusive_children(n_children)
+                exprs = self._df._distance.create_exclusive_children(n_children)
 
             self._variable_exprs = {o: d for o, d in zip(itertools.product(*self._by_objs), exprs)}
 
@@ -78,9 +78,9 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
             assert len(self) == n_children
 
             if self._df._is_uldp():
-                effective_max_distance = float(self._df.distance.max()) * float(self._df._user_max_freq.max())
+                effective_max_distance = float(self._df._distance.max()) * float(self._df._user_max_freq.max())
             else:
-                effective_max_distance = float(self._df.distance.max())
+                effective_max_distance = float(self._df._distance.max())
 
             if effective_max_distance != 1.0:
                 raise DPError("Parallel composition requires adjacent databases (max_distance=1)")
@@ -118,14 +118,14 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
                   for o in itertools.product(*self._by_objs)}
 
         # TODO: update childrens' category domain that is chosen for the groupby key
-        return {o: PrivDataFrame(data                   = df,
-                                 domains                = self._df.domains,
-                                 distance               = self._df.distance if self._df._is_uldp() else e,
-                                 user_key               = self._df.user_key,
-                                 user_max_freq          = e if self._df._is_uldp() else RealExpr.INF,
-                                 parents                = [self._df],
-                                 accountant             = a,
-                                 inherit_axis_signature = False)
+        return {o: PrivDataFrame(data           = df,
+                                 domains        = self._df.domains,
+                                 distance       = self._df._distance if self._df._is_uldp() else e,
+                                 user_key       = self._df.user_key,
+                                 user_max_freq  = e if self._df._is_uldp() else RealExpr.INF,
+                                 parents        = [self._df],
+                                 accountant     = a,
+                                 keep_alignment = False)
                 for (o, df), e, a in zip(groups.items(), self._get_variable_exprs().values(), self._get_child_accountants().values())}
 
     @egrpc.method
@@ -153,14 +153,14 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
 
         df = self._value.get_group(obj) if obj in self._value.groups else self._gen_empty_df()
         expr = self._get_variable_exprs()[ot]
-        return PrivDataFrame(data                   = df,
-                             domains                = self._df.domains,
-                             distance               = self._df.distance if self._df._is_uldp() else expr,
-                             user_key               = self._df.user_key,
-                             user_max_freq          = expr if self._df._is_uldp() else RealExpr.INF,
-                             parents                = [self._df],
-                             accountant             = self._get_child_accountants()[ot],
-                             inherit_axis_signature = False)
+        return PrivDataFrame(data           = df,
+                             domains        = self._df.domains,
+                             distance       = self._df._distance if self._df._is_uldp() else expr,
+                             user_key       = self._df.user_key,
+                             user_max_freq  = expr if self._df._is_uldp() else RealExpr.INF,
+                             parents        = [self._df],
+                             accountant     = self._get_child_accountants()[ot],
+                             keep_alignment = False)
 
     @egrpc.method
     def size(self) -> SensitiveSeries[int]:
@@ -169,7 +169,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # Select only the groupby keys and fill non-existent counts with 0
         counts = counts.reindex(self._get_index()).fillna(0).astype(int)
 
-        distance = self._df.distance * self._df._user_max_freq if self._df._is_uldp() else self._df.distance
+        distance = self._df._distance * self._df._user_max_freq if self._df._is_uldp() else self._df._distance
 
         return SensitiveSeries[int](data                = counts,
                                     distance_group_axes = None,
@@ -183,7 +183,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         # Select only the groupby keys and fill non-existent counts with 0
         sums = sums.reindex(self._get_index()).fillna(0)
 
-        distance = self._df.distance * self._df._user_max_freq if self._df._is_uldp() else self._df.distance
+        distance = self._df._distance * self._df._user_max_freq if self._df._is_uldp() else self._df._distance
 
         distance_per_ser = [distance * sum_sensitivity(domain)
                             for col, domain in self._df.domains.items() if col not in self._by_columns]
@@ -218,7 +218,7 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
         assert df._is_uldp()
         self._df         = df
         self._by_columns = by_columns
-        super().__init__(value=obj, distance=df.distance, parents=[df])
+        super().__init__(value=obj, distance=df._distance, parents=[df])
 
     def __len__(self) -> int:
         raise DPError("This operation is not allowed for user-grouped objects.")
@@ -236,13 +236,13 @@ class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # t
 
     @egrpc.method
     def head(self, n: int = 5) -> PrivDataFrame:
-        return PrivDataFrame(data                   = self._value.head(n=n),
-                             domains                = self._df.domains,
-                             distance               = self._df.distance,
-                             user_key               = self._df._user_key,
-                             user_max_freq          = _min(RealExpr(n), self._df._user_max_freq),
-                             parents                = [self._df],
-                             inherit_axis_signature = False)
+        return PrivDataFrame(data           = self._value.head(n=n),
+                             domains        = self._df.domains,
+                             distance       = self._df._distance,
+                             user_key       = self._df._user_key,
+                             user_max_freq  = _min(RealExpr(n), self._df._user_max_freq),
+                             parents        = [self._df],
+                             keep_alignment = False)
 
 @egrpc.function
 def _do_group_by(df         : PrivDataFrame,
