@@ -27,6 +27,10 @@ class ApproxDPAccountant(Accountant[ApproxBudgetType]):
     def family_name() -> str:
         return "approx"
 
+    @egrpc.property
+    def budget_spent(self) -> ApproxBudgetType:
+        return self._budget_spent
+
     def propagate(self, next_budget_spent: ApproxBudgetType, parent: Accountant[Any]) -> None:
         diff = (next_budget_spent[0] - self._budget_spent[0], next_budget_spent[1] - self._budget_spent[1])
         if isinstance(parent, ApproxDPAccountant):

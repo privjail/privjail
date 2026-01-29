@@ -107,6 +107,7 @@ class Accountant(ABC, Generic[T]):
             raise ValueError(f"Name '{name}' has alreadly been registered")
         self._root_name = name
 
+    @property
     def budget_spent(self) -> T:
         return self._budget_spent
 

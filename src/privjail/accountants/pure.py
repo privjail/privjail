@@ -28,6 +28,10 @@ class PureDPAccountant(Accountant[PureBudgetType]):
     def family_name() -> str:
         return "pure"
 
+    @egrpc.property
+    def budget_spent(self) -> PureBudgetType:
+        return self._budget_spent
+
     def propagate(self, next_budget_spent: PureBudgetType, parent: Accountant[Any]) -> None:
         diff = next_budget_spent - self._budget_spent
         if isinstance(parent, PureDPAccountant):

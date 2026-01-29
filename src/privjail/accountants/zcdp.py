@@ -49,6 +49,10 @@ class zCDPAccountant(Accountant[zCDPBudgetType]):
     def family_name() -> str:
         return "zCDP"
 
+    @egrpc.property
+    def budget_spent(self) -> zCDPBudgetType:
+        return self._budget_spent
+
     def propagate(self, next_budget_spent: zCDPBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, zCDPParallelAccountant):
             parent.spend(next_budget_spent)

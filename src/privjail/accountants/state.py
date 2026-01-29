@@ -80,5 +80,5 @@ def accountant_state() -> dict[str, AccountantState]:
 
 @egrpc.function
 def budgets_spent() -> dict[str, tuple[str, BudgetType]]:
-    return {root_name: (type(acc).family_name(), acc.budget_spent())
+    return {root_name: (type(acc).family_name(), acc.budget_spent)
             for root_name, acc in get_all_root_accountants().items()}

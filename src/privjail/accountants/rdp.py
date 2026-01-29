@@ -83,6 +83,10 @@ class RDPAccountant(Accountant[RDPBudgetType]):
     def family_name() -> str:
         return "RDP"
 
+    @egrpc.property
+    def budget_spent(self) -> RDPBudgetType:
+        return self._budget_spent
+
     def propagate(self, next_budget_spent: RDPBudgetType, parent: Accountant[Any]) -> None:
         if isinstance(parent, RDPParallelAccountant):
             parent.spend(next_budget_spent)

@@ -374,12 +374,12 @@ def test_sample_subsampling_accountant_pure() -> None:
     _ = pj.laplace_mechanism(clipped_sum, eps=1.0)
     _ = pj.laplace_mechanism(clipped_sum, eps=1.0)
 
-    child_spent = x_s.accountant.budget_spent()
+    child_spent = x_s.accountant.budget_spent
     assert child_spent == pytest.approx(2.0)
 
     # Parent should receive amp(2.0), not amp(1.0) + amp(1.0)
     expected_eps = math.log(1 + q * (math.exp(2.0) - 1))
-    parent_spent = accountant.budget_spent()
+    parent_spent = accountant.budget_spent
     assert parent_spent == pytest.approx(expected_eps)
 
 def test_sample_subsampling_accountant_approx() -> None:
@@ -408,14 +408,14 @@ def test_sample_subsampling_accountant_approx() -> None:
     _ = pj.gaussian_mechanism(clipped_sum, eps=1.0, delta=1e-5)
     _ = pj.gaussian_mechanism(clipped_sum, eps=1.0, delta=1e-5)
 
-    child_spent = x_s.accountant.budget_spent()
+    child_spent = x_s.accountant.budget_spent
     assert child_spent[0] == pytest.approx(2.0)
     assert child_spent[1] == pytest.approx(2e-5)
 
     # Parent should receive amp(2.0, 2e-5), not amp(1.0, 1e-5) + amp(1.0, 1e-5)
     expected_eps = math.log(1 + q * (math.exp(2.0) - 1))
     expected_delta = q * 2e-5
-    parent_spent = accountant.budget_spent()
+    parent_spent = accountant.budget_spent
     assert parent_spent[0] == pytest.approx(expected_eps)
     assert parent_spent[1] == pytest.approx(expected_delta)
 

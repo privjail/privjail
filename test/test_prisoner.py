@@ -140,7 +140,7 @@ def test_rdp_budget_limit() -> None:
         assert x_rdp.accountant.parent._budget_limit == (8.0, 1e-6)
 
         pj.gaussian_mechanism(x_rdp, scale=1.0)
-        eps_spent = x_rdp.accountant.parent.budget_spent()[0]
+        eps_spent = x_rdp.accountant.parent.budget_spent[0]
         assert 5.9 < eps_spent < 6.0
 
         with pytest.raises(pj.BudgetExceededError):
@@ -159,7 +159,7 @@ def test_prepaid() -> None:
         assert isinstance(x_rdp, pj.SensitiveFloat)
 
         # Check that budget was spent upfront to root
-        root_spent = accountant.budget_spent()
+        root_spent = accountant.budget_spent
         assert root_spent[0] == pytest.approx(10.0)
         assert root_spent[1] == pytest.approx(1e-6)
 
@@ -167,12 +167,12 @@ def test_prepaid() -> None:
         pj.gaussian_mechanism(x_rdp, scale=1.0)
 
         # Root accountant should still show the same budget (no additional propagation)
-        root_spent_after = accountant.budget_spent()
+        root_spent_after = accountant.budget_spent
         assert root_spent_after[0] == pytest.approx(10.0)
         assert root_spent_after[1] == pytest.approx(1e-6)
 
         # But the intermediate accountant should track spending
         intermediate = x_rdp.accountant.parent
         assert intermediate is not None
-        intermediate_spent = intermediate.budget_spent()
+        intermediate_spent = intermediate.budget_spent
         assert intermediate_spent[0] > 0  # Some epsilon spent
