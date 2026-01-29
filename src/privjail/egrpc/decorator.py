@@ -167,7 +167,7 @@ def register_remoteclass_init(cls: Type[T]) -> Callable[..., None]:
             proto_req = pack_proto_method_request(cls, init_method, *args, **kwargs)
             proto_res = grpc_method_call(cls, init_method, proto_req)
             instance_ref = unpack_proto_method_response(cls, init_method, proto_res)
-            assign_ref_to_instance(cls, args[0], instance_ref, False)
+            assign_ref_to_instance(cls, args[0], instance_ref)
         else:
             init_method(*args, **kwargs)
 

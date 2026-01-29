@@ -47,16 +47,23 @@ def _get_instance_ref(obj: T) -> int:
 
 def get_ref_from_instance(cls: Type[T], obj: T, on_server: bool) -> InstanceRefType:
     if on_server and not hasattr(obj, "__instance_ref"):
-        instance_ref = getattr(cls, "__instance_count")
+        instance_ref: int = getattr(cls, "__instance_count")
         setattr(cls, "__instance_count", instance_ref + 1)
-        assign_ref_to_instance(cls, obj, instance_ref, on_server)
+        setattr(obj, "__instance_ref", instance_ref)
+    else:
+        instance_ref = _get_instance_ref(obj)
 
-    return _get_instance_ref(obj)
+    if on_server:
+        instance_map_server = _get_instance_map_server(cls)
+        instance_map_server[instance_ref] = obj
+
+    return instance_ref
 
 def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType, type_hint: TypeHint, on_server: bool) -> T:
     if on_server:
         instance_map_server = _get_instance_map_server(cls)
-        assert instance_ref in instance_map_server
+        if instance_ref not in instance_map_server:
+            raise ValueError(f"Unknown instance ref {instance_ref} for {cls.__name__}")
         return instance_map_server[instance_ref]
 
     else:
@@ -64,35 +71,30 @@ def get_instance_from_ref(cls: Type[T], instance_ref: InstanceRefType, type_hint
 
         if instance_ref in instance_map_client:
             obj = instance_map_client[instance_ref]()
-            assert obj is not None
-            return obj
+            if obj is not None:
+                return obj
+            # Weakref target was GC'd; re-create the proxy instance.
+            del instance_map_client[instance_ref]
 
-        else:
-            obj = object.__new__(cls)
+        obj = object.__new__(cls)
 
-            # If this type is a generic type, set `__orig_class__` attribute
-            # so that this information is used for type-based dispatch (by multimethod.multidispatch)
-            if len(get_args(type_hint)) > 0:
-                setattr(obj, "__orig_class__", type_hint)
+        # If this type is a generic type, set `__orig_class__` attribute
+        # so that this information is used for type-based dispatch (by multimethod.multidispatch)
+        if len(get_args(type_hint)) > 0:
+            setattr(obj, "__orig_class__", type_hint)
 
-            assign_ref_to_instance(cls, obj, instance_ref, on_server)
-            return obj
+        assign_ref_to_instance(cls, obj, instance_ref)
+        return obj
 
-def assign_ref_to_instance(cls: Type[T], obj: T, instance_ref: InstanceRefType, on_server: bool) -> None:
+def assign_ref_to_instance(cls: Type[T], obj: T, instance_ref: InstanceRefType) -> None:
     setattr(obj, "__instance_ref", instance_ref)
-
-    if on_server:
-        instance_map_server = _get_instance_map_server(cls)
-        assert instance_ref not in instance_map_server
-        instance_map_server[instance_ref] = obj
-
-    else:
-        # use weakref so that obj is garbage collected regardless of instance map
-        instance_map_client = _get_instance_map_client(cls)
-        assert instance_ref not in instance_map_client
-        instance_map_client[instance_ref] = weakref.ref(obj)
+    # use weakref so that obj is garbage collected regardless of instance map
+    instance_map_client = _get_instance_map_client(cls)
+    assert instance_ref not in instance_map_client
+    instance_map_client[instance_ref] = weakref.ref(obj)
 
 def del_instance(cls: Type[T], obj: T) -> None:
     instance_map = _get_instance_map_server(cls)
     instance_ref = _get_instance_ref(obj)
-    del instance_map[instance_ref]
+    if instance_ref in instance_map:
+        del instance_map[instance_ref]

@@ -19,6 +19,8 @@ import os
 import multiprocessing
 import time
 import math
+import gc
+import weakref
 import pytest
 from privjail import egrpc
 
@@ -231,6 +233,7 @@ def test_remoteclass(server: Any) -> None:
 class Hoge():
     def __init__(self, x: int):
         self.x = x
+        self._fuga = Fuga(str(x))
 
     @egrpc.property
     def value(self) -> int:
@@ -239,10 +242,11 @@ class Hoge():
     @value.setter
     def value(self, x: int) -> None:
         self.x = x
+        self._fuga.value = str(x)
 
     @egrpc.method
     def fuga(self) -> "Fuga":
-        return Fuga(str(self.x))
+        return self._fuga
 
 @egrpc.remoteclass
 class Fuga():
@@ -274,6 +278,22 @@ def test_remoteclass2(server: Any) -> None:
     hoge.value = 2
     assert hoge.value == 2
     assert hoge.fuga().value == "2"
+
+def test_remoteclass3(server: Any) -> None:
+    hoge = gen_hoge(7)
+    fuga1 = hoge.fuga()
+    fuga2 = hoge.fuga()
+    assert fuga1 is fuga2
+    assert fuga1.value == "7"
+
+    ref = weakref.ref(fuga1)
+    del fuga1
+    del fuga2
+    gc.collect()
+    assert ref() is None
+
+    fuga3 = hoge.fuga()
+    assert fuga3.value == "7"
 
 @egrpc.remoteclass
 class Animal:
