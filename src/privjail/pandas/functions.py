@@ -78,6 +78,9 @@ def read_csv(filepath     : str,
 
     acc.set_as_root(name=filepath)
 
+    # consolidate dataframe blocks (for performance)
+    df = df.copy()
+
     return PrivDataFrame(data       = df,
                          domains    = domains,
                          distance   = RealExpr(1),
