@@ -244,8 +244,12 @@ wheels = [
 
 [[package]]
 name = "multimethod"
-version = "2.0"
-source = { git = "https://github.com/coady/multimethod.git#e34254da673d2650a52fc429773d47a4e9dd10ea" }
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/2d/6274e03d1d656f329f3546140a536fc728b68a1ef123d0deebc751541473/multimethod-2.0.2.tar.gz", hash = "sha256:4f753e9ef0eb08f25037fb7d04f3de22547716c4af257a978e1c4d660edab8f4", size = 15657 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/3d/44e60142e058f7e41d0ab19e7f5cc9d77a00833fd6f0197dbbd4f13c0321/multimethod-2.0.2-py3-none-any.whl", hash = "sha256:e6e61347765ec0c154aef827bd6952a685a6693eb9d927fb530a6c364c77939e", size = 9561 },
+]
 
 [[package]]
 name = "mypy"
@@ -523,7 +527,7 @@ dev = [
 requires-dist = [
     { name = "grpcio", specifier = ">=1.69.0" },
     { name = "grpcio-tools", specifier = ">=1.69.0" },
-    { name = "multimethod", git = "https://github.com/coady/multimethod.git" },
+    { name = "multimethod", specifier = ">=2.0.2" },
     { name = "numpy", specifier = "==2.1.3" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "sympy", specifier = ">=1.13.3" },
