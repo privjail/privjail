@@ -113,8 +113,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
 
     @egrpc.property
     def groups(self) -> dict[ElementType | tuple[ElementType, ...], PrivDataFrame]:
-        # set empty groups for absent keys
-        groups = {_squash_tuple(o): self._value.get_group(_squash_tuple(o)) if _squash_tuple(o) in self._value.groups else self._gen_empty_df()
+        groups = {_squash_tuple(o): self._df._value.iloc[self._value.indices[_squash_tuple(o)]]
                   for o in itertools.product(*self._by_objs)}
 
         # TODO: update childrens' category domain that is chosen for the groupby key
@@ -151,7 +150,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
 
         assert ot in self._get_variable_exprs()
 
-        df = self._value.get_group(obj) if obj in self._value.groups else self._gen_empty_df()
+        df = self._df._value.iloc[self._value.indices[obj]]
         expr = self._get_variable_exprs()[ot]
         return PrivDataFrame(data           = df,
                              domains        = self._df.domains,
@@ -167,7 +166,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         counts = self._value.size()
 
         # Select only the groupby keys and fill non-existent counts with 0
-        counts = counts.reindex(self._get_index()).fillna(0).astype(int)
+        counts = counts.reindex(self._get_index(), fill_value=0)
 
         distance = self._df._distance * self._df._user_max_freq if self._df._is_uldp() else self._df._distance
 
@@ -181,7 +180,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         sums = self._value.sum()
 
         # Select only the groupby keys and fill non-existent counts with 0
-        sums = sums.reindex(self._get_index()).fillna(0)
+        sums = sums.reindex(self._get_index(), fill_value=0)
 
         distance = self._df._distance * self._df._user_max_freq if self._df._is_uldp() else self._df._distance
 
@@ -255,8 +254,6 @@ def _do_group_by(df         : PrivDataFrame,
                  dropna     : bool       = True,
                  ) -> PrivDataFrameGroupBy | PrivDataFrameGroupByUser:
     # TODO: consider extra arguments
-    grouped = df._value.groupby(by, observed=observed)
-
     if isinstance(by, ColumnType):
         by_columns = [by]
     elif isinstance(by, Sequence):
@@ -265,6 +262,7 @@ def _do_group_by(df         : PrivDataFrame,
         raise TypeError
 
     if df.user_key in by_columns:
+        grouped = df._value.groupby(by, observed=observed)
         return PrivDataFrameGroupByUser(grouped, df, by_columns)
 
     else:
@@ -278,4 +276,5 @@ def _do_group_by(df         : PrivDataFrame,
 
             by_objs.append(list(key_domain.categories))
 
+        grouped = df._value.groupby(by, observed=False)
         return PrivDataFrameGroupBy(grouped, df, by_columns, by_objs)

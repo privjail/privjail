@@ -90,6 +90,9 @@ class RealExpr:
             if not changed:
                 break
 
+        if sp_expr.is_number:
+            return int(sp_expr) if sp_expr.is_integer else float(sp_expr)
+
         sp_constraints += list({0 <= d for c in sp_constraints for d in c.free_symbols})
 
         # Solve by linear programming

@@ -473,6 +473,7 @@ def test_dataframe_groupby() -> None:
     keys = [1, 2, 4]
     # FIXME: use public API
     pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=list(keys))})
+    pdf._value["b"] = pdf._value["b"].astype(pd.CategoricalDtype(categories=keys))
     groups = pdf.groupby("b")
     assert len(groups) == len(keys)
 
@@ -671,6 +672,7 @@ def test_privacy_budget_parallel_composition() -> None:
 
     # FIXME: use public API
     pdf._domains = merge_domains(pdf._domains, {"b": ppd.CategoryDomain(categories=[1, 2, 3, 4, 5])})
+    pdf._value["b"] = pdf._value["b"].astype(pd.CategoricalDtype(categories=[1, 2, 3, 4, 5]))
     print(pdf._value)
 
     # groupby()

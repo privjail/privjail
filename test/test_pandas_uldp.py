@@ -73,6 +73,7 @@ def load_dataframe() -> tuple[ppd.PrivDataFrame, pd.DataFrame]:
                             distance=pj.RealExpr(1),
                             accountant=accountant,
                             user_key="uid")
+    pdf._value["c"] = pdf._value["c"].astype(pd.CategoricalDtype(categories=["x", "y", "z", "w"]))
 
     df = pd.DataFrame(data, columns=columns)
 

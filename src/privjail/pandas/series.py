@@ -591,7 +591,7 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         counts = self._value.value_counts(normalize, sort, ascending, bins, dropna)
 
         # Select only the specified values and fill non-existent counts with 0
-        counts = counts.reindex(values).fillna(0).astype(int)
+        counts = counts.reindex(values, fill_value=0)
 
         return SensitiveSeries[int](data                = counts,
                                     distance_group_axes = None,
