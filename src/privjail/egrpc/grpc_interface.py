@@ -105,9 +105,10 @@ def init_server(port: int, host: str | None = None) -> Any:
 ChannelType = Any
 
 client_channel: ChannelType | None = None
+client_stubs: dict[str, Any] = {}
 
 def init_client(hostname: str, port: int) -> None:
-    global client_channel
+    global client_channel, client_stubs
     client_channel = grpc.insecure_channel(
         f"{hostname}:{port}",
         options=(
@@ -115,15 +116,24 @@ def init_client(hostname: str, port: int) -> None:
             ("grpc.max_receive_message_length", MAX_MESSAGE_LENGTH),
         )
     )
+    client_stubs = {}
 
 def del_client() -> None:
-    global client_channel
+    global client_channel, client_stubs
     client_channel = None
+    client_stubs = {}
 
 def get_client_channel() -> ChannelType:
     global client_channel
     assert client_channel is not None
     return client_channel
+
+def _get_stub(proto_service_name: str) -> Any:
+    stub = client_stubs.get(proto_service_name)
+    if stub is None:
+        stub = getattr(get_grpc_module(), f"{proto_service_name}Stub")(get_client_channel())
+        client_stubs[proto_service_name] = stub
+    return stub
 
 def remote_connected() -> bool:
     return client_channel is not None
@@ -132,8 +142,7 @@ def grpc_function_call(func: Callable[P, R], proto_req: ProtoMsg) -> ProtoMsg:
     proto_service_name = names.proto_function_service_name(func)
     proto_rpc_name = names.proto_function_rpc_name(func)
 
-    channel = get_client_channel()
-    stub = getattr(get_grpc_module(), f"{proto_service_name}Stub")(channel)
+    stub = _get_stub(proto_service_name)
     try:
         proto_res = getattr(stub, proto_rpc_name)(proto_req)
     except grpc.RpcError as e:
@@ -145,8 +154,7 @@ def grpc_method_call(cls: Type[T], method: Callable[P, R], proto_req: ProtoMsg) 
     proto_service_name = names.proto_remoteclass_service_name(cls)
     proto_rpc_name = names.proto_method_rpc_name(cls, method)
 
-    channel = get_client_channel()
-    stub = getattr(get_grpc_module(), f"{proto_service_name}Stub")(channel)
+    stub = _get_stub(proto_service_name)
     try:
         proto_res = getattr(stub, proto_rpc_name)(proto_req)
     except grpc.RpcError as e:
