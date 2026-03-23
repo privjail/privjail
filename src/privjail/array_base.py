@@ -15,7 +15,8 @@
 from __future__ import annotations
 from typing import Any, Generic, Sequence, TypeVar
 
-from . import egrpc
+import egrpc
+
 from .alignment import AxisAligned, AlignmentSignature, assert_privacy_axis, new_alignment_signature
 from .accountants import Accountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat

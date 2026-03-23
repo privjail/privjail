@@ -16,12 +16,13 @@ from __future__ import annotations
 from typing import Any
 import gc
 
+import egrpc
+
 from .util import Accountant
 from .pure import PureBudgetType
 from .approx import ApproxBudgetType
 from .zcdp import zCDPBudgetType
 from .rdp import RDPBudgetType
-from .. import egrpc
 
 BudgetType = PureBudgetType | ApproxBudgetType | zCDPBudgetType | RDPBudgetType
 

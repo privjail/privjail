@@ -17,11 +17,11 @@ from typing import overload
 
 import numpy as _np
 import numpy.typing as _npt
+import egrpc
 
 from .util import realnum, DPError
 from .numpy import PrivNDArray, NDArrayDomain
 from .alignment import new_alignment_signature
-from . import egrpc
 
 @egrpc.function
 def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivNDArray:

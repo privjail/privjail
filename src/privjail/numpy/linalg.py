@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import numpy as _np
+import egrpc
 
-from .. import egrpc
 from ..prisoner import SensitiveFloat
 from ..util import DPError
 from .array import PrivNDArray, SensitiveNDArray

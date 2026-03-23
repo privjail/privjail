@@ -18,8 +18,8 @@ from typing import Any, get_origin
 
 import numpy as _np
 import numpy.typing as _npt
+import egrpc
 
-from .. import egrpc
 from ..array_base import SensitiveDimInt
 from ..util import DPError
 

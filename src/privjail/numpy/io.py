@@ -18,8 +18,8 @@ import json
 
 import numpy as _np
 import numpy.typing as _npt
+import egrpc
 
-from .. import egrpc
 from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .array import PrivNDArray

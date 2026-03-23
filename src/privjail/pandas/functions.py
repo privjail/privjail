@@ -17,8 +17,8 @@ from typing import TypeVar, Any, Sequence
 import json
 
 import pandas as _pd
+import egrpc
 
-from .. import egrpc
 from ..util import DPError, ElementType, realnum
 from ..alignment import assert_privacy_axis
 from ..realexpr import RealExpr

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from .. import egrpc
+import egrpc
 
 ValueRange = tuple[float | None, float | None] | None
 

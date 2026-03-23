@@ -16,9 +16,10 @@ from __future__ import annotations
 from typing import Any, Sequence
 import math
 
+import egrpc
+
 from .util import Accountant, ParallelAccountant, SubsamplingAccountant
 from .approx import ApproxDPAccountant
-from .. import egrpc
 from ..util import DPError
 
 # Budget type: {alpha: epsilon} mapping

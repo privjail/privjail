@@ -17,8 +17,8 @@ from typing import Any, Sequence, TypeGuard
 
 import numpy as _np
 import numpy.typing as _npt
+import egrpc
 
-from .. import egrpc
 from ..util import DPError, realnum
 from ..realexpr import RealExpr
 from .array import PrivNDArray, SensitiveNDArray

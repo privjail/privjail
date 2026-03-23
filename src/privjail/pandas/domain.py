@@ -19,8 +19,8 @@ from dataclasses import field
 
 import numpy as _np
 import pandas as _pd
+import egrpc
 
-from .. import egrpc
 from ..util import DPError, realnum, ElementType
 
 @egrpc.dataclass

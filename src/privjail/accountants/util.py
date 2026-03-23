@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from typing import Generic, TypeVar, Any, Sequence, ClassVar
 import weakref
 
-from .. import egrpc
+import egrpc
 
 class BudgetExceededError(Exception):
     ...

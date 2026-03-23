@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from egrpc import serve, connect, disconnect, proto_file_content
+
 from . import pandas
 from .util import DPError
 from .accountants import Accountant, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, AccountantState, accountant_state, budgets_spent, BudgetExceededError
@@ -20,7 +22,6 @@ from .array_base import SensitiveDimInt
 from .realexpr import RealExpr
 from .mechanism import laplace_mechanism, gaussian_mechanism, exponential_mechanism, argmax, argmin
 from .helper import clip_norm, normalize, sample
-from .egrpc import serve, connect, disconnect, proto_file_content
 
 DPError.__module__ = __name__
 BudgetExceededError.__module__ = __name__

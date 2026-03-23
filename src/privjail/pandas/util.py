@@ -16,8 +16,8 @@ from __future__ import annotations
 from typing import Any, Sequence
 
 import pandas as _pd
+import egrpc
 
-from .. import egrpc
 from ..util import ElementType
 from ..numpy.util import NDArrayPayload
 

@@ -16,8 +16,9 @@ from __future__ import annotations
 from typing import Any
 import math
 
+import egrpc
+
 from .util import Accountant, ParallelAccountant, SubsamplingAccountant
-from .. import egrpc
 
 ApproxBudgetType = tuple[float, float]
 

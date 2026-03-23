@@ -90,6 +90,20 @@ wheels = [
 ]
 
 [[package]]
+name = "egrpc"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "grpcio-tools" },
+    { name = "multimethod" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5c/ed/d05bfd06227dd586b557214dd2398897bc6027dc7397f0a3cb37a557d61e/egrpc-0.1.0.tar.gz", hash = "sha256:f365868cabaaab9e688f35b2e0d5fc35b1bc9b389bfac953e5d15d3009457ce2", size = 42267 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/0b/b168a077ed86a438ece758ca2f1dec2bf3816d7c226a202d1a22c212c704/egrpc-0.1.0-py3-none-any.whl", hash = "sha256:97b4a234480b31414467f323494bf577ba274e021bfe6571f62d0d8d34ec4219", size = 24094 },
+]
+
+[[package]]
 name = "grpcio"
 version = "1.69.0"
 source = { registry = "https://pypi.org/simple" }
@@ -506,9 +520,7 @@ name = "privjail"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "grpcio" },
-    { name = "grpcio-tools" },
-    { name = "multimethod" },
+    { name = "egrpc" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "sympy" },
@@ -525,9 +537,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "grpcio", specifier = ">=1.69.0" },
-    { name = "grpcio-tools", specifier = ">=1.69.0" },
-    { name = "multimethod", specifier = ">=2.0.2" },
+    { name = "egrpc", specifier = ">=0.1.0" },
     { name = "numpy", specifier = "==2.1.3" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "sympy", specifier = ">=1.13.3" },

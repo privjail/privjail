@@ -19,8 +19,8 @@ import math
 
 import numpy as _np
 import pandas as _pd
+import egrpc
 
-from .. import egrpc
 from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum
 from ..array_base import PrivArrayBase
 from ..alignment import assert_privacy_axis

@@ -18,8 +18,8 @@ import math
 import itertools
 
 import pandas as _pd
+import egrpc
 
-from .. import egrpc
 from ..util import DPError, ElementType
 from ..realexpr import RealExpr, _min
 from ..accountants import Accountant

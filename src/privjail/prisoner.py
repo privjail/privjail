@@ -17,11 +17,11 @@ from typing import TypeVar, Generic, Any, overload, Iterable, cast, Sequence, It
 import contextlib
 
 import numpy as _np
+import egrpc
 
 from .util import integer, floating, realnum, is_integer, is_floating, DPError
 from .realexpr import RealExpr, _max as dmax
 from .accountants import Accountant, ParallelAccountant, DummyAccountant, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, get_lsca_of_same_family, BudgetType, AccountingGroup
-from . import egrpc
 
 T = TypeVar("T")
 

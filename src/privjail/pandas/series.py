@@ -21,6 +21,7 @@ import math
 
 import numpy as _np
 import pandas as _pd
+import egrpc
 
 from ..util import DPError, ElementType, floating, is_floating, is_integer, is_realnum, realnum
 from ..array_base import PrivArrayBase
@@ -29,7 +30,6 @@ from ..prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from ..realexpr import RealExpr, _max as dmax
 from ..accountants import Accountant
 from ..numpy import PrivNDArray, SensitiveNDArray, NDArrayDomain
-from .. import egrpc
 from .domain import Domain, BoolDomain, RealDomain, CategoryDomain, sum_sensitivity
 
 T = TypeVar("T")

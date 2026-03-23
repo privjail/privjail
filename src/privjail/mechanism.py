@@ -18,13 +18,13 @@ import math
 import numpy as _np
 import pandas as _pd
 import numpy.typing as _npt
+import egrpc
 
 from .util import DPError, floating, realnum
 from .accountants import BudgetType, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType, RDPSubsamplingAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
-from . import egrpc
 
 T = TypeVar("T")
 
