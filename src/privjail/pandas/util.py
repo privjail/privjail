@@ -33,7 +33,7 @@ class IndexPayload:
 
     @classmethod
     def pack(cls, value: _pd.Index[Any]) -> IndexPayload:
-        return cls(value.tolist(), value.name)
+        return cls(value.tolist(), value.name)  # type: ignore[arg-type]
 
     def unpack(self) -> _pd.Index[Any]:
         return _pd.Index(self.values, name=self.name)
@@ -47,7 +47,7 @@ class MultiIndexPayload:
 
     @classmethod
     def pack(cls, value: _pd.MultiIndex) -> MultiIndexPayload:
-        return cls(value.tolist(), list(value.names))
+        return cls(value.tolist(), list(value.names))  # type: ignore[arg-type]
 
     def unpack(self) -> _pd.MultiIndex:
         return _pd.MultiIndex.from_tuples(self.values, names=list(self.names))

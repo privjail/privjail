@@ -365,7 +365,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
 
     # TODO: define privjail's own Index[T] type
     @egrpc.property
-    def columns(self) -> _pd.Index: # type: ignore
+    def columns(self) -> _pd.Index:
         return self._value.columns
 
     # FIXME
@@ -506,8 +506,8 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             elif isinstance(domain, RealDomain):
                 a, b = domain.range
                 if (a is None or a <= to_replace) and (b is None or to_replace <= b):
-                    new_a = min(a, value) if a is not None else None # type: ignore[type-var]
-                    new_b = max(b, value) if b is not None else None # type: ignore[type-var]
+                    new_a = min(a, value) if a is not None else None
+                    new_b = max(b, value) if b is not None else None
 
                     new_domain = copy.copy(domain)
                     new_domain.range = (new_a, new_b)
@@ -519,7 +519,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
             else:
                 new_domains[col] = domain
 
-        df = self._value.replace(to_replace, value) # type: ignore[arg-type]
+        df = self._value.replace(to_replace, value)
         return PrivDataFrame(data           = df,
                              domains        = new_domains,
                              distance       = self._distance,
@@ -579,7 +579,7 @@ class PrivDataFrame(PrivArrayBase[_pd.DataFrame]):
     def mean(self, eps: float) -> _pd.Series[float]:
         eps_each = eps / len(self.columns)
         data = [self[col].mean(eps=eps_each) for col in self.columns]
-        return _pd.Series(data, index=self.columns) # type: ignore[no-any-return]
+        return _pd.Series(data, index=self.columns)
 
     @egrpc.method
     def sample(self,
@@ -670,7 +670,7 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
                               parents    : Sequence[Prisoner[Any]],
                               accountant : Accountant[Any] | None = None,
                               ) -> SensitiveInt | SensitiveFloat:
-        dtype = self.dtypes[column] # type: ignore
+        dtype = self.dtypes[column]
 
         if dtype in ["int64", "Int64"]:
             assert is_integer(value)
@@ -748,11 +748,11 @@ class SensitiveDataFrame(Prisoner[_pd.DataFrame]):
             raise Exception
 
     @egrpc.property
-    def index(self) -> _pd.Index: # type: ignore
+    def index(self) -> _pd.Index:
         return self._value.index
 
     @egrpc.property
-    def columns(self) -> _pd.Index: # type: ignore
+    def columns(self) -> _pd.Index:
         return self._value.columns
 
     # FIXME

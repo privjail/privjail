@@ -37,7 +37,7 @@ T = TypeVar("T")
 # to avoid TypeError: type 'Series' is not subscriptable
 # class PrivSeries(PrivArrayBase[_pd.Series[T]]):
 @egrpc.remoteclass
-class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-arg]
+class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):
     """Private Series.
 
     Each value in this series object should have a one-to-one relationship with an individual (event-/row-/item-level DP).
@@ -478,8 +478,8 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         elif isinstance(self.domain, RealDomain):
             a, b = self.domain.range
             if (a is None or a <= to_replace) and (b is None or to_replace <= b):
-                new_a = min(a, value) if a is not None else None # type: ignore[type-var]
-                new_b = max(b, value) if b is not None else None # type: ignore[type-var]
+                new_a = min(a, value) if a is not None else None
+                new_b = max(b, value) if b is not None else None
 
                 new_domain = copy.copy(self.domain)
                 new_domain.range = (new_a, new_b)
@@ -490,7 +490,7 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
         else:
             new_domain = self.domain
 
-        ser = self._value.replace(to_replace, value) # type: ignore[arg-type]
+        ser = self._value.replace(to_replace, value)
         return PrivSeries[T](data           = ser,
                              domain         = new_domain,
                              distance       = self._distance,
@@ -528,11 +528,12 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
 
         new_domain = copy.copy(self.domain)
         a, b = self.domain.range
-        new_a = a if lower is None else lower if a is None else max(a, lower) # type: ignore[type-var]
-        new_b = b if upper is None else upper if b is None else min(b, upper) # type: ignore[type-var]
+        new_a = a if lower is None else lower if a is None else max(a, lower)
+        new_b = b if upper is None else upper if b is None else min(b, upper)
         new_domain.range = (new_a, new_b)
 
-        ser = self._value.clip(lower, upper) # type: ignore[arg-type]
+        ser = self._value.clip(float(lower) if lower is not None else None,
+                               float(upper) if upper is not None else None)
         return PrivSeries[T](data           = ser,
                              domain         = new_domain,
                              distance       = self._distance,
@@ -599,7 +600,7 @@ class PrivSeries(Generic[T], PrivArrayBase[_pd.Series]):  # type: ignore[type-ar
                                     parents             = [self])
 
 @egrpc.remoteclass
-class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg]
+class SensitiveSeries(Generic[T], Prisoner[_pd.Series]):
     _distance_group_axes   : tuple[int, ...] | None
     _partitioned_distances : list[RealExpr] | None
     _distributed_ser       : _pd.Series[Any] | None
@@ -723,12 +724,12 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         if self._distance_group_axes is None:
             return copy.copy(self._get_distributed_ser().loc[key]) # type: ignore
         elif self._distance_group_axes == (0,):
-            return self._wrap_sensitive_value(self._value[key], distance=self._distance_of(key), parents=[self]) # type: ignore
+            return self._wrap_sensitive_value(self._value[key], distance=self._distance_of(key), parents=[self])
         else:
             raise ValueError("Unsupported distance_group_axes for SensitiveSeries.")
 
     @egrpc.property
-    def index(self) -> _pd.Index:  # type: ignore
+    def index(self) -> _pd.Index:
         return self._value.index
 
     @egrpc.property
@@ -736,7 +737,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
         return self._value.name  # type: ignore[return-value]
 
     @egrpc.property
-    def shape(self) -> tuple[int]:
+    def shape(self) -> tuple[int, ...]:
         return self._value.shape
 
     @egrpc.property
@@ -791,7 +792,7 @@ class SensitiveSeries(Generic[T], Prisoner[_pd.Series]): # type: ignore[type-arg
                rho   : floating | None = None,
                scale : floating | None = None,
                mech  : str             = "laplace",
-               ) -> _pd.Series: # type: ignore
+               ) -> _pd.Series:
         if mech == "laplace":
             from ..mechanism import laplace_mechanism
             return laplace_mechanism(self,

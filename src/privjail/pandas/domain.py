@@ -134,7 +134,7 @@ def apply_column_schema(ser: _pd.Series[Any], col_schema: dict[str, Any], col_na
         return ser.astype(category_dtype)
 
     else:
-        return ser.astype(col_schema["type"]) # type: ignore[no-any-return]
+        return ser.astype(col_schema["type"])
 
 def column_schema2domain(col_schema: dict[str, Any]) -> Domain:
     col_type = col_schema["type"]

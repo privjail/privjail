@@ -220,7 +220,7 @@ def laplace_mechanism(prisoner : SensitiveSeries[Any],
                       *,
                       eps      : float | None = ...,
                       scale    : float | None = ...,
-                      ) -> _pd.Series: ... # type: ignore[type-arg]
+                      ) -> _pd.Series: ...
 
 @overload
 def laplace_mechanism(prisoner : SensitiveDataFrame,
@@ -263,7 +263,7 @@ def _(prisoner : SensitiveSeries[realnum],
       *,
       eps      : float | None = None,
       scale    : float | None = None,
-      ) -> _pd.Series: # type: ignore[type-arg]
+      ) -> _pd.Series:
     if prisoner._distance_group_axes == (0,):
         assert isinstance(prisoner._partitioned_distances, list)
 
@@ -395,7 +395,7 @@ def gaussian_mechanism(prisoner : SensitiveSeries[Any],
                        delta    : float | None = ...,
                        rho      : float | None = ...,
                        scale    : float | None = ...,
-                       ) -> _pd.Series: ... # type: ignore[type-arg]
+                       ) -> _pd.Series: ...
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveDataFrame,
@@ -456,7 +456,7 @@ def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
 
     result = float(_np.random.normal(loc=prisoner._value, scale=resolved_scale))
 
-    prisoner.accountant.spend(budget)
+    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
 
     return result
 
@@ -467,7 +467,7 @@ def _(prisoner : SensitiveSeries[realnum],
       delta    : float | None = None,
       rho      : float | None = None,
       scale    : float | None = None,
-      ) -> _pd.Series: # type: ignore[type-arg]
+      ) -> _pd.Series:
     budget : BudgetType
 
     if isinstance(prisoner.accountant, PureDPAccountant):
@@ -587,7 +587,7 @@ def _(prisoner : SensitiveSeries[realnum],
     else:
         raise RuntimeError
 
-    prisoner.accountant.spend(budget)
+    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
 
     return _pd.Series(data, index=prisoner.index, name=prisoner.name)
 
@@ -721,7 +721,7 @@ def _(prisoner : SensitiveDataFrame,
     else:
         raise RuntimeError
 
-    prisoner.accountant.spend(budget)
+    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
 
     return _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
 
@@ -766,7 +766,7 @@ def _(prisoner : SensitiveNDArray,
 
     samples = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
 
-    prisoner.accountant.spend(budget)
+    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
 
     return _np.asarray(samples)
 
@@ -779,7 +779,7 @@ def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
     if len(scores) == 0:
         raise ValueError("scores must have at least one element.")
 
-    sensitivity = max([v._distance.max() for v in scores]) # type: ignore[type-var]
+    sensitivity = max([v._distance.max() for v in scores])
     assert_sensitivity(sensitivity)
 
     # create a dummy prisoner to propagate budget consumption to all prisoners
@@ -824,7 +824,7 @@ def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
     p /= sum(p)
     result = _np.random.choice(len(scores), p=p)
 
-    prisoner_dummy.accountant.spend(budget)
+    prisoner_dummy.accountant.spend(budget)  # type: ignore[arg-type]
 
     return result
 

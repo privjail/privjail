@@ -18,6 +18,7 @@ import math
 import itertools
 
 import pandas as _pd
+from pandas.core.groupby import DataFrameGroupBy as _DataFrameGroupBy
 import egrpc
 
 from ..util import DPError, ElementType
@@ -35,7 +36,7 @@ def _squash_tuple(t: tuple[T, ...]) -> T | tuple[T, ...]:
     return t[0] if len(t) == 1 else t
 
 @egrpc.remoteclass
-class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
+class PrivDataFrameGroupBy(Prisoner[_DataFrameGroupBy]): # type: ignore[type-arg]
     # TODO: groups are ordered?
     _df                : PrivDataFrame
     _by_columns        : ColumnsType
@@ -44,7 +45,7 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
     _child_accountants : dict[tuple[ElementType, ...], Accountant[Any]] | None
 
     def __init__(self,
-                 obj               : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
+                 obj               : _DataFrameGroupBy, # type: ignore[type-arg]
                  df                : PrivDataFrame,
                  by_columns        : ColumnsType,
                  by_objs           : list[list[ElementType]],
@@ -203,14 +204,14 @@ class PrivDataFrameGroupBy(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type:
         return df_sum.reveal(eps=eps_each * n_cols).div(ser_size.reveal(eps=eps_each), axis=0)
 
 # @egrpc.remoteclass
-# class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy[ByT, _TT]], Generic[ByT, _TT]):
+# class PrivDataFrameGroupByUser(Prisoner[_DataFrameGroupBy[ByT, _TT]], Generic[ByT, _TT]):
 @egrpc.remoteclass
-class PrivDataFrameGroupByUser(Prisoner[_pd.core.groupby.DataFrameGroupBy]): # type: ignore[type-arg]
+class PrivDataFrameGroupByUser(Prisoner[_DataFrameGroupBy]): # type: ignore[type-arg]
     _df         : PrivDataFrame
     _by_columns : ColumnsType
 
     def __init__(self,
-                 obj        : _pd.core.groupby.DataFrameGroupBy, # type: ignore[type-arg]
+                 obj        : _DataFrameGroupBy, # type: ignore[type-arg]
                  df         : PrivDataFrame,
                  by_columns : ColumnsType,
                  ):

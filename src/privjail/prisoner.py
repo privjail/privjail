@@ -448,7 +448,7 @@ def _dp_context(prisoners       : P | Sequence[P],
                 prepaid         : bool                     = False,
                 ) -> Iterator[P | Sequence[P]]:
     if isinstance(prisoners, Prisoner):
-        prisoner_list: list[P] = [prisoners]  # type: ignore[list-item]
+        prisoner_list: list[P] = [prisoners]
     else:
         prisoner_list = list(prisoners)
 
@@ -467,7 +467,7 @@ def _dp_context(prisoners       : P | Sequence[P],
     for p in prisoner_list:
         p.set_accountant(new_accountant)
     try:
-        yield prisoners  # type: ignore[misc]
+        yield prisoners
     finally:
         for p, old_acc in zip(prisoner_list, old_accountants):
             p.set_accountant(old_acc)
