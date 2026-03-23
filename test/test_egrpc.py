@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from types import EllipsisType
-from typing import Union, List, Tuple, Dict, Optional, Iterator, Any
+from typing import Union, List, Tuple, Dict, Optional, Iterator, Any, Generic, TypeVar, get_origin
 import sys
 import os
 import multiprocessing
@@ -433,3 +433,34 @@ def test_exception_propagation_method(server: Any) -> None:
     with pytest.raises(ValueError) as exc_info:
         obj_neg.raise_if_negative()
     assert "value must be non-negative" in str(exc_info.value)
+
+_T = TypeVar("_T")
+
+class _MyInt(int, Generic[_T]):
+    pass
+
+egrpc.register_primitive_type(_MyInt, "int64")
+
+def _my_int_subtype_rule(t1: Any, t2: Any) -> bool | None:
+    o1 = get_origin(t1)
+    o2 = get_origin(t2)
+    if o1 is _MyInt and o2 is None:
+        return t2 in (int, float)
+    if o1 is None and o2 is _MyInt:
+        return False
+    return None
+
+egrpc.register_subtype_rule(_my_int_subtype_rule)
+
+@egrpc.function
+def my_int_identity(x: _MyInt[Any]) -> _MyInt[Any]:
+    return x
+
+@egrpc.function
+def accept_my_int_or_float(x: _MyInt[Any] | float) -> float:
+    return float(x)
+
+def test_custom_type_registration(server: Any) -> None:
+    assert my_int_identity(_MyInt(42)) == 42
+    assert accept_my_int_or_float(_MyInt(7)) == 7.0
+    assert accept_my_int_or_float(3.14) == pytest.approx(3.14)

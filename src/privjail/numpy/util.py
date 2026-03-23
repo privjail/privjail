@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 from types import EllipsisType
-from typing import Any
+from typing import Any, get_origin
 
 import numpy as _np
 import numpy.typing as _npt
@@ -22,6 +22,24 @@ import numpy.typing as _npt
 from .. import egrpc
 from ..array_base import SensitiveDimInt
 from ..util import DPError
+
+egrpc.register_primitive_type(_np.integer, "int64")
+egrpc.register_primitive_type(_np.floating, "double")
+
+def _numpy_subtype_rule(type_hint1: Any, type_hint2: Any) -> bool | None:
+    type_origin1 = get_origin(type_hint1)
+    type_origin2 = get_origin(type_hint2)
+
+    if type_origin1 is _np.integer and type_origin2 is None:
+        return type_hint2 in (int, float)
+    elif type_origin1 is _np.floating and type_origin2 is None:
+        return type_hint2 is float
+    elif type_origin1 is None and type_origin2 in (_np.integer, _np.floating):
+        return False
+
+    return None
+
+egrpc.register_subtype_rule(_numpy_subtype_rule)
 
 @egrpc.dataclass
 class NDArrayPayload:

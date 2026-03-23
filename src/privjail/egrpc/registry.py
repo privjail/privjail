@@ -38,3 +38,13 @@ def get_handler_for_type(type_hint: TypeHint) -> Type[PayloadType] | None:
         if isinstance(type_hint, type) and issubclass(type_hint, python_type):
             return handler
     return None
+
+_primitive_type_registry: dict[type, str] = {}
+
+def register_primitive_type(python_type: type, proto_type: str) -> None:
+    global _primitive_type_registry
+    _primitive_type_registry[python_type] = proto_type
+
+def get_primitive_type_registry() -> dict[type, str]:
+    global _primitive_type_registry
+    return _primitive_type_registry

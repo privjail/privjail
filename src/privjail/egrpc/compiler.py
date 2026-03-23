@@ -22,13 +22,10 @@ import tempfile
 import importlib.util
 from grpc_tools import protoc # type: ignore[import-untyped]
 
-# TODO: make egrpc independent of numpy
-import numpy as _np
-
 from . import names
 from .util import get_function_typed_params, get_function_return_type, get_class_typed_members, get_method_typed_params, get_method_return_type, TypeHint, my_get_origin
 from .instance_ref import InstanceRefType
-from .registry import get_handler_for_type
+from .registry import get_handler_for_type, get_primitive_type_registry
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -42,8 +39,6 @@ proto_primitive_type_mapping = {
     type(None)   : "bool",
     EllipsisType : "bool",
     bytes        : "bytes",
-    _np.integer  : "int64",
-    _np.floating : "double",
 }
 
 proto_dataclass_type_mapping: dict[Any, str] = {}
@@ -392,6 +387,7 @@ def compile_remoteclass_method(cls: Type[T], method: Callable[P, R]) -> None:
     defer(do_compile)
 
 def compile_proto() -> tuple[ModuleType, ModuleType]:
+    proto_primitive_type_mapping.update(get_primitive_type_registry())
     do_deferred()
 
     with tempfile.TemporaryDirectory(prefix="egrpc_") as tempdir:
@@ -426,5 +422,6 @@ def compile_proto() -> tuple[ModuleType, ModuleType]:
         return dynamic_pb2, dynamic_pb2_grpc
 
 def proto_file_content() -> str:
+    proto_primitive_type_mapping.update(get_primitive_type_registry())
     do_deferred()
     return proto_header + proto_content

@@ -17,14 +17,26 @@ from types import UnionType
 from collections.abc import Sequence, Mapping
 import inspect
 
-# TODO: make egrpc independent of numpy
-import numpy as _np
-
 T = TypeVar("T")
 P = ParamSpec("P")
 R = TypeVar("R")
 
 TypeHint = Any
+
+SubtypeRule = Callable[[TypeHint, TypeHint], bool | None]
+_subtype_rules: list[SubtypeRule] = []
+
+def register_subtype_rule(rule: SubtypeRule) -> None:
+    global _subtype_rules
+    _subtype_rules.append(rule)
+
+def check_subtype_rules(type_hint1: TypeHint, type_hint2: TypeHint) -> bool | None:
+    global _subtype_rules
+    for rule in _subtype_rules:
+        result = rule(type_hint1, type_hint2)
+        if result is not None:
+            return result
+    return None
 
 # https://github.com/python/mypy/issues/15630
 def my_get_origin(type_hint: Any) -> Any:
@@ -51,23 +63,18 @@ def is_subtype(type_hint1: TypeHint, type_hint2: TypeHint) -> bool:
     elif type_origin1 in (Union, UnionType):
         return all(is_subtype(th1, type_hint2) for th1 in type_args1)
 
-    elif type_origin1 is _np.integer and type_origin2 is None:
-        return type_hint2 in (int, float)
-
-    elif type_origin1 is _np.floating and type_origin2 is None:
-        return type_hint2 is float
-
-    elif type_origin1 is None and type_origin2 in (_np.integer, _np.floating):
-        return False
-
-    elif type_origin1 == type_origin2:
-        # TODO: seriously consider covariant, contravariant, Sequence, Mapping, ...
-        return (
-            len(type_args1) != len(type_args2)
-            and all(is_subtype(th1, th2) for th1, th2 in zip(type_args1, type_args2))
-        )
-
     else:
+        custom_result = check_subtype_rules(type_hint1, type_hint2)
+        if custom_result is not None:
+            return custom_result
+
+        if type_origin1 == type_origin2:
+            # TODO: seriously consider covariant, contravariant, Sequence, Mapping, ...
+            return (
+                len(type_args1) != len(type_args2)
+                and all(is_subtype(th1, th2) for th1, th2 in zip(type_args1, type_args2))
+            )
+
         return False
 
 def is_type_match(obj: Any, type_hint: TypeHint) -> bool:
