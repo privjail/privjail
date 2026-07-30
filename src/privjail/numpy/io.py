@@ -20,6 +20,7 @@ import numpy as _np
 import numpy.typing as _npt
 import egrpc
 
+from ..alignment import AlignmentSignature
 from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .array import PrivNDArray
@@ -58,7 +59,7 @@ def load(file         : str,
     acc.set_as_root(name=file)
 
     result: dict[str, PrivNDArray | _npt.NDArray[Any]] = {}
-    signature_map: dict[str, int] = {}
+    signature_map: dict[str, AlignmentSignature] = {}
 
     for name in npz_file.files:
         arr = npz_file[name]

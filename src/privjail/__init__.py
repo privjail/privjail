@@ -15,12 +15,16 @@
 from egrpc import serve, connect, shutdown_server, disconnect, proto_file_content
 
 from . import pandas
+from . import jax
 from .util import DPError
 from .accountants import Accountant, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, AccountantState, accountant_state, budgets_spent, BudgetExceededError
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat, _max as max, _min as min, pureDP, approxDP, zCDP, RDP, create_accountant
 from .array_base import SensitiveDimInt
 from .realexpr import RealExpr
 from .mechanism import laplace_mechanism, gaussian_mechanism, exponential_mechanism, argmax, argmin
+from .numpy import helper as _numpy_helper  # noqa: F401
+from .numpy import mechanism as _numpy_mechanism  # noqa: F401
+from .pandas import mechanism as _pandas_mechanism  # noqa: F401
 from .helper import clip_norm, normalize, sample, shutdown_remote_server
 from .session import Session, local_session, connect_session, spawn_session, gateway_session, LaunchError
 
@@ -29,6 +33,7 @@ BudgetExceededError.__module__ = __name__
 
 __all__ = [
     "pandas",
+    "jax",
     "DPError",
     "Accountant",
     "PureDPAccountant",

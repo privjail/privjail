@@ -17,7 +17,12 @@ from typing import Any, Generic, Sequence, TypeVar
 
 import egrpc
 
-from .alignment import AxisAligned, AlignmentSignature, assert_privacy_axis, new_alignment_signature
+from .alignment import (
+    AxisAligned,
+    AlignmentSignature,
+    assert_alignment_signature,
+    new_alignment_signature,
+)
 from .accountants import Accountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .realexpr import RealExpr
@@ -47,7 +52,7 @@ class PrivArrayBase(Generic[T], Prisoner[T], AxisAligned):
         self._privacy_axis = privacy_axis
 
         if keep_alignment:
-            assert_privacy_axis(*parents)
+            assert_alignment_signature(*parents)
             self._alignment_signature = parents[0]._alignment_signature
         else:
             self._alignment_signature = new_alignment_signature()
@@ -59,7 +64,7 @@ class PrivArrayBase(Generic[T], Prisoner[T], AxisAligned):
         return self._privacy_axis
 
     @egrpc.property
-    def alignment_signature(self) -> int:
+    def alignment_signature(self) -> AlignmentSignature:
         return self._alignment_signature
 
     def renew_alignment_signature(self) -> None:

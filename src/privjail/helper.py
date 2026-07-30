@@ -13,97 +13,98 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import overload
+from typing import Any, overload
 
-import numpy as _np
-import numpy.typing as _npt
 import egrpc
+import jax
 
-from .util import realnum, DPError
-from .numpy import PrivNDArray, NDArrayDomain
+from .util import realnum, DPError, _secure_poisson_mask
+from .numpy import PrivNDArray
 from .alignment import new_alignment_signature
+from .jax.array import PrivArray
+from .jax.helper import _sample_jax_impl
+from .jax.util import require_static
 
-@egrpc.function
-def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivNDArray:
-    if bound <= 0:
-        raise ValueError("`bound` must be positive.")
+@overload
+def clip_norm(arr: PrivNDArray, bound: realnum, ord: int | None = None) -> PrivNDArray: ...
+@overload
+def clip_norm(arr: PrivArray, bound: realnum, ord: int | None = None) -> PrivArray: ...
+@overload
+def clip_norm(arr: jax.Array, bound: realnum, ord: int | None = None) -> jax.Array: ...
+@overload
+def clip_norm(arr: Any, bound: realnum, ord: int | None = None) -> Any: ...
 
-    ord_value = 2 if ord is None else ord
-    if ord_value not in (1, 2):
-        raise ValueError("`ord` must be 1, 2, or None.")
+def clip_norm(arr: Any, bound: realnum, ord: int | None = None) -> Any:
+    if isinstance(arr, PrivNDArray):
+        from .numpy.helper import clip_norm as numpy_clip_norm
+        return numpy_clip_norm(arr, bound, ord)
+    require_static(bound, "clip_norm bound")
+    require_static(ord, "clip_norm ord")
+    import jax
+    import jax.numpy as jnp
+    from .jax.helper import clip_norm as jax_clip_norm
+    leaves, treedef = jax.tree.flatten(arr)
+    if not leaves:
+        return arr
+    arrays = [
+        leaf if isinstance(leaf, PrivArray) else jnp.asarray(leaf)
+        for leaf in leaves
+    ]
+    clipped = jax_clip_norm(arrays, bound, ord)
+    return jax.tree.unflatten(treedef, clipped)
 
-    # FIXME: support for privacy_axis > 0
-    assert arr._privacy_axis == 0
+@overload
+def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray: ...
+@overload
+def normalize(arr: PrivArray, ord: int | None = None) -> PrivArray: ...
+@overload
+def normalize(arr: jax.Array, ord: int | None = None) -> jax.Array: ...
 
-    value_array = _np.asarray(arr._value, dtype=float)
-
-    if value_array.size == 0:
-        clipped = value_array
-    elif value_array.ndim == 1:
-        clipped = _np.clip(value_array, -float(bound), float(bound))
-    else:
-        nrows = value_array.shape[0]
-        flat_rows = value_array.reshape(nrows, -1)
-        norms = _np.linalg.norm(flat_rows, ord=ord_value, axis=1, keepdims=True)
-
-        scales = _np.ones_like(norms, dtype=float)
-        _np.divide(bound, norms, out=scales, where=norms > bound)
-
-        broadcast_shape = (nrows,) + (1,) * (value_array.ndim - 1)
-        clipped = value_array * scales.reshape(broadcast_shape)
-
-    norm_type = "l1" if ord_value == 1 else "l2"
-    new_domain = NDArrayDomain(norm_type=norm_type, norm_bound=float(bound))
-    return PrivNDArray(value          = clipped,
-                       distance       = arr._distance,
-                       privacy_axis   = arr._privacy_axis,
-                       domain         = new_domain,
-                       parents        = [arr],
-                       keep_alignment = True)
-
-@egrpc.function
-def normalize(arr: PrivNDArray, ord: int | None = None) -> PrivNDArray:
-    ord_value = 2 if ord is None else ord
-    if ord_value not in (1, 2):
-        raise ValueError("`ord` must be 1, 2, or None.")
-
-    # FIXME: support for privacy_axis > 0
-    assert arr._privacy_axis == 0
-
-    eps = 1e-12
-    value_array = _np.asarray(arr._value, dtype=float)
-
-    if value_array.size == 0:
-        normalized = value_array
-    elif value_array.ndim == 1:
-        norm = _np.linalg.norm(value_array, ord=ord_value)
-        normalized = value_array / (norm + eps)
-    else:
-        nrows = value_array.shape[0]
-        flat_rows = value_array.reshape(nrows, -1)
-        norms = _np.linalg.norm(flat_rows, ord=ord_value, axis=1, keepdims=True)
-        broadcast_shape = (nrows,) + (1,) * (value_array.ndim - 1)
-        normalized = value_array / (norms.reshape(broadcast_shape) + eps)
-
-    norm_type = "l1" if ord_value == 1 else "l2"
-    new_domain = NDArrayDomain(norm_type=norm_type, norm_bound=1.0, value_range=(-1.0, 1.0))
-    return PrivNDArray(value          = normalized,
-                       distance       = arr._distance,
-                       privacy_axis   = arr._privacy_axis,
-                       domain         = new_domain,
-                       parents        = [arr],
-                       keep_alignment = True)
+def normalize(arr: Any, ord: int | None = None) -> Any:
+    if isinstance(arr, PrivNDArray):
+        from .numpy.helper import normalize as numpy_normalize
+        return numpy_normalize(arr, ord)
+    require_static(ord, "normalize ord")
+    import jax.numpy as jnp
+    from .jax.helper import normalize as jax_normalize
+    array = arr if isinstance(arr, PrivArray) else jnp.asarray(arr)
+    return jax_normalize(array, ord)
 
 @overload
 def sample(array: PrivNDArray, /, *, q: float, method: str = "poisson") -> PrivNDArray: ...
 @overload
 def sample(*arrays: PrivNDArray, q: float, method: str = "poisson") -> tuple[PrivNDArray, ...]: ...
+@overload
+def sample(array: PrivArray, /, *, q: float, method: str = "poisson") -> PrivArray: ...
+@overload
+def sample(*arrays: PrivArray, q: float, method: str = "poisson") -> tuple[PrivArray, ...]: ...
 
-def sample(*arrays: PrivNDArray, q: float, method: str = "poisson") -> PrivNDArray | tuple[PrivNDArray, ...]:
-    result = _sample_impl(arrays, q, method)
-    if len(arrays) == 1:
-        return result[0]
-    return result
+def sample(
+    *arrays: PrivNDArray | PrivArray,
+    q: float,
+    method: str = "poisson",
+) -> PrivNDArray | PrivArray | tuple[PrivNDArray, ...] | tuple[PrivArray, ...]:
+    if not arrays:
+        raise ValueError("At least one array is required.")
+    if all(isinstance(array, PrivNDArray) for array in arrays):
+        numpy_result = _sample_impl(
+            tuple(array for array in arrays if isinstance(array, PrivNDArray)),
+            q,
+            method,
+        )
+        if len(arrays) == 1:
+            return numpy_result[0]
+        return numpy_result
+    elif all(isinstance(array, PrivArray) for array in arrays):
+        jax_result = _sample_jax_impl(
+            tuple(array for array in arrays if isinstance(array, PrivArray)),
+            q,
+            method,
+        )
+        if len(arrays) == 1:
+            return jax_result[0]
+        return jax_result
+    raise TypeError("sample operands must use the same array backend.")
 
 @egrpc.function
 def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tuple[PrivNDArray, ...]:
@@ -129,7 +130,7 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
         raise DPError("Subsampling requires adjacent databases (max_distance=1)")
 
     n = first._value.shape[0]
-    mask: _npt.NDArray[_np.bool_] = _np.random.random(n) < q
+    mask = _secure_poisson_mask(n, q)
 
     parent_accountant = first.accountant
     child_accountant = parent_accountant.create_subsampling_accountant(q)

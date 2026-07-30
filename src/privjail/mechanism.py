@@ -21,7 +21,7 @@ import numpy.typing as _npt
 import egrpc
 
 from .util import DPError, floating, realnum
-from .accountants import BudgetType, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType, RDPSubsamplingAccountant
+from .accountants import Accountant, BudgetType, PureDPAccountant, ApproxDPAccountant, zCDPAccountant, RDPAccountant, RDPBudgetType, RDPSubsamplingAccountant
 from .prisoner import Prisoner, SensitiveInt, SensitiveFloat
 from .numpy import SensitiveNDArray
 from .pandas import SensitiveSeries, SensitiveDataFrame
@@ -208,6 +208,38 @@ def resolve_gaussian_params_rdp(sensitivity   : float,
 
     return budget, scale
 
+def spend_gaussian(accountant  : Accountant[Any],
+                   *,
+                   sensitivity : float,
+                   scale       : float,
+                   delta       : float | None,
+                   ) -> None:
+    budget : BudgetType
+
+    if isinstance(accountant, PureDPAccountant):
+        raise DPError("Gaussian mechanism cannot be used under Pure DP")
+
+    elif isinstance(accountant, ApproxDPAccountant):
+        if delta is None:
+            raise ValueError("delta must be specified for an ApproxDPAccountant.")
+        epsilon, _ = resolve_gaussian_params_approx(sensitivity, delta=delta, scale=scale)
+        budget = (epsilon, delta)
+
+    elif isinstance(accountant, zCDPAccountant):
+        budget, _ = resolve_gaussian_params_zcdp(sensitivity, scale=scale)
+
+    elif isinstance(accountant, RDPAccountant):
+        sampling_rate = accountant.parent.sampling_rate if isinstance(accountant.parent, RDPSubsamplingAccountant) else None
+        budget, _ = resolve_gaussian_params_rdp(sensitivity,
+                                                accountant.alpha,
+                                                scale=scale,
+                                                sampling_rate=sampling_rate)
+
+    else:
+        raise TypeError(f"Unsupported accountant for Gaussian release: {type(accountant).__name__}.")
+
+    accountant.spend(budget)  # type: ignore[arg-type]
+
 @overload
 def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
                       *,
@@ -236,12 +268,27 @@ def laplace_mechanism(prisoner : SensitiveNDArray,
                       scale    : float | None = ...,
                       ) -> _npt.NDArray[Any]: ...
 
-@egrpc.multifunction
-def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
+def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat | SensitiveSeries[Any] | SensitiveDataFrame | SensitiveNDArray,
                       *,
                       eps      : float | None = None,
                       scale    : float | None = None,
-                      ) -> float:
+                      ) -> Any:
+    if isinstance(prisoner, (SensitiveInt, SensitiveFloat)):
+        return _laplace_scalar(prisoner, eps=eps, scale=scale)
+    if isinstance(prisoner, (SensitiveSeries, SensitiveDataFrame)):
+        from .pandas.mechanism import laplace_mechanism as pandas_laplace
+        return pandas_laplace(prisoner, eps=eps, scale=scale)
+    if isinstance(prisoner, SensitiveNDArray):
+        from .numpy.mechanism import laplace_mechanism as numpy_laplace
+        return numpy_laplace(prisoner, eps=eps, scale=scale)
+    raise TypeError(f"Unsupported Laplace mechanism input: {type(prisoner).__name__}.")
+
+@egrpc.function
+def _laplace_scalar(prisoner : SensitiveInt | SensitiveFloat,
+                    *,
+                    eps      : float | None = None,
+                    scale    : float | None = None,
+                    ) -> float:
     sensitivity = float(prisoner._distance.max())
     assert_sensitivity(sensitivity)
 
@@ -257,127 +304,6 @@ def laplace_mechanism(prisoner : SensitiveInt | SensitiveFloat,
         raise RuntimeError
 
     return result
-
-@laplace_mechanism.register # type: ignore
-def _(prisoner : SensitiveSeries[realnum],
-      *,
-      eps      : float | None = None,
-      scale    : float | None = None,
-      ) -> _pd.Series:
-    if prisoner._distance_group_axes == (0,):
-        assert isinstance(prisoner._partitioned_distances, list)
-
-        if eps is not None:
-            assert_eps(eps)
-            eps_each = eps / len(prisoner)
-            scales = []
-            for distance in prisoner._partitioned_distances:
-                sensitivity = float(distance.max())
-                assert_sensitivity(sensitivity)
-                _, resolved_scale = resolve_laplace_params(sensitivity, eps=eps_each)
-                scales.append(resolved_scale)
-            data = _np.random.laplace(loc=prisoner._value, scale=scales)
-            spent_eps = eps
-
-        elif scale is not None:
-            assert_laplace_scale(scale)
-            total_eps = 0.0
-            for distance in prisoner._partitioned_distances:
-                sensitivity = float(distance.max())
-                assert_sensitivity(sensitivity)
-                resolved_eps, _ = resolve_laplace_params(sensitivity, scale=scale)
-                total_eps += resolved_eps
-            data = _np.random.laplace(loc=prisoner._value, scale=scale)
-            spent_eps = total_eps
-
-        else:
-            raise Exception
-
-    else:
-        sensitivity = float(prisoner._distance.max())
-        resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
-        data = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
-        spent_eps = resolved_eps
-
-    if isinstance(prisoner.accountant, PureDPAccountant):
-        prisoner.accountant.spend(spent_eps)
-    elif isinstance(prisoner.accountant, ApproxDPAccountant):
-        prisoner.accountant.spend((spent_eps, 0.0))
-    else:
-        raise RuntimeError
-
-    return _pd.Series(data, index=prisoner.index, name=prisoner.name)
-
-@laplace_mechanism.register # type: ignore
-def _(prisoner : SensitiveDataFrame,
-      *,
-      eps      : float | None = None,
-      scale    : float | None = None,
-      ) -> _pd.DataFrame:
-    if prisoner._distance_group_axes == (1,):
-        assert isinstance(prisoner._partitioned_distances, list)
-
-        if eps is not None:
-            assert_eps(eps)
-            eps_each = eps / len(prisoner)
-            scales = []
-            for distance in prisoner._partitioned_distances:
-                sensitivity = float(distance.max())
-                assert_sensitivity(sensitivity)
-                _, resolved_scale = resolve_laplace_params(sensitivity, eps=eps_each)
-                scales.append(resolved_scale)
-            data = _np.random.laplace(loc=prisoner._value, scale=scales)
-            spent_eps = eps
-
-        elif scale is not None:
-            assert_laplace_scale(scale)
-            total_eps = 0.0
-            for distance in prisoner._partitioned_distances:
-                sensitivity = float(distance.max())
-                assert_sensitivity(sensitivity)
-                resolved_eps, _ = resolve_laplace_params(sensitivity, scale=scale)
-                total_eps += resolved_eps
-            data = _np.random.laplace(loc=prisoner._value, scale=scale)
-            spent_eps = total_eps
-
-        else:
-            raise Exception
-
-    else:
-        sensitivity = float(prisoner._distance.max())
-        resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
-        data = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
-        spent_eps = resolved_eps
-
-    if isinstance(prisoner.accountant, PureDPAccountant):
-        prisoner.accountant.spend(spent_eps)
-    elif isinstance(prisoner.accountant, ApproxDPAccountant):
-        prisoner.accountant.spend((spent_eps, 0.0))
-    else:
-        raise RuntimeError
-
-    return _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
-
-@laplace_mechanism.register # type: ignore
-def _(prisoner : SensitiveNDArray,
-      *,
-      eps      : float | None = None,
-      scale    : float | None = None,
-      ) -> _npt.NDArray[Any]:
-    sensitivity = float(prisoner._distance.max())
-    assert_sensitivity(sensitivity)
-
-    resolved_eps, resolved_scale = resolve_laplace_params(sensitivity, eps=eps, scale=scale)
-    samples = _np.random.laplace(loc=prisoner._value, scale=resolved_scale)
-
-    if isinstance(prisoner.accountant, PureDPAccountant):
-        prisoner.accountant.spend(resolved_eps)
-    elif isinstance(prisoner.accountant, ApproxDPAccountant):
-        prisoner.accountant.spend((resolved_eps, 0.0))
-    else:
-        raise RuntimeError
-
-    return _np.asarray(samples)
 
 @overload
 def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
@@ -415,14 +341,62 @@ def gaussian_mechanism(prisoner : SensitiveNDArray,
                        scale    : float | None = ...,
                        ) -> _npt.NDArray[Any]: ...
 
-@egrpc.multifunction
-def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
+@overload
+def gaussian_mechanism(prisoner : Any,
+                       *,
+                       eps      : float | None = ...,
+                       delta    : float | None = ...,
+                       rho      : float | None = ...,
+                       scale    : float | None = ...,
+                       ) -> Any: ...
+
+def gaussian_mechanism(prisoner : Any,
                        *,
                        eps      : float | None = None,
                        delta    : float | None = None,
                        rho      : float | None = None,
                        scale    : float | None = None,
-                       ) -> float:
+                       ) -> Any:
+    if isinstance(prisoner, (SensitiveInt, SensitiveFloat)):
+        return _gaussian_scalar(prisoner, eps=eps, delta=delta, rho=rho, scale=scale)
+    if isinstance(prisoner, (SensitiveSeries, SensitiveDataFrame)):
+        from .pandas.mechanism import gaussian_mechanism as pandas_gaussian
+        return pandas_gaussian(prisoner, eps=eps, delta=delta, rho=rho, scale=scale)
+    if isinstance(prisoner, SensitiveNDArray):
+        from .numpy.mechanism import gaussian_mechanism as numpy_gaussian
+        return numpy_gaussian(prisoner, eps=eps, delta=delta, rho=rho, scale=scale)
+
+    if eps is not None or rho is not None:
+        raise ValueError("JAX Gaussian release currently accepts scale and delta.")
+    if scale is None:
+        raise ValueError("scale must be specified.")
+
+    import jax
+    import jax.numpy as jnp
+    from .jax.array import SensitiveArray as JaxSensitiveArray
+    from .jax.mechanism import gaussian_mechanism as jax_gaussian
+    from .jax.util import require_static
+
+    require_static(scale, "gaussian_mechanism scale")
+    require_static(delta, "gaussian_mechanism delta")
+    leaves, treedef = jax.tree.flatten(prisoner)
+    if not leaves:
+        raise ValueError("gaussian_mechanism requires at least one array.")
+    arrays = [
+        leaf if isinstance(leaf, JaxSensitiveArray) else jnp.asarray(leaf)
+        for leaf in leaves
+    ]
+    noisy = jax_gaussian(arrays, scale, delta)
+    return jax.tree.unflatten(treedef, noisy)
+
+@egrpc.function
+def _gaussian_scalar(prisoner : SensitiveInt | SensitiveFloat,
+                     *,
+                     eps      : float | None = None,
+                     delta    : float | None = None,
+                     rho      : float | None = None,
+                     scale    : float | None = None,
+                     ) -> float:
     sensitivity = float(prisoner._distance.max())
     assert_sensitivity(sensitivity)
 
@@ -459,316 +433,6 @@ def gaussian_mechanism(prisoner : SensitiveInt | SensitiveFloat,
     prisoner.accountant.spend(budget)  # type: ignore[arg-type]
 
     return result
-
-@gaussian_mechanism.register # type: ignore
-def _(prisoner : SensitiveSeries[realnum],
-      *,
-      eps      : float | None = None,
-      delta    : float | None = None,
-      rho      : float | None = None,
-      scale    : float | None = None,
-      ) -> _pd.Series:
-    budget : BudgetType
-
-    if isinstance(prisoner.accountant, PureDPAccountant):
-        raise DPError("Gaussian mechanism cannot be used under Pure DP")
-
-    elif isinstance(prisoner.accountant, ApproxDPAccountant):
-        assert delta is not None
-
-        if prisoner._distance_group_axes == (0,):
-            assert isinstance(prisoner._partitioned_distances, list)
-            delta_each = delta / len(prisoner)
-
-            if eps is not None:
-                assert_eps(eps)
-                eps_each = eps / len(prisoner)
-                scales = []
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    _, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps_each, delta=delta_each)
-                    scales.append(resolved_scale)
-                data = _np.random.normal(loc=prisoner._value, scale=scales)
-                spent_eps = eps
-
-            elif scale is not None:
-                assert_gaussian_scale(scale)
-                total_eps = 0.0
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    resolved_eps, _ = resolve_gaussian_params_approx(sensitivity, delta=delta_each, scale=scale)
-                    total_eps += resolved_eps
-                data = _np.random.normal(loc=prisoner._value, scale=scale)
-                spent_eps = total_eps
-
-            else:
-                raise Exception
-
-            budget = (spent_eps, delta)
-
-        else:
-            sensitivity = float(prisoner._distance.max())
-            resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
-            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-            budget = (resolved_eps, delta)
-
-    elif isinstance(prisoner.accountant, zCDPAccountant):
-        if prisoner._distance_group_axes == (0,):
-            assert isinstance(prisoner._partitioned_distances, list)
-
-            if rho is not None:
-                assert_rho(rho)
-                rho_each = rho / len(prisoner)
-                scales = []
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    _, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho_each)
-                    scales.append(resolved_scale)
-                data = _np.random.normal(loc=prisoner._value, scale=scales)
-                spent_rho = rho
-            else:
-                assert scale is not None
-                assert_gaussian_scale(scale)
-                total_rho = 0.0
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    resolved_rho, _ = resolve_gaussian_params_zcdp(sensitivity, scale=scale)
-                    total_rho += resolved_rho
-                data = _np.random.normal(loc=prisoner._value, scale=scale)
-                spent_rho = total_rho
-
-            budget = spent_rho
-
-        else:
-            sensitivity = float(prisoner._distance.max())
-            resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
-            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-            budget = resolved_rho
-
-    elif isinstance(prisoner.accountant, RDPAccountant):
-        alpha = prisoner.accountant.alpha
-
-        # Check if under subsampling context
-        sampling_rate: float | None = None
-        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
-            sampling_rate = prisoner.accountant.parent.sampling_rate
-
-        if prisoner._distance_group_axes == (0,):
-            assert isinstance(prisoner._partitioned_distances, list)
-
-            # Subsampling not supported with partitioned distances
-            if sampling_rate is not None:
-                raise DPError("Subsampled RDP is not supported with partitioned distances")
-
-            assert scale is not None
-            assert_gaussian_scale(scale)
-            total_budget: RDPBudgetType = {a: 0.0 for a in alpha}
-            for distance in prisoner._partitioned_distances:
-                sensitivity = float(distance.max())
-                assert_sensitivity(sensitivity)
-                elem_budget, _ = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
-                for a in alpha:
-                    total_budget[a] += elem_budget[a]
-            data = _np.random.normal(loc=prisoner._value, scale=scale)
-            budget = total_budget
-
-        else:
-            sensitivity = float(prisoner._distance.max())
-            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
-                sensitivity, alpha, scale=scale, sampling_rate=sampling_rate
-            )
-            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-            budget = rdp_budget
-
-    else:
-        raise RuntimeError
-
-    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
-
-    return _pd.Series(data, index=prisoner.index, name=prisoner.name)
-
-@gaussian_mechanism.register # type: ignore
-def _(prisoner : SensitiveDataFrame,
-      *,
-      eps      : float | None = None,
-      delta    : float | None = None,
-      rho      : float | None = None,
-      scale    : float | None = None,
-      ) -> _pd.DataFrame:
-    budget : BudgetType
-
-    if isinstance(prisoner.accountant, PureDPAccountant):
-        raise DPError("Gaussian mechanism cannot be used under Pure DP")
-
-    elif isinstance(prisoner.accountant, ApproxDPAccountant):
-        assert delta is not None
-
-        if prisoner._distance_group_axes == (1,):
-            assert isinstance(prisoner._partitioned_distances, list)
-            delta_each = delta / len(prisoner)
-
-            if eps is not None:
-                assert_eps(eps)
-                eps_each = eps / len(prisoner)
-                scales = []
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    _, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps_each, delta=delta_each)
-                    scales.append(resolved_scale)
-                data = _np.random.normal(loc=prisoner._value, scale=scales)
-                spent_eps = eps
-
-            elif scale is not None:
-                assert_gaussian_scale(scale)
-                total_eps = 0.0
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    resolved_eps, _ = resolve_gaussian_params_approx(sensitivity, delta=delta_each, scale=scale)
-                    total_eps += resolved_eps
-                data = _np.random.normal(loc=prisoner._value, scale=scale)
-                spent_eps = total_eps
-
-            else:
-                raise Exception
-
-            budget = (spent_eps, delta)
-
-        else:
-            sensitivity = float(prisoner._distance.max())
-            resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
-            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-            budget = (resolved_eps, delta)
-
-    elif isinstance(prisoner.accountant, zCDPAccountant):
-        if prisoner._distance_group_axes == (1,):
-            assert isinstance(prisoner._partitioned_distances, list)
-
-            if rho is not None:
-                assert_rho(rho)
-                rho_each = rho / len(prisoner)
-                scales = []
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    _, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho_each)
-                    scales.append(resolved_scale)
-                data = _np.random.normal(loc=prisoner._value, scale=scales)
-                spent_rho = rho
-
-            elif scale is not None:
-                assert_gaussian_scale(scale)
-                total_rho = 0.0
-                for distance in prisoner._partitioned_distances:
-                    sensitivity = float(distance.max())
-                    assert_sensitivity(sensitivity)
-                    resolved_rho, _ = resolve_gaussian_params_zcdp(sensitivity, scale=scale)
-                    total_rho += resolved_rho
-                data = _np.random.normal(loc=prisoner._value, scale=scale)
-                spent_rho = total_rho
-
-            else:
-                raise Exception
-
-            budget = spent_rho
-
-        else:
-            sensitivity = float(prisoner._distance.max())
-            resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
-            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-            budget = resolved_rho
-
-    elif isinstance(prisoner.accountant, RDPAccountant):
-        alpha = prisoner.accountant.alpha
-
-        # Check if under subsampling context
-        sampling_rate: float | None = None
-        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
-            sampling_rate = prisoner.accountant.parent.sampling_rate
-
-        if prisoner._distance_group_axes == (1,):
-            assert isinstance(prisoner._partitioned_distances, list)
-
-            # Subsampling not supported with partitioned distances
-            if sampling_rate is not None:
-                raise DPError("Subsampled RDP is not supported with partitioned distances")
-
-            assert scale is not None
-            assert_gaussian_scale(scale)
-            total_budget: RDPBudgetType = {a: 0.0 for a in alpha}
-            for distance in prisoner._partitioned_distances:
-                sensitivity = float(distance.max())
-                assert_sensitivity(sensitivity)
-                elem_budget, _ = resolve_gaussian_params_rdp(sensitivity, alpha, scale=scale)
-                for a in alpha:
-                    total_budget[a] += elem_budget[a]
-            data = _np.random.normal(loc=prisoner._value, scale=scale)
-            budget = total_budget
-
-        else:
-            sensitivity = float(prisoner._distance.max())
-            rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
-                sensitivity, alpha, scale=scale, sampling_rate=sampling_rate
-            )
-            data = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-            budget = rdp_budget
-
-    else:
-        raise RuntimeError
-
-    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
-
-    return _pd.DataFrame(data, index=prisoner.index, columns=prisoner.columns)
-
-@gaussian_mechanism.register # type: ignore
-def _(prisoner : SensitiveNDArray,
-      *,
-      eps      : float | None = None,
-      delta    : float | None = None,
-      rho      : float | None = None,
-      scale    : float | None = None,
-      ) -> _npt.NDArray[Any]:
-    sensitivity = float(prisoner._distance.max())
-    assert_sensitivity(sensitivity)
-
-    budget: BudgetType
-
-    if isinstance(prisoner.accountant, PureDPAccountant):
-        raise DPError("Gaussian mechanism cannot be used under Pure DP")
-
-    elif isinstance(prisoner.accountant, ApproxDPAccountant):
-        resolved_eps, resolved_scale = resolve_gaussian_params_approx(sensitivity, eps=eps, delta=delta, scale=scale)
-        assert delta is not None
-        budget = (resolved_eps, delta)
-
-    elif isinstance(prisoner.accountant, zCDPAccountant):
-        resolved_rho, resolved_scale = resolve_gaussian_params_zcdp(sensitivity, rho=rho, scale=scale)
-        budget = resolved_rho
-
-    elif isinstance(prisoner.accountant, RDPAccountant):
-        # Check if under subsampling context
-        sampling_rate: float | None = None
-        if isinstance(prisoner.accountant.parent, RDPSubsamplingAccountant):
-            sampling_rate = prisoner.accountant.parent.sampling_rate
-
-        rdp_budget, resolved_scale = resolve_gaussian_params_rdp(
-            sensitivity, prisoner.accountant.alpha, scale=scale, sampling_rate=sampling_rate
-        )
-        budget = rdp_budget
-
-    else:
-        raise RuntimeError
-
-    samples = _np.random.normal(loc=prisoner._value, scale=resolved_scale)
-
-    prisoner.accountant.spend(budget)  # type: ignore[arg-type]
-
-    return _np.asarray(samples)
 
 @egrpc.function
 def exponential_mechanism(scores : Sequence[SensitiveInt | SensitiveFloat],
