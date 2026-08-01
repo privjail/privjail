@@ -3,6 +3,7 @@ name = "privjail"
 version = "0.1.1"
 description = "Enforcing differential privacy in Python"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "egrpc>=0.1.0",
@@ -10,6 +11,18 @@ dependencies = [
     "pandas>=2.2.3,<3",
     "sympy>=1.13.3",
 ]
+
+[project.optional-dependencies]
+server = [
+    "cryptography>=42.0.0",
+]
+
+[project.scripts]
+privjail-gateway = "privjail.server.gateway:main"
+privjail-keyserver = "privjail.server.keyserver:main"
+privjail-get-quote = "privjail.server.attestation.quote:main"
+privjail-reset = "privjail.server.reset:main"
+privjail-dataserver = "privjail.server.dataserver:main"
 
 [build-system]
 requires = ["hatchling"]
