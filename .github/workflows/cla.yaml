@@ -29,7 +29,7 @@ jobs:
           path-to-document: 'https://github.com/privjail/cla/blob/main/cla_privjail.md'
           # branch should not be protected
           branch: 'main'
-          #allowlist: user1,bot*
+          allowlist: taura,github-actions[bot],copilot-swe-agent[bot]
 
          # the followings are the optional inputs - If the optional inputs are not given, then default values will be taken
           remote-organization-name: privjail
