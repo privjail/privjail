@@ -6,6 +6,7 @@ import sys
 import privjail as pj
 
 def main() -> None:
+    sys.stdout.reconfigure(line_buffering=True)
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     pj.serve(port)
 

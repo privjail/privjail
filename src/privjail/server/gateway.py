@@ -54,12 +54,47 @@ def request_key(key_server_host: str, key_server_port: int) -> bytes:
     return response
 
 
+def parse_key_server(spec: str) -> tuple[str, int]:
+    host, sep, port_str = spec.rpartition(":")
+    if not sep:
+        raise ValueError(f"--key-server must be HOST:PORT, got {spec!r}")
+    return host, int(port_str)
+
+
+def open_key_server_tunnel(host: str, port: int, timeout: float = 10.0) -> subprocess.Popen | None:
+    """Ensures the key server is reachable at localhost:port, by opening
+    `ssh -L port:localhost:port host -N` if nothing is listening on that
+    port locally yet.
+
+    Returns the tunnel's Popen if a new one was started (the caller is then
+    responsible for terminating it once done with the key server), or None
+    if localhost:port was already reachable (assumed to be a tunnel from a
+    previous session; left alone since we didn't start it).
+    """
+    if port_in_use(port):
+        print(f"[gateway] localhost:{port} is already reachable; assuming a "
+              f"tunnel to {host} is already up", flush=True)
+        return None
+
+    print(f"[gateway] opening ssh tunnel to {host}:{port}", flush=True)
+    proc = subprocess.Popen(["ssh", "-L", f"{port}:localhost:{port}", host, "-N"])
+
+    deadline = time.monotonic() + timeout
+    while not port_in_use(port):
+        if proc.poll() is not None:
+            raise RuntimeError(f"ssh tunnel to {host} exited early (code {proc.returncode})")
+        if time.monotonic() > deadline:
+            proc.terminate()
+            raise TimeoutError(f"timed out waiting for ssh tunnel to {host}:{port}")
+        time.sleep(0.2)
+    return proc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-enc", default="data_enc", help="gocryptfs-encrypted source directory")
     parser.add_argument("--data", default="data", help="mount point for the decrypted view")
-    parser.add_argument("--key-server-host", default="ks")
-    parser.add_argument("--key-server-port", type=int, default=9443)
+    parser.add_argument("--key-server", default="ks:9443", help="key server as host:port; reached via an ssh tunnel")
     # TODO: get rid of --port option and always use dynamic port instead (port=0)
     parser.add_argument("--port", type=int, default=0, help="privjail server port")
     args = parser.parse_args()
@@ -67,14 +102,20 @@ def main() -> None:
     if os.path.ismount(args.data):
         print(f"[gateway] {args.data} is already mounted, skipping mount", flush=True)
     else:
+        key_server_host, key_server_port = parse_key_server(args.key_server)
         print(f"[gateway] {args.data} is not mounted; requesting key from "
-              f"{args.key_server_host}:{args.key_server_port}", flush=True)
-        password = request_key(args.key_server_host, args.key_server_port)
-        subprocess.run(
-            ["gocryptfs", args.data_enc, args.data],
-            input=password,
-            check=True,
-        )
+              f"{key_server_host}:{key_server_port}", flush=True)
+        tunnel_proc = open_key_server_tunnel(key_server_host, key_server_port)
+        try:
+            password = request_key("localhost", key_server_port)
+            subprocess.run(
+                ["gocryptfs", args.data_enc, args.data],
+                input=password,
+                check=True,
+            )
+        finally:
+            if tunnel_proc is not None:
+                tunnel_proc.terminate()
         print(f"[gateway] mounted {args.data_enc} at {args.data}", flush=True)
 
     if args.port and port_in_use(args.port):
