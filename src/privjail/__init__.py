@@ -22,6 +22,7 @@ from .array_base import SensitiveDimInt
 from .realexpr import RealExpr
 from .mechanism import laplace_mechanism, gaussian_mechanism, exponential_mechanism, argmax, argmin
 from .helper import clip_norm, normalize, sample
+from .launch import launch_server, LaunchError
 
 DPError.__module__ = __name__
 BudgetExceededError.__module__ = __name__
@@ -62,4 +63,6 @@ __all__ = [
     "connect",
     "disconnect",
     "proto_file_content",
+    "launch_server",
+    "LaunchError",
 ]
