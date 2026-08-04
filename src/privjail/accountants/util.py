@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Generic, TypeVar, Any, Sequence, ClassVar
 import weakref
 
@@ -52,6 +54,19 @@ class AccountingGroup:
         return AccountingGroup(root_accountant=root_accountant, parent=self)
 
 T = TypeVar("T")
+
+_accounting_trace: list[Any] | None = None
+
+@contextmanager
+def accounting_trace() -> Iterator[list[Any]]:
+    global _accounting_trace
+    previous = _accounting_trace
+    budgets: list[Any] = []
+    _accounting_trace = budgets
+    try:
+        yield budgets
+    finally:
+        _accounting_trace = previous
 
 @egrpc.remoteclass
 class Accountant(ABC, Generic[T]):
@@ -125,6 +140,10 @@ class Accountant(ABC, Generic[T]):
         return self._parent
 
     def spend(self, budget: T) -> None:
+        if _accounting_trace is not None:
+            self.assert_budget(budget)
+            _accounting_trace.append(budget)
+            return
         self.assert_budget(budget)
 
         next_budget_spent = self.compose(self._budget_spent, budget)

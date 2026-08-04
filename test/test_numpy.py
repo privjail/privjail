@@ -233,6 +233,17 @@ def test_clip_norm_scalar_rows(accountant: pj.ApproxDPAccountant) -> None:
     assert clipped._value.tolist() == pytest.approx([1.0, -2.0, 0.5, 2.0, -2.0])
     assert arr._value.tolist() == [1.0, -2.5, 0.5, 4.0, -6.0]
 
+def test_clip_norm_sanitizes_nonfinite_values(accountant: pj.ApproxDPAccountant) -> None:
+    arr = pnp.PrivNDArray([_np.nan, _np.inf, -_np.inf, 4.0],
+                          distance     = pj.RealExpr(1),
+                          privacy_axis = 0,
+                          accountant   = accountant)
+
+    clipped = pj.clip_norm(arr, bound=2.0, ord=2)
+
+    assert _np.all(_np.isfinite(clipped._value))
+    assert clipped._value.tolist() == pytest.approx([0.0, 0.0, 0.0, 2.0])
+
 def test_clip_norm_matrix_rows(accountant: pj.ApproxDPAccountant) -> None:
     arr = pnp.PrivNDArray([[ 3.0, 4.0,  0.0],
                            [ 0.0, 0.0,  0.0],
@@ -324,6 +335,17 @@ def test_normalize(accountant: pj.ApproxDPAccountant) -> None:
     assert normalized.alignment_signature == arr.alignment_signature
     row_norms = _np.linalg.norm(normalized._value, ord=2, axis=1)
     assert _np.allclose(row_norms, [1.0, 1.0, 1.0])
+
+def test_normalize_scalar_rows(accountant: pj.ApproxDPAccountant) -> None:
+    arr = pnp.PrivNDArray([2.0, -4.0, 0.0, _np.nan, _np.inf],
+                          distance     = pj.RealExpr(1),
+                          privacy_axis = 0,
+                          accountant   = accountant)
+
+    normalized = pj.normalize(arr, ord=2)
+
+    assert _np.all(_np.isfinite(normalized._value))
+    assert normalized._value.tolist() == pytest.approx([1.0, -1.0, 0.0, 0.0, 0.0])
 
 def test_sample(accountant: pj.ApproxDPAccountant) -> None:
     x = pnp.PrivNDArray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
@@ -1100,6 +1122,14 @@ def test_reshape_basic(accountant: pj.ApproxDPAccountant) -> None:
     assert reshaped_split._value.shape == (6, 2)
     assert reshaped_split.privacy_axis == 0
     assert reshaped_split.max_distance == pytest.approx(arr2.max_distance * 2)
+    assert reshaped_split.alignment_signature.base == arr2.alignment_signature.base
+    assert reshaped_split.alignment_signature.left == 1
+    assert reshaped_split.alignment_signature.right == 2
+
+    restored = reshaped_split.reshape((m, 4))
+    assert restored._value.shape == arr2._value.shape
+    assert restored.alignment_signature == arr2.alignment_signature
+    assert restored._distance.structurally_equal(arr2._distance)
 
     # *args form (without tuple)
     reshaped_args = arr.reshape(n, 3)

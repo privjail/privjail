@@ -19,6 +19,7 @@ import numpy as _np
 import numpy.typing as _npt
 import egrpc
 
+from ..alignment import assert_normalized_distance, reshape_alignment_signature
 from ..util import DPError, floating, realnum
 from ..array_base import PrivArrayBase, SensitiveDimInt
 from ..realexpr import RealExpr
@@ -246,9 +247,6 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
             if val <= 0:
                 raise ValueError("All dimensions and scale must be positive for reshape.")
 
-        if output_priv_dim.alignment_signature != self.alignment_signature:
-            raise DPError("SensitiveDimInt's alignment_signature does not match the array's alignment_signature.")
-
         input_axis = self._privacy_axis
 
         P_in = 1
@@ -271,9 +269,25 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
             assert isinstance(d, int)
             Q_out *= d
 
-        if not ((P_in == P_out and Q_in == Q_out * scale) or
-                (P_in == P_out * scale and Q_in == Q_out)):
-            raise DPError("Reshape would mix data across individuals.")
+        output_alignment = reshape_alignment_signature(
+            self._alignment_signature,
+            output_priv_dim._alignment_signature,
+            scale,
+            input_prefix=P_in,
+            input_suffix=Q_in,
+            output_prefix=P_out,
+            output_suffix=Q_out,
+        )
+        assert_normalized_distance(
+            self._distance,
+            self._alignment_signature,
+            output_priv_dim._distance,
+            output_alignment,
+        )
+        preserve_norm_bound = (
+            output_alignment.left >= self._alignment_signature.left
+            and output_alignment.right >= self._alignment_signature.right
+        )
 
         final_shape = tuple(
             int(d._value) if isinstance(d, SensitiveDimInt) else d
@@ -281,12 +295,24 @@ class PrivNDArray(PrivArrayBase[_npt.NDArray[_np.floating[Any]]]):
         )
         reshaped_arr = self._value.reshape(final_shape, order="C")
 
-        return PrivNDArray(value          = reshaped_arr,
-                           distance       = self._distance * scale,
-                           privacy_axis   = output_axis,
-                           domain         = self._domain,
-                           parents        = [self],
-                           keep_alignment = (scale == 1))
+        result = PrivNDArray(
+            value=reshaped_arr,
+            distance=output_priv_dim._distance,
+            privacy_axis=output_axis,
+            domain=NDArrayDomain(
+                norm_type=self._domain.norm_type,
+                norm_bound=(
+                    self._domain.norm_bound
+                    if preserve_norm_bound
+                    else None
+                ),
+                value_range=self._domain.value_range,
+            ),
+            parents=[self],
+            keep_alignment=(output_alignment == self._alignment_signature),
+        )
+        result._alignment_signature = output_alignment
+        return result
 
     @egrpc.method
     def sum(self,

@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import secrets
 from typing import Any, TypeGuard
 
 import numpy as _np
+import numpy.typing as _npt
 
 class DPError(Exception):
     pass
@@ -31,5 +33,15 @@ def is_floating(x: Any) -> TypeGuard[floating]:
 
 def is_realnum(x: Any) -> TypeGuard[realnum]:
     return is_integer(x) or is_floating(x)
+
+def _secure_poisson_mask(size: int, q: float) -> _npt.NDArray[_np.bool_]:
+    if q == 1.0:
+        return _np.ones(size, dtype=_np.bool_)
+    threshold = min(int(q * (1 << 64)), (1 << 64) - 1)
+    samples = _np.frombuffer(
+        secrets.token_bytes(8 * size),
+        dtype=_np.uint64,
+    )
+    return samples < _np.uint64(threshold)
 
 ElementType = realnum | str | bool
