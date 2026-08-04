@@ -16,6 +16,7 @@ than a pipe or shared file.
 """
 import argparse
 import importlib.resources
+import io
 import os
 import socket
 import sys
@@ -32,7 +33,7 @@ def _default_root_pem() -> str:
     return str(importlib.resources.files("privjail.server.attestation").joinpath("trusted_root.pem"))
 
 
-def handle_client(conn: socket.socket, addr, root_pem_path: str, secret: bytes) -> None:
+def handle_client(conn: socket.socket, addr: tuple[str, int], root_pem_path: str, secret: bytes) -> None:
     nonce = os.urandom(REPORTDATA_LEN)
     print(f"[keyserver] connection from {addr[0]}:{addr[1]}, issuing nonce challenge")
     conn.sendall(nonce)  # nonce is sent raw, not framed
@@ -73,7 +74,8 @@ def run(port: int, host: str, root_pem_path: str, secret: bytes) -> None:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(line_buffering=True)
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1",
