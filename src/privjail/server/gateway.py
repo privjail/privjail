@@ -61,7 +61,7 @@ def parse_key_server(spec: str) -> tuple[str, int]:
     return host, int(port_str)
 
 
-def open_key_server_tunnel(host: str, port: int, timeout: float = 10.0) -> subprocess.Popen | None:
+def open_key_server_tunnel(host: str, port: int, timeout: float = 10.0) -> subprocess.Popen[bytes] | None:
     """Ensures the key server is reachable at localhost:port, by opening
     `ssh -L port:localhost:port host -N` if nothing is listening on that
     port locally yet.
@@ -95,12 +95,26 @@ def main() -> None:
     parser.add_argument("--data-enc", default="data_enc", help="gocryptfs-encrypted source directory")
     parser.add_argument("--data", default="data", help="mount point for the decrypted view")
     parser.add_argument("--key-server", default="ks:9443", help="key server as host:port; reached via an ssh tunnel")
+    parser.add_argument("--pw-file", default=None,
+                        help="for local testing: read the gocryptfs password directly from this file, "
+                             "skipping attestation and the key server entirely")
     # TODO: get rid of --port option and always use dynamic port instead (port=0)
     parser.add_argument("--port", type=int, default=0, help="privjail server port")
     args = parser.parse_args()
 
     if os.path.ismount(args.data):
         print(f"[gateway] {args.data} is already mounted, skipping mount", flush=True)
+    elif args.pw_file is not None:
+        print(f"[gateway] {args.data} is not mounted; reading key from {args.pw_file} "
+              f"(skipping key server and attestation)", flush=True)
+        with open(args.pw_file, "rb") as f:
+            password = f.read()
+        subprocess.run(
+            ["gocryptfs", args.data_enc, args.data],
+            input=password,
+            check=True,
+        )
+        print(f"[gateway] mounted {args.data_enc} at {args.data}", flush=True)
     else:
         key_server_host, key_server_port = parse_key_server(args.key_server)
         print(f"[gateway] {args.data} is not mounted; requesting key from "

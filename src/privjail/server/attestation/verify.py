@@ -69,11 +69,11 @@ class TdxVerifyError(Exception):
 
 
 def _le16(buf: bytes, off: int) -> int:
-    return struct.unpack_from("<H", buf, off)[0]
+    return int(struct.unpack_from("<H", buf, off)[0])
 
 
 def _le32(buf: bytes, off: int) -> int:
-    return struct.unpack_from("<I", buf, off)[0]
+    return int(struct.unpack_from("<I", buf, off)[0])
 
 
 def _raw_pubkey_to_eckey(raw64: bytes) -> ec.EllipticCurvePublicKey:
@@ -93,23 +93,32 @@ def _verify_raw_ecdsa_sha256(pubkey: ec.EllipticCurvePublicKey, msg: bytes, raw_
         return False
 
 
-def _parse_pem_certs(pem_blob: bytes) -> list:
+def _parse_pem_certs(pem_blob: bytes) -> list[x509.Certificate]:
     return [x509.load_pem_x509_certificate(m.group(0)) for m in _PEM_CERT_RE.finditer(pem_blob)]
 
 
+def _as_ec_pubkey(pubkey: object, label: str) -> ec.EllipticCurvePublicKey:
+    if not isinstance(pubkey, ec.EllipticCurvePublicKey):
+        raise TdxVerifyError(f"{label} is not an EC key")
+    return pubkey
+
+
 def _verify_cert_signature(cert: x509.Certificate, issuer_pubkey: ec.EllipticCurvePublicKey) -> bool:
+    hash_algorithm = cert.signature_hash_algorithm
+    if hash_algorithm is None:
+        raise TdxVerifyError("certificate has no signature hash algorithm (unexpected for ECDSA)")
     try:
         issuer_pubkey.verify(
             cert.signature,
             cert.tbs_certificate_bytes,
-            ec.ECDSA(cert.signature_hash_algorithm),
+            ec.ECDSA(hash_algorithm),
         )
         return True
     except InvalidSignature:
         return False
 
 
-def verify_quote(quote: bytes, root_pem_path: str, expected_reportdata: bytes = None) -> None:
+def verify_quote(quote: bytes, root_pem_path: str, expected_reportdata: bytes | None = None) -> None:
     """Verifies a TDX ECDSA quote (v4). Raises TdxVerifyError on any failure."""
     n = len(quote)
     if n < SIGNED_DATA_START:
@@ -168,9 +177,7 @@ def verify_quote(quote: bytes, root_pem_path: str, expected_reportdata: bytes = 
     pck_leaf, pck_intermediate, pck_root = certs[0], certs[1], certs[2]
 
     # Step 2: QE report signature under PCK leaf public key.
-    pck_leaf_pubkey = pck_leaf.public_key()
-    if not isinstance(pck_leaf_pubkey, ec.EllipticCurvePublicKey):
-        raise TdxVerifyError("PCK leaf public key is not an EC key")
+    pck_leaf_pubkey = _as_ec_pubkey(pck_leaf.public_key(), "PCK leaf public key")
     if not _verify_raw_ecdsa_sha256(pck_leaf_pubkey, qe_report, qe_report_signature):
         raise TdxVerifyError("QE report signature verification failed against PCK leaf certificate")
 
@@ -185,9 +192,13 @@ def verify_quote(quote: bytes, root_pem_path: str, expected_reportdata: bytes = 
     with open(root_pem_path, "rb") as f:
         trusted_root = x509.load_pem_x509_certificate(f.read())
 
-    if not _verify_cert_signature(pck_leaf, pck_intermediate.public_key()):
+    pck_intermediate_pubkey = _as_ec_pubkey(pck_intermediate.public_key(), "PCK intermediate public key")
+    pck_root_pubkey = _as_ec_pubkey(pck_root.public_key(), "PCK root public key")
+    trusted_root_pubkey = _as_ec_pubkey(trusted_root.public_key(), "trusted root public key")
+
+    if not _verify_cert_signature(pck_leaf, pck_intermediate_pubkey):
         raise TdxVerifyError("PCK certificate chain verification failed: leaf not signed by intermediate")
-    if not _verify_cert_signature(pck_intermediate, pck_root.public_key()):
+    if not _verify_cert_signature(pck_intermediate, pck_root_pubkey):
         raise TdxVerifyError("PCK certificate chain verification failed: intermediate not signed by root")
-    if pck_root.public_key().public_numbers() != trusted_root.public_key().public_numbers():
+    if pck_root_pubkey.public_numbers() != trusted_root_pubkey.public_numbers():
         raise TdxVerifyError("PCK certificate chain verification failed: root does not match trusted root")

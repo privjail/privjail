@@ -148,3 +148,8 @@ def _sample_impl(arrays: tuple[PrivNDArray, ...], q: float, method: str) -> tupl
         results.append(out)
 
     return tuple(results)
+
+@egrpc.function
+def shutdown_remote_server() -> None:
+    egrpc.shutdown_server()
+

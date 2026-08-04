@@ -2,11 +2,13 @@
 for privjail clients on the given port. Launched by gateway.py once the
 encrypted directory is mounted.
 """
+import io
 import sys
 import privjail as pj
 
 def main() -> None:
-    sys.stdout.reconfigure(line_buffering=True)
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     pj.serve(port)
 
