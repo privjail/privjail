@@ -9,8 +9,5 @@ wheels/
 # venv
 .venv
 
-# local implementation plan
-PLAN.md
-
 # downloaded example datasets
 data/

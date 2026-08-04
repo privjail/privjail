@@ -6,8 +6,6 @@ PrivJail (Privacy Jail) enforces differential privacy in Python.
 
 Security and stability are not guaranteed, and breaking changes may occur. Use at your own risk.
 
-The current implementation assumes that the egrpc server executes one handler at a time. Its floating-point mechanisms and dtype conversions are not hardened against floating-point reconstruction attacks.
-
 ## Getting Started
 
 To install PrivJail:
