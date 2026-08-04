@@ -139,7 +139,7 @@ class PrivDataFrameGroupBy(Prisoner[_DataFrameGroupBy]): # type: ignore[type-arg
 
         # TODO: column order?
         new_df = self._df[list(self._by_columns) + keys]
-        return PrivDataFrameGroupBy(self._value[key], new_df, self._by_columns, self._by_objs,
+        return PrivDataFrameGroupBy(self._value[keys], new_df, self._by_columns, self._by_objs,
                                     self._variable_exprs, self._child_accountants)
 
     @egrpc.method
@@ -225,8 +225,15 @@ class PrivDataFrameGroupByUser(Prisoner[_DataFrameGroupBy]): # type: ignore[type
 
     @egrpc.method
     def __getitem__(self, key: ColumnType | ColumnsType) -> PrivDataFrameGroupByUser:
+        if isinstance(key, ColumnType):
+            keys = [key]
+        elif isinstance(key, Sequence):
+            keys = list(key)
+        else:
+            raise TypeError
+
         # TODO: column order?
-        return PrivDataFrameGroupByUser(self._value[key], self._df, self._by_columns)
+        return PrivDataFrameGroupByUser(self._value[keys], self._df, self._by_columns)
 
     def __iter__(self) -> Iterator[tuple[Any, PrivDataFrame]]:
         raise DPError("This operation is not allowed for user-grouped objects.")
