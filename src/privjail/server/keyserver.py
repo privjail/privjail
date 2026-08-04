@@ -76,10 +76,14 @@ def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("port", nargs="?", type=int, default=DEFAULT_PORT)
-    parser.add_argument("root_pem", nargs="?", default=None, help="trusted root CA cert (default: bundled Intel SGX root)")
-    parser.add_argument("pw_file", nargs="?", default="pw", help="file holding the secret to serve (default: 'pw' in the current directory)")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="IP address to listen to")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT,
+                        help="port number to listen to")
+    parser.add_argument("--root-pem", default=None,
+                        help="trusted root CA cert (default: bundled Intel SGX root)")
+    parser.add_argument("--pw-file", default="pw",
+                        help="file holding the secret to serve (default: 'pw' in the current directory)")
     args = parser.parse_args()
 
     root_pem_path = args.root_pem or _default_root_pem()
