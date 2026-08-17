@@ -41,7 +41,8 @@ revoke  Removes exactly what `grant` added: the two authorized_keys entries
         (gateway + key server), identified by their marker comment.
 
 Every planted authorized_keys line is tagged with a comment marker
-(privjail-grant:<user>:gateway / :keyserver) so re-running `grant` updates
+(privjail-grant:<user>:<principal>:gateway / :keyserver) so re-running `grant`
+updates
 the existing entry in place instead of duplicating it, and `revoke` can
 find exactly the lines it's responsible for -- no separate state file is
 kept; the authorized_keys files themselves are the state.
@@ -302,6 +303,9 @@ def remove_authorized_key(host: str, user: str, marker: str) -> bool:
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("user", help="OS account name, must already exist on both gateway and key server")
+    parser.add_argument("principal", help="distinguishing name for this specific grant (e.g. the "
+                         "person's name); lets multiple pubkeys be registered under the same "
+                         "shared OS account without one grant/revoke clobbering another's")
     parser.add_argument("--gateway", default="privjail-gw", help="gateway hostname to administer")
     parser.add_argument("--key-server", default="", metavar="[HOST][:PORT]",
                          help=f"key server as [host][:port]; defaults to "
@@ -341,24 +345,24 @@ def cmd_grant(args: argparse.Namespace) -> None:
         f"{args.privjail_gateway_cmd} --data-enc {args.enc_dir} --data {args.mount_point} "
         f"--key-server {args.key_server_host}:{args.key_server_port}"
     )
-    gateway_marker = f"privjail-grant:{args.user}:gateway"
+    gateway_marker = f"privjail-grant:{args.user}:{args.principal}:gateway"
     gateway_line = (
         f'command="{gateway_command}",no-pty,no-X11-forwarding,'
         f'permitopen="localhost:*" {pubkey} {gateway_marker}'
     )
     upsert_authorized_key(args.gateway_ssh, args.user, gateway_marker, gateway_line)
-    print(f"\nUpdated gateway authorized_keys for '{args.user}'.")
+    print(f"\nUpdated gateway authorized_keys for '{args.user}' ({args.principal}).")
 
-    keyserver_marker = f"privjail-grant:{args.user}:keyserver"
+    keyserver_marker = f"privjail-grant:{args.user}:{args.principal}:keyserver"
     keyserver_line = (
         f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
         f'permitopen="localhost:{args.key_server_port}" {pubkey} {keyserver_marker}'
     )
     upsert_authorized_key(args.key_server_ssh, args.user, keyserver_marker, keyserver_line)
-    print(f"Updated key-server authorized_keys for '{args.user}'.")
+    print(f"Updated key-server authorized_keys for '{args.user}' ({args.principal}).")
 
     print(
-        f"\nGrant complete for '{args.user}'. The same mount key now authenticates on both "
+        f"\nGrant complete for '{args.user}' ({args.principal}). The same mount key now authenticates on both "
         f"hosts; the user must connect to the gateway with agent forwarding enabled "
         f"(ssh -A / ForwardAgent yes) so privjail-gateway can reach the key server on port "
         f"{args.key_server_port} (see this script's module docstring for details)."
@@ -389,13 +393,13 @@ def cmd_revoke(args: argparse.Namespace) -> None:
         print("aborting.", file=sys.stderr)
         sys.exit(1)
 
-    gateway_marker = f"privjail-grant:{args.user}:gateway"
-    keyserver_marker = f"privjail-grant:{args.user}:keyserver"
+    gateway_marker = f"privjail-grant:{args.user}:{args.principal}:gateway"
+    keyserver_marker = f"privjail-grant:{args.user}:{args.principal}:keyserver"
 
     removed_gw = remove_authorized_key(args.gateway_ssh, args.user, gateway_marker)
     removed_ks = remove_authorized_key(args.key_server_ssh, args.user, keyserver_marker)
-    print(f"\ngateway entry {'removed' if removed_gw else 'was not present'} for '{args.user}'.")
-    print(f"key-server entry {'removed' if removed_ks else 'was not present'} for '{args.user}'.")
+    print(f"\ngateway entry {'removed' if removed_gw else 'was not present'} for '{args.user}' ({args.principal}).")
+    print(f"key-server entry {'removed' if removed_ks else 'was not present'} for '{args.user}' ({args.principal}).")
 
 
 def main() -> None:
