@@ -87,7 +87,7 @@ def parse_key_server(spec: str) -> tuple[str, int]:
 
 
 def ssh(host: str, remote_cmd: str, user: str | None = None,
-        input_data: str | None = None, timeout: float = 15.0) -> subprocess.CompletedProcess:
+        input_data: str | None = None, timeout: float = 30.0) -> subprocess.CompletedProcess:
     # ssh flattens every argument after `host` into one space-joined string
     # for the remote shell to re-parse, so remote_cmd must be pre-quoted to
     # survive as a single word -- otherwise its own spaces/quotes/redirects
