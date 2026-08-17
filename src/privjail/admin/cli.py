@@ -5,7 +5,7 @@ and the key server as an account with `sudo -u <user>` rights there.
 
 Subcommands
 -----------
-grant   Idempotently plants/updates the SAME user-supplied "mount key" as a
+grant   Idempotently appends the SAME user-supplied "mount key" as a
         forced-command entry in <user>'s authorized_keys on BOTH hosts:
           - on the gateway: restricted to running privjail-gateway with the
             given --data-enc/--data/--key-server, with agent forwarding
@@ -37,17 +37,23 @@ grant   Idempotently plants/updates the SAME user-supplied "mount key" as a
         forced commands -- as long as this mount key is never reused
         anywhere with looser restrictions.
 
-revoke  Removes exactly what `grant` added: the two authorized_keys entries
-        (gateway + key server), identified by their marker comment.
+revoke  Removes the line matching --match (a substring, e.g. the pubkey's
+        own comment like "tau@namo") from each host's authorized_keys.
+        Substring match rather than line number: it's content-addressed, so
+        it stays correct even if something else concurrently changed the
+        file, whereas a line number could silently shift out from under you.
+        If --match hits more than one line on either host, nothing is
+        touched anywhere and both hosts' matches are printed so you can
+        refine it; if it hits zero lines on a host, that host is just left
+        alone (not an error -- you may only want to revoke one side).
 
-Every planted authorized_keys line is tagged with a comment marker
-(privjail-grant:<user>:gateway / :keyserver) so re-running `grant` updates
-the existing entry in place instead of duplicating it, and `revoke` can
-find exactly the lines it's responsible for -- no separate state file is
-kept; the authorized_keys files themselves are the state.
-
-Both subcommands always print the user's existing relevant authorized_keys
-entries (if any) before doing anything else, dry-run or not.
+Idempotency here is purely by exact line content: a grant re-run with the
+same pubkey and the same options (--enc-dir/--mount-point/--privjail-gateway-
+cmd/--key-server) is a no-op; if any of those differ, it appends a second,
+distinct entry rather than silently rewriting the first one -- no separate
+state file is kept, and no synthetic marker is added to the line; the
+authorized_keys files themselves are the only state, and the pubkey's own
+comment (e.g. "tau@namo") is left untouched for the admin to read.
 
 `grant` writes nothing until every hard check passes (see --dry-run).
 """
@@ -162,15 +168,6 @@ def check(section: list[Check], label: str, result: subprocess.CompletedProcess,
     return ok
 
 
-def existing_tags(host: str, user: str) -> list[str]:
-    """Marker suffixes (e.g. "gateway", "keyserver") already planted for `user` on `host`."""
-    prefix = f"privjail-grant:{user}:"
-    tags = []
-    for line in read_authorized_keys(host, user):
-        tokens = line.split()
-        if tokens and tokens[-1].startswith(prefix):
-            tags.append(tokens[-1][len(prefix):])
-    return tags
 
 
 def expand_user_path(path: str, home: str) -> str:
@@ -206,10 +203,10 @@ def account_checks(section: list[Check], host: str, user: str, title: str) -> tu
     if not check(section, "authorized_keys", home_result, ak_path,
                  suffix_if_failed="could not resolve path"):
         return False, ""
-    tags = existing_tags(host, user)
-    tags_check = Check("existing keys", True, True, ", ".join(tags))
-    section.append(tags_check)
-    print_check(tags_check)
+    line_count = len(read_authorized_keys(host, user))
+    lines_check = Check("existing keys", True, True, f"{line_count} line(s)")
+    section.append(lines_check)
+    print_check(lines_check)
     return True, home
 
 
@@ -217,7 +214,14 @@ def all_hard_ok(checks: list[Check]) -> bool:
     return all(c.ok for c in checks if c.hard)
 
 
-def run_checks(args: argparse.Namespace) -> tuple[list[Check], list[Check]]:
+def report_already_granted(section: list[Check], host: str, user: str, line: str) -> None:
+    already_present = line in read_authorized_keys(host, user)
+    c = Check("this exact entry", True, True, "already present" if already_present else "not present yet")
+    section.append(c)
+    print_check(c)
+
+
+def run_checks(args: argparse.Namespace, pubkey: str) -> tuple[list[Check], list[Check]]:
     gateway: list[Check] = []
     key_server: list[Check] = []
 
@@ -228,6 +232,11 @@ def run_checks(args: argparse.Namespace) -> tuple[list[Check], list[Check]]:
                          f"bash -c 'exec 3<>/dev/tcp/127.0.0.1/{args.key_server_port}'")
         check(key_server, "key server listening", listening, str(args.key_server_port),
               hard=False, suffix_if_failed="is not listened", prefer_suffix=True)
+        args.keyserver_line = (
+            f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
+            f'permitopen="localhost:{args.key_server_port}" {pubkey}'
+        )
+        report_already_granted(key_server, args.key_server_ssh, args.user, args.keyserver_line)
     print()
 
     gw_ok, gw_home = account_checks(gateway, args.gateway_ssh, args.user,
@@ -255,16 +264,28 @@ def run_checks(args: argparse.Namespace) -> tuple[list[Check], list[Check]]:
         check(gateway, "gocryptfs is on PATH", gocryptfs, gocryptfs.stdout.strip(),
               suffix_if_failed="not found on PATH")
 
+        gateway_command = (
+            f"{args.privjail_gateway_cmd} --data-enc {args.enc_dir} --data {args.mount_point} "
+            f"--key-server {args.key_server_host}:{args.key_server_port}"
+        )
+        args.gateway_line = (
+            f'command="{gateway_command}",no-pty,no-X11-forwarding,'
+            f'permitopen="localhost:*" {pubkey}'
+        )
+        report_already_granted(gateway, args.gateway_ssh, args.user, args.gateway_line)
+
     return gateway, key_server
 
 
 def read_pubkey_line(path: str) -> str:
+    """Returns the pubkey file's line verbatim (including its own comment,
+    e.g. "tau@namo") -- nothing here rewrites or drops it."""
     with open(path, "r", encoding="utf-8") as f:
         line = f.read().strip()
     fields = line.split()
     if len(fields) < 2:
         raise ValueError(f"{path} does not look like an SSH public key")
-    return f"{fields[0]} {fields[1]}"  # keytype + base64, drop any existing comment
+    return line
 
 
 def read_authorized_keys(host: str, user: str) -> list[str]:
@@ -285,18 +306,14 @@ def write_authorized_keys(host: str, user: str, lines: list[str]) -> None:
         raise RuntimeError(f"failed to update authorized_keys on {host} for {user}: {result.stderr}")
 
 
-def upsert_authorized_key(host: str, user: str, marker: str, new_line: str) -> None:
-    lines = [l for l in read_authorized_keys(host, user) if marker not in l]
-    lines.append(new_line)
-    write_authorized_keys(host, user, lines)
-
-
-def remove_authorized_key(host: str, user: str, marker: str) -> bool:
-    existing = read_authorized_keys(host, user)
-    remaining = [l for l in existing if marker not in l]
-    if len(remaining) == len(existing):
+def append_if_missing(host: str, user: str, line: str) -> bool:
+    """Appends `line` to authorized_keys unless that exact line is already
+    present. Returns True iff it was newly added."""
+    lines = read_authorized_keys(host, user)
+    if line in lines:
         return False
-    write_authorized_keys(host, user, remaining)
+    lines.append(line)
+    write_authorized_keys(host, user, lines)
     return True
 
 
@@ -317,10 +334,11 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 
 def cmd_grant(args: argparse.Namespace) -> None:
     args.privjail_gateway_cmd = args.privjail_gateway_cmd.format(user=args.user)
+    pubkey = read_pubkey_line(args.user_pubkey)
 
     print(f"Checking environment (assumes this script's operator can `sudo -u {args.user}` "
           f"on both hosts):")
-    gateway_checks, key_server_checks = run_checks(args)
+    gateway_checks, key_server_checks = run_checks(args, pubkey)
     all_ok = all_hard_ok(gateway_checks) and all_hard_ok(key_server_checks)
 
     if all_ok:
@@ -335,27 +353,13 @@ def cmd_grant(args: argparse.Namespace) -> None:
     if not all_ok:
         sys.exit(1)
 
-    pubkey = read_pubkey_line(args.user_pubkey)
+    added_gw = append_if_missing(args.gateway_ssh, args.user, args.gateway_line)
+    print(f"\nGateway authorized_keys for '{args.user}': "
+          f"{'added new entry' if added_gw else 'entry already present, unchanged'}.")
 
-    gateway_command = (
-        f"{args.privjail_gateway_cmd} --data-enc {args.enc_dir} --data {args.mount_point} "
-        f"--key-server {args.key_server_host}:{args.key_server_port}"
-    )
-    gateway_marker = f"privjail-grant:{args.user}:gateway"
-    gateway_line = (
-        f'command="{gateway_command}",no-pty,no-X11-forwarding,'
-        f'permitopen="localhost:*" {pubkey} {gateway_marker}'
-    )
-    upsert_authorized_key(args.gateway_ssh, args.user, gateway_marker, gateway_line)
-    print(f"\nUpdated gateway authorized_keys for '{args.user}'.")
-
-    keyserver_marker = f"privjail-grant:{args.user}:keyserver"
-    keyserver_line = (
-        f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
-        f'permitopen="localhost:{args.key_server_port}" {pubkey} {keyserver_marker}'
-    )
-    upsert_authorized_key(args.key_server_ssh, args.user, keyserver_marker, keyserver_line)
-    print(f"Updated key-server authorized_keys for '{args.user}'.")
+    added_ks = append_if_missing(args.key_server_ssh, args.user, args.keyserver_line)
+    print(f"Key-server authorized_keys for '{args.user}': "
+          f"{'added new entry' if added_ks else 'entry already present, unchanged'}.")
 
     print(
         f"\nGrant complete for '{args.user}'. The same mount key now authenticates on both "
@@ -377,25 +381,46 @@ def cmd_revoke(args: argparse.Namespace) -> None:
     all_ok = all_hard_ok(gateway_checks) and all_hard_ok(key_server_checks)
 
     if all_ok:
-        print("\nAll requirements satisfied; ready to revoke access.")
+        print("\nAll requirements satisfied.")
     else:
-        print("\nOne or more requirements are not satisfied; cannot revoke access.")
-
-    if args.dry_run:
-        print("no changes made (--dry-run)")
-        return
-
-    if not all_ok:
-        print("aborting.", file=sys.stderr)
+        print("\nOne or more requirements are not satisfied; cannot proceed.")
         sys.exit(1)
 
-    gateway_marker = f"privjail-grant:{args.user}:gateway"
-    keyserver_marker = f"privjail-grant:{args.user}:keyserver"
+    ks_lines = read_authorized_keys(args.key_server_ssh, args.user)
+    gw_lines = read_authorized_keys(args.gateway_ssh, args.user)
+    ks_matches = [l for l in ks_lines if args.match in l]
+    gw_matches = [l for l in gw_lines if args.match in l]
 
-    removed_gw = remove_authorized_key(args.gateway_ssh, args.user, gateway_marker)
-    removed_ks = remove_authorized_key(args.key_server_ssh, args.user, keyserver_marker)
-    print(f"\ngateway entry {'removed' if removed_gw else 'was not present'} for '{args.user}'.")
-    print(f"key-server entry {'removed' if removed_ks else 'was not present'} for '{args.user}'.")
+    def report(label: str, matches: list[str]) -> None:
+        print(f"\n{label}: {len(matches)} matching line(s)")
+        for line in matches:
+            print(f"  {line}")
+
+    report(f"Key server [{args.key_server_host}]", ks_matches)
+    report(f"Gateway [{args.gateway}]", gw_matches)
+
+    if len(ks_matches) > 1 or len(gw_matches) > 1:
+        print("\n--match matched more than one line on at least one host; refine it. "
+              "No changes made.", file=sys.stderr)
+        sys.exit(1)
+
+    if not ks_matches and not gw_matches:
+        print("\nNo matching entry on either host; nothing to revoke.")
+        return
+
+    if args.dry_run:
+        print("\nno changes made (--dry-run)")
+        return
+
+    if ks_matches:
+        write_authorized_keys(args.key_server_ssh, args.user,
+                               [l for l in ks_lines if l != ks_matches[0]])
+    if gw_matches:
+        write_authorized_keys(args.gateway_ssh, args.user,
+                               [l for l in gw_lines if l != gw_matches[0]])
+
+    print(f"\nKey server: {'removed matching entry' if ks_matches else 'no match, left unchanged'}.")
+    print(f"Gateway: {'removed matching entry' if gw_matches else 'no match, left unchanged'}.")
 
 
 def main() -> None:
@@ -423,8 +448,12 @@ def main() -> None:
     revoke = subparsers.add_parser("revoke", help="revoke a user's access to the gateway",
                                 formatter_class=DefaultsFormatter)
     add_common_args(revoke)
+    revoke.add_argument("--match", required=True,
+                         help="substring identifying which authorized_keys line to remove "
+                              "(e.g. the pubkey's own comment, like 'tau@namo'); must match "
+                              "exactly one line per host, or that host is left unchanged")
     revoke.add_argument("--dry-run", action="store_true",
-                         help="check the environment and report what would change; make no changes")
+                         help="show what would be removed; make no changes")
     revoke.set_defaults(func=cmd_revoke)
 
     args = parser.parse_args()
