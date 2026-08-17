@@ -116,8 +116,11 @@ class Check:
 # remote command's own failure, so they should never be mistaken for "the
 # reason it failed" -- e.g. OpenSSH's post-quantum-KEX upgrade notice
 # ("** The server may need to be upgraded. See https://openssh.com/pq.html"),
-# printed at a severity -o LogLevel=ERROR doesn't suppress.
-_NOISE_PREFIXES = ("**",)
+# printed at a severity -o LogLevel=ERROR doesn't suppress; and
+# "Warning: Permanently added '<host>' ..." from a ProxyJump hop, which spawns
+# its own nested ssh process using ~/.ssh/config and so never sees our
+# -o LogLevel=ERROR (that only applies to the outer connection).
+_NOISE_PREFIXES = ("**", "Warning: Permanently added")
 
 
 def _last_line(text: str) -> str:
