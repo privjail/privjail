@@ -87,7 +87,7 @@ def parse_key_server(spec: str) -> tuple[str, int]:
 
 
 def ssh(host: str, remote_cmd: str, user: str | None = None,
-        input_data: str | None = None, timeout: float = 15.0) -> subprocess.CompletedProcess:
+        input_data: str | None = None, timeout: float = 30.0) -> subprocess.CompletedProcess:
     # ssh flattens every argument after `host` into one space-joined string
     # for the remote shell to re-parse, so remote_cmd must be pre-quoted to
     # survive as a single word -- otherwise its own spaces/quotes/redirects
@@ -112,8 +112,22 @@ class Check:
     suffix: str = ""    # short trailing explanation, mainly used on failure
 
 
+# Advisory banners ssh clients/servers print that aren't diagnostic of the
+# remote command's own failure, so they should never be mistaken for "the
+# reason it failed" -- e.g. OpenSSH's post-quantum-KEX upgrade notice
+# ("** The server may need to be upgraded. See https://openssh.com/pq.html"),
+# printed at a severity -o LogLevel=ERROR doesn't suppress; and
+# "Warning: Permanently added '<host>' ..." from a ProxyJump hop, which spawns
+# its own nested ssh process using ~/.ssh/config and so never sees our
+# -o LogLevel=ERROR (that only applies to the outer connection).
+_NOISE_PREFIXES = ("**", "Warning: Permanently added")
+
+
 def _last_line(text: str) -> str:
-    lines = [l for l in text.strip().splitlines() if l.strip()]
+    lines = [
+        l for l in text.strip().splitlines()
+        if l.strip() and not l.strip().startswith(_NOISE_PREFIXES)
+    ]
     return lines[-1] if lines else ""
 
 
