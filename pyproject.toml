@@ -24,6 +24,7 @@ privjail-keyserver = "privjail.server.keyserver:main"
 privjail-get-quote = "privjail.server.attestation.quote:main"
 privjail-reset = "privjail.server.reset:main"
 privjail-dataserver = "privjail.server.dataserver:main"
+privjail-admin = "privjail.admin.cli:main"
 
 [build-system]
 requires = ["hatchling"]
