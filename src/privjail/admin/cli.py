@@ -214,7 +214,14 @@ def all_hard_ok(checks: list[Check]) -> bool:
     return all(c.ok for c in checks if c.hard)
 
 
-def run_checks(args: argparse.Namespace) -> tuple[list[Check], list[Check]]:
+def report_already_granted(section: list[Check], host: str, user: str, line: str) -> None:
+    already_present = line in read_authorized_keys(host, user)
+    c = Check("this exact entry", True, True, "already present" if already_present else "not present yet")
+    section.append(c)
+    print_check(c)
+
+
+def run_checks(args: argparse.Namespace, pubkey: str) -> tuple[list[Check], list[Check]]:
     gateway: list[Check] = []
     key_server: list[Check] = []
 
@@ -225,6 +232,11 @@ def run_checks(args: argparse.Namespace) -> tuple[list[Check], list[Check]]:
                          f"bash -c 'exec 3<>/dev/tcp/127.0.0.1/{args.key_server_port}'")
         check(key_server, "key server listening", listening, str(args.key_server_port),
               hard=False, suffix_if_failed="is not listened", prefer_suffix=True)
+        args.keyserver_line = (
+            f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
+            f'permitopen="localhost:{args.key_server_port}" {pubkey}'
+        )
+        report_already_granted(key_server, args.key_server_ssh, args.user, args.keyserver_line)
     print()
 
     gw_ok, gw_home = account_checks(gateway, args.gateway_ssh, args.user,
@@ -251,6 +263,16 @@ def run_checks(args: argparse.Namespace) -> tuple[list[Check], list[Check]]:
         gocryptfs = ssh(args.gateway_ssh, "command -v gocryptfs", user=args.user)
         check(gateway, "gocryptfs is on PATH", gocryptfs, gocryptfs.stdout.strip(),
               suffix_if_failed="not found on PATH")
+
+        gateway_command = (
+            f"{args.privjail_gateway_cmd} --data-enc {args.enc_dir} --data {args.mount_point} "
+            f"--key-server {args.key_server_host}:{args.key_server_port}"
+        )
+        args.gateway_line = (
+            f'command="{gateway_command}",no-pty,no-X11-forwarding,'
+            f'permitopen="localhost:*" {pubkey}'
+        )
+        report_already_granted(gateway, args.gateway_ssh, args.user, args.gateway_line)
 
     return gateway, key_server
 
@@ -312,10 +334,11 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 
 def cmd_grant(args: argparse.Namespace) -> None:
     args.privjail_gateway_cmd = args.privjail_gateway_cmd.format(user=args.user)
+    pubkey = read_pubkey_line(args.user_pubkey)
 
     print(f"Checking environment (assumes this script's operator can `sudo -u {args.user}` "
           f"on both hosts):")
-    gateway_checks, key_server_checks = run_checks(args)
+    gateway_checks, key_server_checks = run_checks(args, pubkey)
     all_ok = all_hard_ok(gateway_checks) and all_hard_ok(key_server_checks)
 
     if all_ok:
@@ -330,25 +353,11 @@ def cmd_grant(args: argparse.Namespace) -> None:
     if not all_ok:
         sys.exit(1)
 
-    pubkey = read_pubkey_line(args.user_pubkey)
-
-    gateway_command = (
-        f"{args.privjail_gateway_cmd} --data-enc {args.enc_dir} --data {args.mount_point} "
-        f"--key-server {args.key_server_host}:{args.key_server_port}"
-    )
-    gateway_line = (
-        f'command="{gateway_command}",no-pty,no-X11-forwarding,'
-        f'permitopen="localhost:*" {pubkey}'
-    )
-    added_gw = append_if_missing(args.gateway_ssh, args.user, gateway_line)
+    added_gw = append_if_missing(args.gateway_ssh, args.user, args.gateway_line)
     print(f"\nGateway authorized_keys for '{args.user}': "
           f"{'added new entry' if added_gw else 'entry already present, unchanged'}.")
 
-    keyserver_line = (
-        f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
-        f'permitopen="localhost:{args.key_server_port}" {pubkey}'
-    )
-    added_ks = append_if_missing(args.key_server_ssh, args.user, keyserver_line)
+    added_ks = append_if_missing(args.key_server_ssh, args.user, args.keyserver_line)
     print(f"Key-server authorized_keys for '{args.user}': "
           f"{'added new entry' if added_ks else 'entry already present, unchanged'}.")
 
