@@ -112,8 +112,19 @@ class Check:
     suffix: str = ""    # short trailing explanation, mainly used on failure
 
 
+# Advisory banners ssh clients/servers print that aren't diagnostic of the
+# remote command's own failure, so they should never be mistaken for "the
+# reason it failed" -- e.g. OpenSSH's post-quantum-KEX upgrade notice
+# ("** The server may need to be upgraded. See https://openssh.com/pq.html"),
+# printed at a severity -o LogLevel=ERROR doesn't suppress.
+_NOISE_PREFIXES = ("**",)
+
+
 def _last_line(text: str) -> str:
-    lines = [l for l in text.strip().splitlines() if l.strip()]
+    lines = [
+        l for l in text.strip().splitlines()
+        if l.strip() and not l.strip().startswith(_NOISE_PREFIXES)
+    ]
     return lines[-1] if lines else ""
 
 
