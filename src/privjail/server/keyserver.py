@@ -1,11 +1,14 @@
 """keyserver.py -- holds one gocryptfs password per encrypted directory and
 releases it only to a granted user whose request comes from a genuine TDX VM.
 
-State (in --state-dir, default ~/privjail-ks; owner-only):
-  keys/<dir>   the gocryptfs password of encrypted directory <dir> (one line)
-  grants       which user may mount which directory, one "<user> <dir>" per
-               line ('#' starts a comment); re-read on every request, so
-               edits (e.g. by privjail-admin grant/revoke) apply immediately
+Directories are identified by their absolute path on the gateway.
+
+State (in --state-dir, default ~/privjail-ks; owner-only), both re-read on
+every request, so edits apply immediately; '#' starts a comment:
+  passwords    "<path> <password>" per line: the gocryptfs password of the
+               encrypted directory at <path>
+  grants       "<user> <path>" per line: <user> may mount <path>
+               (maintained by privjail-admin grant/revoke)
 
 Who is asking: clients reach this server only through an ssh tunnel into
 this host (`ssh -L ...:localhost:<port> <key server>`, restricted by
@@ -14,7 +17,7 @@ opened by that user's own sshd process, so the peer socket's owner uid --
 looked up in /proc/net/tcp -- identifies the ssh account, i.e. the user.
 
 Protocol (frames are 4-byte little-endian length + payload):
-  client -> server : frame(directory name)
+  client -> server : frame(absolute path of the encrypted directory)
   server -> client : 1 byte; 0 = refused, followed by frame(error message)
                              1 = go on,   followed by 64 raw bytes (nonce)
   client -> server : frame(TDX quote over the nonce)
@@ -26,10 +29,10 @@ import importlib.resources
 import io
 import os
 import pwd
-import re
 import socket
 import sys
 
+from privjail.dirspec import path_error
 from privjail.server.attestation.net import recv_frame, send_frame
 from privjail.server.attestation.quote import REPORTDATA_LEN
 from privjail.server.attestation.verify import TdxVerifyError, verify_quote
@@ -37,8 +40,7 @@ from privjail.server.attestation.verify import TdxVerifyError, verify_quote
 DEFAULT_PORT = 9443
 DEFAULT_STATE_DIR = "~/privjail-ks"
 MAX_QUOTE_LEN = 64 * 1024
-MAX_NAME_LEN = 255
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+MAX_PATH_LEN = 4096
 
 
 def _default_root_pem() -> str:
@@ -67,17 +69,18 @@ def peer_uid(conn: socket.socket) -> int | None:
     return None
 
 
-def read_grants(path: str) -> set[tuple[str, str]]:
-    grants: set[tuple[str, str]] = set()
+def read_pairs(path: str) -> list[tuple[str, str]]:
+    """Lines of two whitespace-separated fields; '#' comments, others ignored."""
+    pairs = []
     try:
         with open(path) as f:
             for line in f:
                 fields = line.split("#", 1)[0].split()
                 if len(fields) == 2:
-                    grants.add((fields[0], fields[1]))
+                    pairs.append((fields[0], fields[1]))
     except FileNotFoundError:
         pass
-    return grants
+    return pairs
 
 
 def refuse(conn: socket.socket, who: str, message: str) -> None:
@@ -95,21 +98,21 @@ def handle_client(conn: socket.socket, root_pem_path: str, state_dir: str) -> No
     who = user or f"uid {uid}"
 
     try:
-        name = recv_frame(conn, MAX_NAME_LEN).decode()
+        dirpath = recv_frame(conn, MAX_PATH_LEN).decode()
     except (ConnectionError, ValueError, UnicodeDecodeError) as e:
         print(f"[keyserver] {who}: bad request: {e}", file=sys.stderr)
         return
-    who = f"{who} -> {name}"
+    who = f"{who} -> {dirpath}"
 
     if user is None:
         return refuse(conn, who, "cannot identify the requesting user")
-    if not NAME_RE.match(name):
-        return refuse(conn, who, f"invalid directory name {name!r}")
-    if (user, name) not in read_grants(os.path.join(state_dir, "grants")):
-        return refuse(conn, who, f"{user} is not granted access to {name}")
-    key_path = os.path.join(state_dir, "keys", name)
-    if not os.path.isfile(key_path):
-        return refuse(conn, who, f"no key for {name}")
+    if not dirpath.startswith("/") or path_error(dirpath):
+        return refuse(conn, who, f"invalid directory path {dirpath!r}")
+    if (user, dirpath) not in read_pairs(os.path.join(state_dir, "grants")):
+        return refuse(conn, who, f"{user} is not granted access to {dirpath}")
+    passwords = dict(read_pairs(os.path.join(state_dir, "passwords")))
+    if dirpath not in passwords:
+        return refuse(conn, who, f"no password registered for {dirpath}")
 
     nonce = os.urandom(REPORTDATA_LEN)
     print(f"[keyserver] {who}: granted, issuing nonce challenge")
@@ -129,8 +132,7 @@ def handle_client(conn: socket.socket, root_pem_path: str, state_dir: str) -> No
         send_frame(conn, b"attestation failed")
         return
 
-    with open(key_path, "rb") as f:
-        secret = f.read()
+    secret = (passwords[dirpath] + "\n").encode()
     print(f"[keyserver] {who}: attestation OK -- releasing key")
     conn.sendall(b"\x01")
     send_frame(conn, secret)
@@ -161,7 +163,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port to listen on (default: {DEFAULT_PORT})")
     parser.add_argument("--root-pem", default=None, help="trusted root CA cert (default: bundled Intel SGX root)")
     parser.add_argument("--state-dir", default=DEFAULT_STATE_DIR,
-                        help=f"directory holding keys/ and grants (default: {DEFAULT_STATE_DIR})")
+                        help=f"directory holding passwords and grants (default: {DEFAULT_STATE_DIR})")
     args = parser.parse_args()
 
     run(args.port, args.host, args.root_pem or _default_root_pem(), os.path.expanduser(args.state_dir))
