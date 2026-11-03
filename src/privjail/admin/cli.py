@@ -1,92 +1,67 @@
-"""privjail-admin -- grant/revoke a user's access to a PrivJail gateway.
+"""privjail-admin -- grant/revoke/inspect users' access to a PrivJail gateway.
 
 Run by the data owner, from a machine that can `ssh` into both the gateway
-and the key server as an account with `sudo -u <user>` rights there.
+and the key server as an account with sudo rights there (`sudo -u <user>`,
+and root on the gateway for the sudoers entry).
 
 Subcommands
 -----------
-grant   Idempotently appends the SAME user-supplied "mount key" as a
-        forced-command entry in <user>'s authorized_keys on BOTH hosts:
-          - on the gateway: restricted to running privjail-gateway with the
-            given --data-enc/--data/--key-server, with agent forwarding
-            *allowed* (see below).
-          - on the key server: restricted to nothing but local port
-            forwarding to the key server's own port, with agent forwarding
-            disabled (this leaf doesn't need to forward any further).
-        No new key material is ever generated or stored by this script.
+status  Shows, for each user (default: every account that has a privjail
+        entry on either host), what is granted on the key server and the
+        gateway and whether the pieces fit together: same key on both
+        hosts, forced command / privjail-get-quote present, encrypted dir
+        initialized, sudoers entry and ~/.ssh/config block in place, key
+        server listening.
 
-        Reaching the key server from the gateway (step 2a) relies on SSH
-        agent forwarding: the user connects to the gateway with agent
-        forwarding enabled (`ssh -A gateway`, or `ForwardAgent yes`), so
-        privjail-gateway -- running as the forced command in that same
-        session -- inherits SSH_AUTH_SOCK. When it shells out
-        `ssh -L 9443:localhost:9443 key-server`, that child process
-        authenticates via the forwarded agent, i.e. the user's own laptop
-        signs the challenge; the private key itself never leaves the
-        laptop or touches the gateway's disk. Since it's the same keypair,
-        the same public key needs to be (and is) authorized on the key
-        server too.
-
-        This does widen what the live session can do (a compromise of the
-        gateway, as that account, during the session, could ride the agent
-        to authenticate elsewhere the same pubkey is trusted) but the
-        exposure is bounded and time-limited: it requires code execution as
-        that specific account while the session is open, it can't exfiltrate
-        the private key itself (only use it live), and what it can
-        authenticate *as* is exactly these two already-tightly-scoped
-        forced commands -- as long as this mount key is never reused
-        anywhere with looser restrictions.
-
-        grant also sets up two per-account things on the gateway that the
-        forced command needs at run time (both idempotent, both shown by
-        --dry-run as "already present" / "not present yet"):
-          - a sudoers drop-in, /etc/sudoers.d/privjail-<user>, letting <user>
-            run exactly `<bin>/privjail-get-quote` (no arguments) as root
-            (fetching a TDX quote needs root). <bin> is the directory of
-            privjail-gateway's shebang interpreter, which is where
-            privjail-gateway looks for it too. Validated with `visudo -c` before it
-            is put in place; requires the operator to have root via sudo.
+grant   Idempotently registers the user's "mount key" (--user-pubkey) on
+        both hosts:
+          - gateway authorized_keys: forced command privjail-gateway with
+            --data-enc/--data/--key-server; agent forwarding allowed.
+          - key server authorized_keys: nothing but local port forwarding
+            to the key server port; agent forwarding disabled.
+        and sets up on the gateway what the forced command needs at run time:
+          - /etc/sudoers.d/privjail-<user>: run exactly
+            `<bin>/privjail-get-quote` (no arguments) as root, where <bin> is
+            the directory of privjail-gateway's interpreter. Checked with
+            `visudo -c` before being put in place.
           - a managed block at the top of <user>'s ~/.ssh/config defining
-            `Host <key-server host>` (HostName/Port resolved through the
-            operator's own ssh config, or --key-server-hostname) with
-            `StrictHostKeyChecking accept-new`, so the gateway can reach the
-            key server by that name without /etc/hosts or a pre-populated
-            known_hosts.
+            `Host <key server>` (address resolved through the operator's own
+            ssh config, or --key-server-hostname) with
+            `StrictHostKeyChecking accept-new`.
+        No key material is generated. The gateway reaches the key server via
+        the user's forwarded agent (`ForwardAgent yes`), i.e. the same key,
+        which is why it is registered on both hosts.
+        Nothing is written unless every check passes; --dry-run shows what
+        would change.
 
-revoke  Removes the line matching --match (a substring, e.g. the pubkey's
-        own comment like "tau@namo") from each host's authorized_keys.
-        Substring match rather than line number: it's content-addressed, so
-        it stays correct even if something else concurrently changed the
-        file, whereas a line number could silently shift out from under you.
-        If --match hits more than one line on either host, nothing is
-        touched anywhere and both hosts' matches are printed so you can
-        refine it; if it hits zero lines on a host, that host is just left
-        alone (not an error -- you may only want to revoke one side).
-        If this removes the last privjail-gateway entry for <user> on the
-        gateway, the sudoers drop-in and the managed ~/.ssh/config block
-        that grant created are removed too.
+revoke  Removes the authorized_keys line matching --match (a substring,
+        typically the pubkey's comment) on each host. Aborts without changes
+        if --match is ambiguous on either host. When the user's last
+        privjail-gateway entry goes, the sudoers entry and the managed
+        ~/.ssh/config block go too.
 
-Idempotency here is purely by exact line content: a grant re-run with the
-same pubkey and the same options (--enc-dir/--mount-point/--privjail-gateway-
-cmd/--key-server) is a no-op; if any of those differ, it appends a second,
-distinct entry rather than silently rewriting the first one -- no separate
-state file is kept, and no synthetic marker is added to the line; the
-authorized_keys files themselves are the only state, and the pubkey's own
-comment (e.g. "tau@namo") is left untouched for the admin to read.
-
-`grant` writes nothing until every hard check passes (see --dry-run).
+Each host is inspected with a single ssh session (both hosts in parallel) and
+changed with at most one more.
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
+import hashlib
+import re
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 
+DEFAULT_GATEWAY = "privjail-gw"
 DEFAULT_KEY_SERVER_HOST = "privjail-ks"
 DEFAULT_KEY_SERVER_PORT = 9443
+DEFAULT_PRIVJAIL_GATEWAY_CMD = "/opt/privjail/.venv/bin/privjail-gateway"
+DEFAULT_ENC_DIR = "~/data_enc"
+DEFAULT_MOUNT_POINT = "~/data"
 
 SUDOERS_DIR = "/etc/sudoers.d"
 QUOTE_COMMAND = "privjail-get-quote"
@@ -94,346 +69,33 @@ SSH_CONFIG_BEGIN = "# BEGIN privjail-admin (managed block; edits here are overwr
 SSH_CONFIG_END = "# END privjail-admin"
 
 
-class DefaultsFormatter(argparse.ArgumentDefaultsHelpFormatter):
-    """Like ArgumentDefaultsHelpFormatter, but skips the auto-appended
-    "(default: ...)" for options whose default is None or "" -- those already
-    explain their effective fallback/default in their own help text, and
-    "(default: None)" would just be noise."""
-    def _get_help_string(self, action: argparse.Action) -> str:
-        help_str = action.help or ""
-        if not help_str or "%(default)" in help_str or action.default in (None, "", argparse.SUPPRESS):
-            return help_str
-        return help_str + " (default: %(default)s)"
+# --------------------------------------------------------------------------
+# ssh plumbing
 
-
-def parse_key_server(spec: str) -> tuple[str, int]:
-    """Parses "[host][:port]", defaulting either side that's omitted."""
-    if not spec:
-        return DEFAULT_KEY_SERVER_HOST, DEFAULT_KEY_SERVER_PORT
-    host, sep, port_str = spec.rpartition(":")
-    if not sep:
-        return spec, DEFAULT_KEY_SERVER_PORT
-    return host or DEFAULT_KEY_SERVER_HOST, int(port_str) if port_str else DEFAULT_KEY_SERVER_PORT
-
-
-def ssh(host: str, remote_cmd: str, user: str | None = None,
-        input_data: str | None = None, timeout: float = 30.0) -> subprocess.CompletedProcess:
-    # ssh flattens every argument after `host` into one space-joined string
-    # for the remote shell to re-parse, so remote_cmd must be pre-quoted to
-    # survive as a single word -- otherwise its own spaces/quotes/redirects
-    # get split apart before reaching the inner `bash -c` (see: `ssh host
-    # bash -c 'cat file'` hangs on bare `cat` for exactly this reason).
-    if user is not None:
-        inner = ["sudo", "-u", user, "-H", "bash", "-c", shlex.quote(remote_cmd)]
-    else:
-        inner = ["bash", "-c", shlex.quote(remote_cmd)]
-    command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR", host, *inner]
+def run_remote_script(host: str, script: str, timeout: float = 60.0) -> subprocess.CompletedProcess[str]:
+    """Runs `script` with bash on `host` (fed on stdin, so no quoting issues)."""
     return subprocess.run(
-        command, input=input_data, capture_output=True, text=True, timeout=timeout,
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR",
+         host, "bash", "-s"],
+        input=script, capture_output=True, text=True, timeout=timeout, check=False,
     )
 
 
-@dataclass
-class Check:
-    label: str       # fixed description, same wording regardless of outcome
-    ok: bool
-    hard: bool = True
-    bracket: str = ""   # the key piece of info this check is about (host, path, port, ...)
-    suffix: str = ""    # short trailing explanation, mainly used on failure
-
-
-# Advisory banners ssh clients/servers print that aren't diagnostic of the
-# remote command's own failure, so they should never be mistaken for "the
-# reason it failed" -- e.g. OpenSSH's post-quantum-KEX upgrade notice
-# ("** The server may need to be upgraded. See https://openssh.com/pq.html"),
-# printed at a severity -o LogLevel=ERROR doesn't suppress; and
-# "Warning: Permanently added '<host>' ..." from a ProxyJump hop, which spawns
-# its own nested ssh process using ~/.ssh/config and so never sees our
-# -o LogLevel=ERROR (that only applies to the outer connection).
+# Advisory banners that are never the actual reason a remote command failed
+# (OpenSSH's post-quantum notice; ProxyJump hops' known_hosts warnings, which
+# don't see our -o LogLevel=ERROR).
 _NOISE_PREFIXES = ("**", "Warning: Permanently added")
 
 
-def _last_line(text: str) -> str:
-    lines = [
-        l for l in text.strip().splitlines()
-        if l.strip() and not l.strip().startswith(_NOISE_PREFIXES)
-    ]
+def last_error_line(text: str) -> str:
+    lines = [l for l in text.strip().splitlines()
+             if l.strip() and not l.strip().startswith(_NOISE_PREFIXES)]
     return lines[-1] if lines else ""
 
 
-def print_check(c: Check) -> None:
-    status = "OK" if c.ok else ("WARN" if not c.hard else "NG")
-    line = f"  {c.label} ... {status} [{c.bracket}]"
-    if c.suffix:
-        line += f" {c.suffix}"
-    print(line)
-
-
-def check(section: list[Check], label: str, result: subprocess.CompletedProcess,
-          bracket: str, hard: bool = True, suffix_if_failed: str | None = None,
-          prefer_suffix: bool = False) -> bool:
-    """prefer_suffix=True skips the real stderr/stdout and always uses
-    suffix_if_failed -- for checks (like a raw /dev/tcp probe) whose real
-    output is boilerplate, never a useful diagnostic."""
-    ok = result.returncode == 0
-    c = Check(
-        label, ok, hard, bracket,
-        suffix="" if ok else (
-            suffix_if_failed if prefer_suffix else (
-                _last_line(result.stderr)
-                or _last_line(result.stdout)
-                or suffix_if_failed
-                or "failed"
-            )
-        ),
-    )
-    section.append(c)
-    print_check(c)
-    return ok
-
-
-
-
-def expand_user_path(path: str, home: str) -> str:
-    """Expands a leading "~" and any "$HOME" occurrences against `home` -- the
-    granted *user's* home directory on the remote host, not the local operator's."""
-    if path == "~":
-        path = home
-    elif path.startswith("~/"):
-        path = home + path[1:]
-    return path.replace("$HOME", home)
-
-
-def account_checks(section: list[Check], host: str, user: str, title: str) -> tuple[bool, str]:
-    """Appends SSH login / user exists / sudo -u / authorized_keys path / existing
-    keys to `section`, printing each as it's performed. Returns (ok, home) -- ok
-    iff all of these succeeded, i.e. it's safe to read or write that user's
-    authorized_keys on this host; home is that user's $HOME on `host` (used to
-    expand "~"/"$HOME" in other options). Assumes the operator running this
-    script can `sudo -u <user>` on `host` -- that's what the "sudo" check below
-    verifies."""
-    print(f"{title}:")
-    if not check(section, "SSH login", ssh(host, "true"), f"ssh {host}"):
-        return False, ""
-    if not check(section, "user exists", ssh(host, f"id -u {shlex.quote(user)}"), user,
-                 suffix_if_failed="does not exist"):
-        return False, ""
-    if not check(section, "sudo", ssh(host, "id", user=user), f"sudo -u {user} id",
-                 suffix_if_failed=f"cannot `sudo -u {user}`"):
-        return False, ""
-    home_result = ssh(host, 'echo "$HOME"', user=user)
-    home = home_result.stdout.strip()
-    ak_path = f"{home}/.ssh/authorized_keys" if home else ""
-    if not check(section, "authorized_keys", home_result, ak_path,
-                 suffix_if_failed="could not resolve path"):
-        return False, ""
-    line_count = len(read_authorized_keys(host, user))
-    lines_check = Check("existing keys", True, True, f"{line_count} line(s)")
-    section.append(lines_check)
-    print_check(lines_check)
-    return True, home
-
-
-def all_hard_ok(checks: list[Check]) -> bool:
-    return all(c.ok for c in checks if c.hard)
-
-
-def report_state(section: list[Check], label: str, present: bool) -> None:
-    c = Check(label, True, True, "already present" if present else "not present yet")
-    section.append(c)
-    print_check(c)
-
-
-def report_already_granted(section: list[Check], host: str, user: str, line: str) -> None:
-    report_state(section, "this exact entry", line in read_authorized_keys(host, user))
-
-
-def gateway_setup_checks(section: list[Check], args: argparse.Namespace, cmd_ok: bool) -> None:
-    """Checks for the sudoers drop-in and the ~/.ssh/config block (see module
-    docstring), storing what grant would write on `args`."""
-    check(section, "operator has root", ssh(args.gateway_ssh, "sudo -n true"), "sudo -n true",
-          suffix_if_failed="needed to install the sudoers entry")
-
-    if cmd_ok:
-        shebang = ssh(args.gateway_ssh, f"head -n1 {shlex.quote(args.privjail_gateway_cmd)}", user=args.user)
-        python = parse_shebang(shebang.stdout) if shebang.returncode == 0 else ""
-        # privjail-gateway runs `sudo <dir of sys.executable>/privjail-get-quote`;
-        # sys.executable is exactly the shebang interpreter, so derive it the same way
-        quote_cmd = python.rsplit("/", 1)[0] + "/" + QUOTE_COMMAND if python else ""
-        if python:
-            quote_ok = check(section, f"{QUOTE_COMMAND} command",
-                             ssh(args.gateway_ssh, f"test -x {shlex.quote(quote_cmd)}", user=args.user),
-                             quote_cmd, suffix_if_failed="not found next to privjail-gateway's python")
-        else:
-            quote_ok = False
-            c = Check(f"{QUOTE_COMMAND} command", False, True, args.privjail_gateway_cmd,
-                      "privjail-gateway has no absolute-path python shebang")
-            section.append(c)
-            print_check(c)
-        if quote_ok:
-            args.sudoers_path = sudoers_path(args.user)
-            # the trailing "" forbids any arguments
-            args.sudoers_content = (
-                f"# managed by privjail-admin\n"
-                f'{args.user} ALL=(root) NOPASSWD: {quote_cmd} ""\n'
-            )
-            report_state(section, "sudoers entry",
-                         read_sudoers(args.gateway_ssh, args.sudoers_path) == args.sudoers_content)
-
-    hostname, port = (
-        (args.key_server_hostname, 22) if args.key_server_hostname
-        else resolve_ssh_target(args.key_server_host)
-    )
-    reach = ssh(args.gateway_ssh, f"timeout 5 bash -c 'exec 3<>/dev/tcp/{hostname}/{port}'", user=args.user)
-    check(section, "key server reachable from gateway", reach, f"{hostname}:{port}", hard=False,
-          suffix_if_failed="cannot connect (try --key-server-hostname)", prefer_suffix=True)
-    current = read_user_ssh_file(args.gateway_ssh, args.user, "config")
-    args.gateway_ssh_config = with_managed_block(
-        current, ssh_config_block(args.key_server_host, hostname, port))
-    report_state(section, f"ssh config: Host {args.key_server_host}",
-                 normalize(current) == normalize(args.gateway_ssh_config))
-
-
-def run_checks(args: argparse.Namespace, pubkey: str) -> tuple[list[Check], list[Check]]:
-    gateway: list[Check] = []
-    key_server: list[Check] = []
-
-    ks_ok, _ = account_checks(key_server, args.key_server_ssh, args.user,
-                               f"Key server [{args.key_server_host}]")
-    if ks_ok:
-        listening = ssh(args.key_server_ssh,
-                         f"bash -c 'exec 3<>/dev/tcp/127.0.0.1/{args.key_server_port}'")
-        check(key_server, "key server listening", listening, str(args.key_server_port),
-              hard=False, suffix_if_failed="is not listened", prefer_suffix=True)
-        args.keyserver_line = (
-            f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
-            f'permitopen="localhost:{args.key_server_port}" {pubkey}'
-        )
-        report_already_granted(key_server, args.key_server_ssh, args.user, args.keyserver_line)
-    print()
-
-    gw_ok, gw_home = account_checks(gateway, args.gateway_ssh, args.user,
-                                     f"Gateway [{args.gateway}]")
-    if gw_ok:
-        args.privjail_gateway_cmd = expand_user_path(args.privjail_gateway_cmd, gw_home)
-        args.enc_dir = expand_user_path(args.enc_dir, gw_home)
-        args.mount_point = expand_user_path(args.mount_point, gw_home)
-
-        privjail_gateway = ssh(args.gateway_ssh, f"command -v {shlex.quote(args.privjail_gateway_cmd)}",
-                                user=args.user)
-        resolved_cmd = privjail_gateway.stdout.strip()
-        cmd_ok = check(gateway, "privjail-gateway command", privjail_gateway, resolved_cmd,
-                       suffix_if_failed="not found on PATH")
-        if cmd_ok:
-            # store the resolved absolute path so the forced command written to
-            # authorized_keys is explicit and auditable, not a bare PATH-dependent name
-            args.privjail_gateway_cmd = resolved_cmd
-        check(gateway, "--enc-dir exists",
-              ssh(args.gateway_ssh, f"test -d {shlex.quote(args.enc_dir)}", user=args.user), args.enc_dir,
-              suffix_if_failed="does not exist")
-        check(gateway, "--mount-point exists",
-              ssh(args.gateway_ssh, f"test -d {shlex.quote(args.mount_point)}", user=args.user), args.mount_point,
-              suffix_if_failed="does not exist")
-        gocryptfs = ssh(args.gateway_ssh, "command -v gocryptfs", user=args.user)
-        check(gateway, "gocryptfs is on PATH", gocryptfs, gocryptfs.stdout.strip(),
-              suffix_if_failed="not found on PATH")
-
-        gateway_command = (
-            f"{args.privjail_gateway_cmd} --data-enc {args.enc_dir} --data {args.mount_point} "
-            f"--key-server {args.key_server_host}:{args.key_server_port}"
-        )
-        args.gateway_line = (
-            f'command="{gateway_command}",no-pty,no-X11-forwarding,'
-            f'permitopen="localhost:*" {pubkey}'
-        )
-        report_already_granted(gateway, args.gateway_ssh, args.user, args.gateway_line)
-        gateway_setup_checks(gateway, args, cmd_ok)
-
-    return gateway, key_server
-
-
-def read_pubkey_line(path: str) -> str:
-    """Returns the pubkey file's line verbatim (including its own comment,
-    e.g. "tau@namo") -- nothing here rewrites or drops it."""
-    with open(path, "r", encoding="utf-8") as f:
-        line = f.read().strip()
-    fields = line.split()
-    if len(fields) < 2:
-        raise ValueError(f"{path} does not look like an SSH public key")
-    return line
-
-
-def read_user_ssh_file(host: str, user: str, name: str) -> list[str]:
-    result = ssh(host, f'cat "$HOME/.ssh/{name}" 2>/dev/null', user=user)
-    out: str = result.stdout
-    return out.splitlines()
-
-
-def write_user_ssh_file(host: str, user: str, name: str, lines: list[str]) -> None:
-    content = "\n".join(lines) + ("\n" if lines else "")
-    setup = (
-        f'mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" && '
-        f'cat > "$HOME/.ssh/{name}.tmp" && '
-        f'chmod 600 "$HOME/.ssh/{name}.tmp" && '
-        f'mv "$HOME/.ssh/{name}.tmp" "$HOME/.ssh/{name}"'
-    )
-    result = ssh(host, setup, user=user, input_data=content)
-    if result.returncode != 0:
-        raise RuntimeError(f"failed to update ~/.ssh/{name} on {host} for {user}: {result.stderr}")
-
-
-def read_authorized_keys(host: str, user: str) -> list[str]:
-    return [l for l in read_user_ssh_file(host, user, "authorized_keys") if l.strip()]
-
-
-def write_authorized_keys(host: str, user: str, lines: list[str]) -> None:
-    write_user_ssh_file(host, user, "authorized_keys", lines)
-
-
-def parse_shebang(first_line: str) -> str:
-    """Returns the interpreter path from a `#!/abs/python` line, or "" if it
-    isn't one (e.g. `#!/usr/bin/env python`, which sudoers can't pin down)."""
-    if not first_line.startswith("#!"):
-        return ""
-    fields = first_line[2:].split()
-    if not fields or not fields[0].startswith("/") or fields[0].endswith("/env"):
-        return ""
-    return fields[0]
-
-
-def sudoers_path(user: str) -> str:
-    # sudo ignores files in sudoers.d whose name contains "." or ends in "~"
-    return f"{SUDOERS_DIR}/privjail-{user.replace('.', '_')}"
-
-
-def read_sudoers(host: str, path: str) -> str | None:
-    result = ssh(host, f"sudo -n cat {shlex.quote(path)}")
-    return result.stdout if result.returncode == 0 else None
-
-
-def install_sudoers(host: str, path: str, content: str) -> None:
-    # the temp name starts with "." so sudo ignores it if anything goes wrong
-    tmp = shlex.quote(f"{SUDOERS_DIR}/.{path.rsplit('/', 1)[1]}.tmp")
-    cmd = (
-        f"sudo -n tee {tmp} >/dev/null && sudo -n chmod 0440 {tmp} && "
-        f"sudo -n visudo -cqf {tmp} && sudo -n mv {tmp} {shlex.quote(path)} "
-        f"|| {{ sudo -n rm -f {tmp}; exit 1; }}"
-    )
-    result = ssh(host, cmd, input_data=content)
-    if result.returncode != 0:
-        raise RuntimeError(f"failed to install {path} on {host}: {result.stderr or result.stdout}")
-
-
-def remove_sudoers(host: str, path: str) -> None:
-    result = ssh(host, f"sudo -n rm -f {shlex.quote(path)}")
-    if result.returncode != 0:
-        raise RuntimeError(f"failed to remove {path} on {host}: {result.stderr}")
-
-
 def resolve_ssh_target(alias: str) -> tuple[str, int]:
-    """Resolves `alias` through the *operator's* ssh config (`ssh -G`), so the
-    gateway-side ssh config can point at the same machine by the same name."""
-    result = subprocess.run(["ssh", "-G", alias], capture_output=True, text=True, timeout=10)
+    """Resolves `alias` through the *operator's* ssh config (`ssh -G`)."""
+    result = subprocess.run(["ssh", "-G", alias], capture_output=True, text=True, timeout=10, check=False)
     hostname, port = alias, 22
     for line in result.stdout.splitlines():
         key, _, value = line.partition(" ")
@@ -444,12 +106,249 @@ def resolve_ssh_target(alias: str) -> tuple[str, int]:
     return hostname, port
 
 
+# --------------------------------------------------------------------------
+# probing: one ssh per host, emitting "key<TAB>value" lines
+
+PROBE_SCRIPT = r"""
+set -u
+e() { printf '%s\t%s\n' "$1" "$2"; }
+yn() { "$@" >/dev/null 2>&1 && echo 1 || echo 0; }
+b64() { base64 -w0; }
+
+e login 1
+e root "$(yn sudo -n true)"
+if [ "$ROLE" = ks ]; then
+  e listening "$(yn timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/$KS_PORT")"
+else
+  e gocryptfs "$(command -v gocryptfs || true)"
+  [ -n "$REACH_HOST" ] && e reach "$(yn timeout 5 bash -c "exec 3<>/dev/tcp/$REACH_HOST/$REACH_PORT")"
+fi
+
+if [ "$ALL" = 1 ]; then
+  USERS=()
+  while IFS=: read -r name _ uid _ _ home _; do
+    [ "$uid" -ge 1000 ] 2>/dev/null && [ "$uid" -lt 65534 ] && USERS+=("$name")
+  done < <(getent passwd)
+fi
+
+for u in ${USERS[@]+"${USERS[@]}"}; do
+  p="u:$u"
+  if ! id -u "$u" >/dev/null 2>&1; then e "$p:exists" 0; continue; fi
+  e "$p:exists" 1
+  h=$(getent passwd "$u" | cut -d: -f6); e "$p:home" "$h"
+  if ! sudo -n -u "$u" true 2>/dev/null; then e "$p:sudo" 0; continue; fi
+  e "$p:sudo" 1
+  ak=$(sudo -n -u "$u" cat "$h/.ssh/authorized_keys" 2>/dev/null || true)
+  e "$p:ak" "$(printf '%s' "$ak" | b64)"
+  [ "$ROLE" = gw ] || continue
+
+  e "$p:config" "$(sudo -n -u "$u" cat "$h/.ssh/config" 2>/dev/null | b64)"
+  e "$p:sudoers" "$(sudo -n cat "$SUDOERS_DIR/privjail-${u//./_}" 2>/dev/null | b64)"
+  cmds=(); dirs=()
+  [ -n "$CMD" ] && cmds+=("$CMD")
+  [ -n "$ENC" ] && dirs+=("$ENC")
+  [ -n "$MNT" ] && dirs+=("$MNT")
+  while IFS= read -r l; do
+    case "$l" in *privjail-gateway*) ;; *) continue ;; esac
+    c=$(printf '%s' "$l" | sed -n 's/^command="\([^ "]*\).*/\1/p'); [ -n "$c" ] && cmds+=("$c")
+    for o in --data-enc --data; do
+      v=$(printf '%s' "$l" | sed -n "s/.*$o \([^ \"]*\).*/\1/p"); [ -n "$v" ] && dirs+=("$v")
+    done
+  done <<< "$ak"
+  for c in ${cmds[@]+"${cmds[@]}"}; do
+    c=${c/#\~/$h}; c=${c//\$HOME/$h}
+    sb=$(sudo -n -u "$u" head -n1 "$c" 2>/dev/null || true)
+    py=${sb#\#!}; py=${py%% *}; q=""
+    case "$sb" in '#!/'*) case "$py" in */env) ;; *) q="$(dirname "$py")/$QUOTE_COMMAND" ;; esac ;; esac
+    qx=0; [ -n "$q" ] && qx=$(yn sudo -n -u "$u" test -x "$q")
+    e "$p:cmd:$c" "$(yn sudo -n -u "$u" test -x "$c") $qx $q"
+  done
+  for d in ${dirs[@]+"${dirs[@]}"}; do
+    d=${d/#\~/$h}; d=${d//\$HOME/$h}
+    e "$p:dir:$d" "$(yn sudo -n -u "$u" test -d "$d")$(yn sudo -n -u "$u" test -f "$d/gocryptfs.conf")$(yn sudo -n -u "$u" mountpoint -q "$d")"
+  done
+done
+"""
+
+
+@dataclass
+class DirState:
+    exists: bool
+    gocryptfs: bool
+    mounted: bool
+
+
+@dataclass
+class CmdState:
+    executable: bool
+    quote_executable: bool
+    quote_path: str
+
+
+@dataclass
+class UserFacts:
+    exists: bool = False
+    sudo: bool = False
+    home: str = ""
+    authorized_keys: list[str] = field(default_factory=list)
+    ssh_config: list[str] = field(default_factory=list)
+    sudoers: str = ""
+    cmds: dict[str, CmdState] = field(default_factory=dict)
+    dirs: dict[str, DirState] = field(default_factory=dict)
+
+
+@dataclass
+class HostFacts:
+    name: str
+    login: bool = False
+    error: str = ""
+    root: bool = False
+    listening: bool = False
+    gocryptfs: str = ""
+    reach: bool | None = None
+    users: dict[str, UserFacts] = field(default_factory=dict)
+
+
+def _b64lines(value: str) -> list[str]:
+    return base64.b64decode(value).decode(errors="replace").splitlines() if value else []
+
+
+def probe(host: str, role: str, users: list[str] | None, *, ks_port: int = DEFAULT_KEY_SERVER_PORT,
+          cmd: str = "", enc: str = "", mnt: str = "",
+          reach: tuple[str, int] | None = None) -> HostFacts:
+    """users=None means: every account with a privjail entry on this host."""
+    params = {
+        "ROLE": role, "ALL": "1" if users is None else "0", "KS_PORT": str(ks_port),
+        "CMD": cmd, "ENC": enc, "MNT": mnt,
+        "REACH_HOST": reach[0] if reach else "", "REACH_PORT": str(reach[1]) if reach else "",
+        "SUDOERS_DIR": SUDOERS_DIR, "QUOTE_COMMAND": QUOTE_COMMAND,
+    }
+    header = "".join(f"{k}={shlex.quote(v)}\n" for k, v in params.items())
+    header += "USERS=(" + " ".join(shlex.quote(u) for u in users or []) + ")\n"
+    facts = HostFacts(host)
+    try:
+        result = run_remote_script(host, header + PROBE_SCRIPT)
+    except subprocess.TimeoutExpired:
+        facts.error = "timed out"
+        return facts
+    if "login\t1" not in result.stdout:
+        facts.error = last_error_line(result.stderr) or "ssh failed"
+        return facts
+
+    for line in result.stdout.splitlines():
+        key, _, value = line.partition("\t")
+        if key == "login":
+            facts.login = True
+        elif key == "root":
+            facts.root = value == "1"
+        elif key == "listening":
+            facts.listening = value == "1"
+        elif key == "gocryptfs":
+            facts.gocryptfs = value
+        elif key == "reach":
+            facts.reach = value == "1"
+        elif key.startswith("u:"):
+            _, user, attr = key.split(":", 2)
+            uf = facts.users.setdefault(user, UserFacts())
+            if attr == "exists":
+                uf.exists = value == "1"
+            elif attr == "sudo":
+                uf.sudo = value == "1"
+            elif attr == "home":
+                uf.home = value
+            elif attr == "ak":
+                uf.authorized_keys = [l for l in _b64lines(value) if l.strip()]
+            elif attr == "config":
+                uf.ssh_config = _b64lines(value)
+            elif attr == "sudoers":
+                uf.sudoers = base64.b64decode(value).decode(errors="replace") if value else ""
+            elif attr.startswith("cmd:"):
+                x, qx, *q = value.split(" ", 2)
+                uf.cmds[attr[4:]] = CmdState(x == "1", qx == "1", q[0] if q else "")
+            elif attr.startswith("dir:"):
+                uf.dirs[attr[4:]] = DirState(value[0] == "1", value[1] == "1", value[2] == "1")
+    return facts
+
+
+def probe_both(args: argparse.Namespace, users: list[str] | None, **gw_kwargs: object) -> tuple[HostFacts, HostFacts]:
+    with ThreadPoolExecutor(2) as pool:
+        ks = pool.submit(probe, args.key_server_ssh, "ks", users, ks_port=args.key_server_port)
+        gw = pool.submit(probe, args.gateway_ssh, "gw", users, **gw_kwargs)  # type: ignore[arg-type]
+        return ks.result(), gw.result()
+
+
+# --------------------------------------------------------------------------
+# authorized_keys / sudoers / ssh config helpers
+
+_KEY_RE = re.compile(r"(?:^|\s)((?:ssh-|ecdsa-|sk-)\S+)\s+([A-Za-z0-9+/]+={0,3})(?:\s+(.*))?$")
+
+
+@dataclass
+class KeyLine:
+    line: str
+    options: str
+    blob: str
+    comment: str
+
+    @property
+    def fingerprint(self) -> str:
+        digest = hashlib.sha256(base64.b64decode(self.blob)).digest()
+        return "SHA256:" + base64.b64encode(digest).decode().rstrip("=")
+
+    @property
+    def command(self) -> str:
+        m = re.search(r'command="((?:[^"\\]|\\.)*)"', self.options)
+        return m.group(1) if m else ""
+
+    def option_value(self, name: str) -> str:
+        """Value of `--name X` inside the forced command."""
+        m = re.search(rf"(?:^|\s){re.escape(name)}\s+(\S+)", self.command)
+        return m.group(1) if m else ""
+
+    @property
+    def is_gateway_grant(self) -> bool:
+        return "privjail-gateway" in self.command
+
+    @property
+    def is_keyserver_grant(self) -> bool:
+        return self.command == "/bin/true" and 'permitopen="localhost:' in self.options
+
+    @property
+    def label(self) -> str:
+        return self.comment or self.fingerprint
+
+
+def parse_key_line(line: str) -> KeyLine | None:
+    m = _KEY_RE.search(line)
+    if not m:
+        return None
+    return KeyLine(line, line[:m.start(1)].strip(), m.group(2), (m.group(3) or "").strip())
+
+
+def sudoers_path(user: str) -> str:
+    # sudo ignores files in sudoers.d whose name contains "." or ends in "~"
+    return f"{SUDOERS_DIR}/privjail-{user.replace('.', '_')}"
+
+
+def sudoers_content(user: str, quote_path: str) -> str:
+    # the trailing "" forbids any arguments
+    return f'# managed by privjail-admin\n{user} ALL=(root) NOPASSWD: {quote_path} ""\n'
+
+
 def ssh_config_block(alias: str, hostname: str, port: int) -> list[str]:
     block = [SSH_CONFIG_BEGIN, f"Host {alias}", f"    HostName {hostname}"]
     if port != 22:
         block.append(f"    Port {port}")
     block += ["    StrictHostKeyChecking accept-new", SSH_CONFIG_END]
     return block
+
+
+def managed_block(lines: list[str]) -> list[str]:
+    if SSH_CONFIG_BEGIN not in lines:
+        return []
+    start = lines.index(SSH_CONFIG_BEGIN)
+    end = lines.index(SSH_CONFIG_END, start) if SSH_CONFIG_END in lines[start:] else len(lines) - 1
+    return lines[start:end + 1]
 
 
 def strip_managed_block(lines: list[str]) -> list[str]:
@@ -469,212 +368,438 @@ def strip_managed_block(lines: list[str]) -> list[str]:
 
 def with_managed_block(lines: list[str], block: list[str]) -> list[str]:
     """Puts the managed block at the very top: ssh takes the first value it
-    sees for each option, so this keeps a later `Host *` from overriding it."""
+    sees for each option, so a later `Host *` cannot override it."""
     rest = strip_managed_block(lines)
     return block + ([""] + rest if rest else [])
 
 
-def normalize(lines: list[str]) -> list[str]:
-    out = list(lines)
-    while out and not out[-1].strip():
-        out.pop()
-    return out
+def config_mentions_host(lines: list[str], alias: str) -> bool:
+    return any(l.split()[:1] == ["Host"] and alias in l.split()[1:] for l in lines if l.strip())
 
 
-def append_if_missing(host: str, user: str, line: str) -> bool:
-    """Appends `line` to authorized_keys unless that exact line is already
-    present. Returns True iff it was newly added."""
-    lines = read_authorized_keys(host, user)
-    if line in lines:
+def expand_user_path(path: str, home: str) -> str:
+    if path == "~":
+        path = home
+    elif path.startswith("~/"):
+        path = home + path[1:]
+    return path.replace("$HOME", home)
+
+
+def read_pubkey_line(path: str) -> str:
+    with open(path, encoding="utf-8") as f:
+        line = f.read().strip()
+    if parse_key_line(line) is None:
+        raise SystemExit(f"{path} does not look like an SSH public key")
+    return line
+
+
+# --------------------------------------------------------------------------
+# writing: at most one ssh per host
+
+WRITE_PRELUDE = r"""
+set -eu
+put_user_file() {  # user name b64: atomically replace ~user/.ssh/<name>
+  printf '%s' "$3" | base64 -d | sudo -n -u "$1" -H bash -c \
+    'umask 077; mkdir -p ~/.ssh && cat > ~/.ssh/'"$2"'.tmp && mv ~/.ssh/'"$2"'.tmp ~/.ssh/'"$2"
+}
+put_sudoers() {  # path b64: validated with visudo before going live
+  tmp="$(dirname "$1")/.$(basename "$1").tmp"   # leading "." -> ignored by sudo
+  printf '%s' "$2" | base64 -d | sudo -n tee "$tmp" >/dev/null
+  sudo -n chmod 0440 "$tmp"
+  if ! sudo -n visudo -cqf "$tmp"; then sudo -n rm -f "$tmp"; echo "visudo rejected $1" >&2; exit 1; fi
+  sudo -n mv "$tmp" "$1"
+}
+"""
+
+
+class Writer:
+    def __init__(self) -> None:
+        self.steps: list[str] = []
+
+    @staticmethod
+    def _b64(text: str) -> str:
+        return base64.b64encode(text.encode()).decode()
+
+    def put_user_file(self, user: str, name: str, lines: list[str]) -> None:
+        content = "\n".join(lines) + ("\n" if lines else "")
+        self.steps.append(f"put_user_file {shlex.quote(user)} {shlex.quote(name)} {self._b64(content)}")
+
+    def put_sudoers(self, path: str, content: str) -> None:
+        self.steps.append(f"put_sudoers {shlex.quote(path)} {self._b64(content)}")
+
+    def remove_sudoers(self, path: str) -> None:
+        self.steps.append(f"sudo -n rm -f {shlex.quote(path)}")
+
+    def run(self, host: str) -> None:
+        if not self.steps:
+            return
+        result = run_remote_script(host, WRITE_PRELUDE + "\n".join(self.steps) + "\n")
+        if result.returncode != 0:
+            raise SystemExit(f"failed to apply changes on {host}: {last_error_line(result.stderr) or 'error'}")
+
+
+# --------------------------------------------------------------------------
+# reporting
+
+class Report:
+    def __init__(self) -> None:
+        self.errors = 0
+
+    def head(self, text: str) -> None:
+        print(text)
+
+    def item(self, label: str, value: str, level: str = "ok") -> None:
+        mark = {"ok": " ", "warn": "!", "ng": "x"}[level]
+        if level == "ng":
+            self.errors += 1
+        print(f"  {mark} {label:<22} {value}")
+
+
+def host_header(rep: Report, title: str, host: str, facts: HostFacts) -> bool:
+    if not facts.login:
+        rep.head(f"{title} {host}")
+        rep.item("ssh", facts.error, "ng")
         return False
-    lines.append(line)
-    write_authorized_keys(host, user, lines)
+    rep.head(f"{title} {host}")
     return True
 
 
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("user", help="OS account name, must already exist on both gateway and key server")
-    parser.add_argument("--gateway", default="privjail-gw", help="gateway hostname to administer")
-    parser.add_argument("--key-server", default="", metavar="[HOST][:PORT]",
-                         help=f"key server as [host][:port]; defaults to "
-                              f"{DEFAULT_KEY_SERVER_HOST}:{DEFAULT_KEY_SERVER_PORT}")
-    parser.add_argument("--adm-user", default=None,
-                         help="SSH username this script uses to administer both hosts; "
-                              "defaults to the current user")
-    parser.add_argument("--gateway-adm-user", default=None,
-                         help="SSH username for the gateway; defaults to --adm-user")
-    parser.add_argument("--key-server-adm-user", default=None,
-                         help="SSH username for the key server; defaults to --adm-user")
+def user_ready(rep: Report, user: str, uf: UserFacts | None, label: str = "account") -> bool:
+    if uf is None or not uf.exists:
+        rep.item(label, f"{user} does not exist", "ng")
+        return False
+    if not uf.sudo:
+        rep.item(label, f"cannot `sudo -u {user}`", "ng")
+        return False
+    return True
 
+
+def tilde(path: str, home: str) -> str:
+    return "~" + path[len(home):] if home and (path == home or path.startswith(home + "/")) else path
+
+
+# --------------------------------------------------------------------------
+# status
+
+def has_privjail_state(uf: UserFacts | None) -> bool:
+    """Any privjail grant line, sudoers entry or managed ssh config block."""
+    if uf is None:
+        return False
+    keys = (parse_key_line(l) for l in uf.authorized_keys)
+    return (any(k and (k.is_gateway_grant or k.is_keyserver_grant) for k in keys)
+            or bool(uf.sudoers) or bool(managed_block(uf.ssh_config)))
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    users = args.users or None
+    ks, gw = probe_both(args, users)
+    names = users or sorted(u for u in set(ks.users) | set(gw.users)
+                            if has_privjail_state(ks.users.get(u)) or has_privjail_state(gw.users.get(u)))
+    rep = Report()
+
+    rep.head(f"key server {args.key_server_ssh}: " + (
+        ("listening on " if ks.listening else "NOT listening on ") + str(args.key_server_port)
+        if ks.login else f"ssh failed ({ks.error})"))
+    rep.head(f"gateway    {args.gateway_ssh}: " + ("reachable" if gw.login else f"ssh failed ({gw.error})"))
+    if not ks.listening and ks.login:
+        rep.errors += 1
+    if not names:
+        print("\nno user has a privjail entry on either host")
+        return
+
+    for user in names:
+        print(f"\n{user}")
+        kf, gf = ks.users.get(user), gw.users.get(user)
+        ks_keys = [k for k in (parse_key_line(l) for l in (kf.authorized_keys if kf else [])) if k]
+        gw_keys = [k for k in (parse_key_line(l) for l in (gf.authorized_keys if gf else [])) if k]
+        ks_grants = [k for k in ks_keys if k.is_keyserver_grant]
+        gw_grants = [k for k in gw_keys if k.is_gateway_grant]
+        ks_blobs = {k.blob for k in ks_keys}
+        gw_blobs = {k.blob for k in gw_grants}
+
+        if ks.login and not (kf and kf.exists and kf.sudo):
+            user_ready(rep, user, kf, "account (key server)")
+        if gw.login and not (gf and gf.exists and gf.sudo):
+            user_ready(rep, user, gf, "account (gateway)")
+        if not gw_grants and not ks_grants:
+            rep.item("grants", "none")
+            continue
+
+        home = gf.home if gf else ""
+        for g in gw_grants:
+            ks_spec = g.option_value("--key-server") or "(default)"
+            enc, data = g.option_value("--data-enc"), g.option_value("--data")
+            rep.item(f"key {g.label}", g.fingerprint)
+            rep.item("  key server entry", "present" if g.blob in ks_blobs else "MISSING",
+                     "ok" if g.blob in ks_blobs else "ng")
+            cmd = g.command.split()[0]
+            cs = gf.cmds.get(cmd) if gf else None
+            rep.item("  forced command", cmd + ("" if cs and cs.executable else "  (not executable)"),
+                     "ok" if cs and cs.executable else "ng")
+            if enc and data and gf:
+                es, ds = gf.dirs.get(enc), gf.dirs.get(data)
+                enc_ok = bool(es and es.exists and es.gocryptfs)
+                rep.item("  data", f"{tilde(enc, home)} -> {tilde(data, home)}"
+                         + ("" if enc_ok else "  (encrypted dir missing/uninitialized)")
+                         + ("" if ds and ds.exists else "  (mount point missing)")
+                         + ("  [mounted]" if ds and ds.mounted else ""),
+                         "ok" if enc_ok and ds and ds.exists else "ng")
+            if gf and cs:
+                want = sudoers_content(user, cs.quote_path) if cs.quote_executable else None
+                ok = want is not None and gf.sudoers == want
+                rep.item("  sudoers", sudoers_path(user) if ok else
+                         ("missing or different" if want else f"{QUOTE_COMMAND} not found"),
+                         "ok" if ok else "ng")
+            if gf:
+                alias = ks_spec.rsplit(":", 1)[0] if ":" in ks_spec else DEFAULT_KEY_SERVER_HOST
+                block = managed_block(gf.ssh_config)
+                if config_mentions_host(block, alias):
+                    host_line = next((l.split()[1] for l in block if l.strip().startswith("HostName")), "?")
+                    rep.item("  ssh config", f"Host {alias} -> {host_line}")
+                elif config_mentions_host(gf.ssh_config, alias):
+                    rep.item("  ssh config", f"Host {alias} (not managed by privjail-admin)", "warn")
+                else:
+                    rep.item("  ssh config", f"no Host {alias} (relies on DNS/hosts)", "warn")
+        for k in ks_grants:
+            if k.blob not in gw_blobs:
+                rep.item(f"key {k.label}", f"{k.fingerprint}  only on key server", "warn")
+        if gf and gf.exists and not gw_grants:
+            if gf.sudoers:
+                rep.item("leftover", sudoers_path(user), "warn")
+            if managed_block(gf.ssh_config):
+                rep.item("leftover", "managed ~/.ssh/config block", "warn")
+
+    if rep.errors:
+        sys.exit(1)
+
+
+# --------------------------------------------------------------------------
+# grant
 
 def cmd_grant(args: argparse.Namespace) -> None:
-    args.privjail_gateway_cmd = args.privjail_gateway_cmd.format(user=args.user)
+    user = args.user
     pubkey = read_pubkey_line(args.user_pubkey)
+    key = parse_key_line(pubkey)
+    assert key is not None
+    cmd = args.privjail_gateway_cmd.format(user=user)
+    ks_addr = (args.key_server_hostname, 22) if args.key_server_hostname \
+        else resolve_ssh_target(args.key_server_host)
 
-    print(f"Checking environment (assumes this script's operator can `sudo -u {args.user}` "
-          f"on both hosts):")
-    gateway_checks, key_server_checks = run_checks(args, pubkey)
-    all_ok = all_hard_ok(gateway_checks) and all_hard_ok(key_server_checks)
+    ks, gw = probe_both(args, [user], cmd=cmd, enc=args.enc_dir, mnt=args.mount_point, reach=ks_addr)
+    rep = Report()
+    ks_writer, gw_writer = Writer(), Writer()
 
-    if all_ok:
-        print("\nAll requirements satisfied; ready to grant access.")
-    else:
-        print("\nOne or more requirements are not satisfied; cannot grant access.")
+    # key server
+    if host_header(rep, "key server", args.key_server_ssh, ks):
+        kf = ks.users.get(user)
+        rep.item("key server", f"listening on {args.key_server_port}" if ks.listening
+                 else f"NOT listening on {args.key_server_port}", "ok" if ks.listening else "warn")
+        if user_ready(rep, user, kf):
+            assert kf is not None
+            line = (f'command="/bin/true",no-pty,no-agent-forwarding,no-X11-forwarding,'
+                    f'permitopen="localhost:{args.key_server_port}" {pubkey}')
+            if line in kf.authorized_keys:
+                rep.item("authorized_keys", f"present ({key.label})")
+            else:
+                rep.item("authorized_keys", f"add ({key.label})")
+                ks_writer.put_user_file(user, "authorized_keys", kf.authorized_keys + [line])
 
-    if args.dry_run:
-        print("no changes made (--dry-run)")
-        sys.exit(0 if all_ok else 1)
+    # gateway
+    print()
+    if host_header(rep, "gateway", args.gateway_ssh, gw):
+        gf = gw.users.get(user)
+        if not gw.root:
+            rep.item("root", "operator cannot `sudo` (needed for sudoers)", "ng")
+        rep.item("gocryptfs", gw.gocryptfs or "not found", "ok" if gw.gocryptfs else "ng")
+        rep.item("key server reachable", f"{ks_addr[0]}:{ks_addr[1]}" + ("" if gw.reach else "  (cannot connect)"),
+                 "ok" if gw.reach else "warn")
+        if user_ready(rep, user, gf):
+            assert gf is not None
+            home = gf.home
+            cmd_abs, enc, mnt = (expand_user_path(p, home) for p in (cmd, args.enc_dir, args.mount_point))
+            cs = gf.cmds.get(cmd_abs)
+            rep.item("privjail-gateway", cmd_abs if cs and cs.executable else f"{cmd_abs}  (not executable)",
+                     "ok" if cs and cs.executable else "ng")
+            quote_ok = bool(cs and cs.quote_executable)
+            rep.item(QUOTE_COMMAND, cs.quote_path if cs and quote_ok else "not found next to its python",
+                     "ok" if quote_ok else "ng")
+            es, ms = gf.dirs.get(enc), gf.dirs.get(mnt)
+            rep.item("encrypted dir", tilde(enc, home) + (
+                "" if es and es.gocryptfs else "  (missing)" if not (es and es.exists)
+                else "  (not gocryptfs-initialized)"), "ok" if es and es.gocryptfs else "ng")
+            rep.item("mount point", tilde(mnt, home) + ("" if ms and ms.exists else "  (missing)"),
+                     "ok" if ms and ms.exists else "ng")
 
-    if not all_ok:
+            gw_line = (f'command="{cmd_abs} --data-enc {enc} --data {mnt} '
+                       f'--key-server {args.key_server_host}:{args.key_server_port}",'
+                       f'no-pty,no-X11-forwarding,permitopen="localhost:*" {pubkey}')
+            if gw_line in gf.authorized_keys:
+                rep.item("authorized_keys", f"present ({key.label})")
+            else:
+                rep.item("authorized_keys", f"add ({key.label})")
+                gw_writer.put_user_file(user, "authorized_keys", gf.authorized_keys + [gw_line])
+
+            if cs and quote_ok:
+                want = sudoers_content(user, cs.quote_path)
+                path = sudoers_path(user)
+                if gf.sudoers == want:
+                    rep.item("sudoers", f"present ({path})")
+                else:
+                    rep.item("sudoers", f"{'replace' if gf.sudoers else 'install'} {path}")
+                    gw_writer.put_sudoers(path, want)
+
+            config = with_managed_block(gf.ssh_config,
+                                        ssh_config_block(args.key_server_host, *ks_addr))
+            if gf.ssh_config == config or gf.ssh_config == config + [""]:
+                rep.item("ssh config", f"present (Host {args.key_server_host} -> {ks_addr[0]})")
+            else:
+                rep.item("ssh config", f"write Host {args.key_server_host} -> {ks_addr[0]}")
+                gw_writer.put_user_file(user, "config", config)
+
+    print()
+    if rep.errors:
+        print(f"{rep.errors} problem(s) (marked x); nothing changed.")
         sys.exit(1)
+    if not ks_writer.steps and not gw_writer.steps:
+        print("Already granted; nothing to do.")
+        return
+    if args.dry_run:
+        print("Ready to grant. (--dry-run: nothing changed)")
+        return
+    ks_writer.run(args.key_server_ssh)
+    gw_writer.run(args.gateway_ssh)
+    print(f"Granted. '{user}' connects to the gateway with this key and `ForwardAgent yes`.")
 
-    added_gw = append_if_missing(args.gateway_ssh, args.user, args.gateway_line)
-    print(f"\nGateway authorized_keys for '{args.user}': "
-          f"{'added new entry' if added_gw else 'entry already present, unchanged'}.")
 
-    added_ks = append_if_missing(args.key_server_ssh, args.user, args.keyserver_line)
-    print(f"Key-server authorized_keys for '{args.user}': "
-          f"{'added new entry' if added_ks else 'entry already present, unchanged'}.")
-
-    if read_sudoers(args.gateway_ssh, args.sudoers_path) == args.sudoers_content:
-        print(f"Gateway sudoers ({args.sudoers_path}): already present, unchanged.")
-    else:
-        install_sudoers(args.gateway_ssh, args.sudoers_path, args.sudoers_content)
-        print(f"Gateway sudoers ({args.sudoers_path}): installed.")
-
-    current = read_user_ssh_file(args.gateway_ssh, args.user, "config")
-    if normalize(current) == normalize(args.gateway_ssh_config):
-        print(f"Gateway ~/.ssh/config for '{args.user}': already present, unchanged.")
-    else:
-        write_user_ssh_file(args.gateway_ssh, args.user, "config", args.gateway_ssh_config)
-        print(f"Gateway ~/.ssh/config for '{args.user}': wrote Host {args.key_server_host}.")
-
-    print(
-        f"\nGrant complete for '{args.user}'. The same mount key now authenticates on both "
-        f"hosts; the user must connect to the gateway with agent forwarding enabled "
-        f"(ssh -A / ForwardAgent yes) so privjail-gateway can reach the key server on port "
-        f"{args.key_server_port} (see this script's module docstring for details)."
-    )
-
+# --------------------------------------------------------------------------
+# revoke
 
 def cmd_revoke(args: argparse.Namespace) -> None:
-    print(f"Checking environment (assumes this script's operator can `sudo -u {args.user}` "
-          f"on both hosts):")
-    key_server_checks: list[Check] = []
-    gateway_checks: list[Check] = []
-    account_checks(key_server_checks, args.key_server_ssh, args.user,
-                    f"Key server [{args.key_server_host}]")
-    print()
-    account_checks(gateway_checks, args.gateway_ssh, args.user, f"Gateway [{args.gateway}]")
-    all_ok = all_hard_ok(gateway_checks) and all_hard_ok(key_server_checks)
+    user = args.user
+    ks, gw = probe_both(args, [user])
+    rep = Report()
+    plans: list[tuple[str, HostFacts, list[str]]] = []
 
-    if all_ok:
-        print("\nAll requirements satisfied.")
-    else:
-        print("\nOne or more requirements are not satisfied; cannot proceed.")
+    for title, host, facts in (("key server", args.key_server_ssh, ks), ("gateway", args.gateway_ssh, gw)):
+        if host_header(rep, title, host, facts):
+            uf = facts.users.get(user)
+            if user_ready(rep, user, uf):
+                assert uf is not None
+                matches = [l for l in uf.authorized_keys if args.match in l]
+                for m in matches:
+                    k = parse_key_line(m)
+                    rep.item("match", k.label if k else m[:60], "ng" if len(matches) > 1 else "ok")
+                if not matches:
+                    rep.item("match", "none (left unchanged)")
+                plans.append((title, facts, matches))
+        print()
+
+    if rep.errors:
+        print("nothing changed" + (" (--match must hit at most one line per host)"
+                                   if any(len(m) > 1 for _, _, m in plans) else ""))
         sys.exit(1)
-
-    ks_lines = read_authorized_keys(args.key_server_ssh, args.user)
-    gw_lines = read_authorized_keys(args.gateway_ssh, args.user)
-    ks_matches = [l for l in ks_lines if args.match in l]
-    gw_matches = [l for l in gw_lines if args.match in l]
-
-    def report(label: str, matches: list[str]) -> None:
-        print(f"\n{label}: {len(matches)} matching line(s)")
-        for line in matches:
-            print(f"  {line}")
-
-    report(f"Key server [{args.key_server_host}]", ks_matches)
-    report(f"Gateway [{args.gateway}]", gw_matches)
-
-    if len(ks_matches) > 1 or len(gw_matches) > 1:
-        print("\n--match matched more than one line on at least one host; refine it. "
-              "No changes made.", file=sys.stderr)
-        sys.exit(1)
-
-    if not ks_matches and not gw_matches:
-        print("\nNo matching entry on either host; nothing to revoke.")
+    if not any(m for _, _, m in plans):
+        print("No matching entry on either host; nothing to revoke.")
         return
 
-    gw_remaining = [line for line in gw_lines if not gw_matches or line != gw_matches[0]]
-    # last grant gone -> also undo the per-account setup grant did on the gateway
-    cleanup = bool(gw_matches) and not any("privjail-gateway" in line for line in gw_remaining)
-    if cleanup:
-        print(f"\nNo privjail-gateway entry would remain for '{args.user}' on the gateway; "
-              f"also removing {sudoers_path(args.user)} and the managed ~/.ssh/config block.")
+    ks_writer, gw_writer = Writer(), Writer()
+    for title, facts, matches in plans:
+        if not matches:
+            continue
+        uf = facts.users[user]
+        remaining = [l for l in uf.authorized_keys if l != matches[0]]
+        (ks_writer if title == "key server" else gw_writer).put_user_file(user, "authorized_keys", remaining)
+        if title == "gateway" and not any("privjail-gateway" in l for l in remaining):
+            print(f"last privjail-gateway entry for '{user}': also removing "
+                  f"{sudoers_path(user)} and the managed ~/.ssh/config block")
+            gw_writer.remove_sudoers(sudoers_path(user))
+            stripped = strip_managed_block(uf.ssh_config)
+            if stripped != uf.ssh_config:
+                gw_writer.put_user_file(user, "config", stripped)
 
     if args.dry_run:
-        print("\nno changes made (--dry-run)")
+        print("--dry-run: nothing changed")
         return
+    ks_writer.run(args.key_server_ssh)
+    gw_writer.run(args.gateway_ssh)
+    print("Revoked.")
 
-    if ks_matches:
-        write_authorized_keys(args.key_server_ssh, args.user,
-                               [l for l in ks_lines if l != ks_matches[0]])
-    if gw_matches:
-        write_authorized_keys(args.gateway_ssh, args.user, gw_remaining)
 
-    print(f"\nKey server: {'removed matching entry' if ks_matches else 'no match, left unchanged'}.")
-    print(f"Gateway: {'removed matching entry' if gw_matches else 'no match, left unchanged'}.")
+# --------------------------------------------------------------------------
+# CLI
 
-    if cleanup:
-        remove_sudoers(args.gateway_ssh, sudoers_path(args.user))
-        config = read_user_ssh_file(args.gateway_ssh, args.user, "config")
-        stripped = strip_managed_block(config)
-        if stripped != config:
-            write_user_ssh_file(args.gateway_ssh, args.user, "config", stripped)
-        print(f"Gateway: removed {sudoers_path(args.user)} and the managed ~/.ssh/config block.")
+class DefaultsFormatter(argparse.ArgumentDefaultsHelpFormatter):
+    """Skips "(default: None)" for options that explain their own fallback."""
+    def _get_help_string(self, action: argparse.Action) -> str:
+        help_str = action.help or ""
+        if not help_str or "%(default)" in help_str or action.default in (None, "", argparse.SUPPRESS):
+            return help_str
+        return help_str + " (default: %(default)s)"
+
+
+def parse_key_server(spec: str) -> tuple[str, int]:
+    """Parses "[host][:port]", defaulting either side that's omitted."""
+    if not spec:
+        return DEFAULT_KEY_SERVER_HOST, DEFAULT_KEY_SERVER_PORT
+    host, sep, port_str = spec.rpartition(":")
+    if not sep:
+        return spec, DEFAULT_KEY_SERVER_PORT
+    return host or DEFAULT_KEY_SERVER_HOST, int(port_str) if port_str else DEFAULT_KEY_SERVER_PORT
+
+
+def add_host_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--gateway", default=DEFAULT_GATEWAY, help="gateway host (as in your ssh config)")
+    parser.add_argument("--key-server", default="", metavar="[HOST][:PORT]",
+                        help=f"key server as [host][:port]; defaults to "
+                             f"{DEFAULT_KEY_SERVER_HOST}:{DEFAULT_KEY_SERVER_PORT}")
+    parser.add_argument("--adm-user", default=None,
+                        help="SSH username used to administer both hosts; defaults to the current user")
+    parser.add_argument("--gateway-adm-user", default=None, help="SSH username for the gateway; defaults to --adm-user")
+    parser.add_argument("--key-server-adm-user", default=None,
+                        help="SSH username for the key server; defaults to --adm-user")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    grant = subparsers.add_parser("grant", help="grant a user access to the gateway",
-                               formatter_class=DefaultsFormatter)
-    add_common_args(grant)
+    status = sub.add_parser("status", help="show users' grants and whether they are complete",
+                            formatter_class=DefaultsFormatter)
+    status.add_argument("users", nargs="*", metavar="user",
+                        help="accounts to show; default: every account with a privjail entry")
+    add_host_args(status)
+    status.set_defaults(func=cmd_status)
+
+    grant = sub.add_parser("grant", help="grant a user access to the gateway", formatter_class=DefaultsFormatter)
+    grant.add_argument("user", help="OS account name, must already exist on both gateway and key server")
+    add_host_args(grant)
     grant.add_argument("--user-pubkey", required=True,
-                        help="path to the user's SSH public key file (the 'mount key', "
-                             "planted on both the gateway and the key server)")
-    grant.add_argument("--privjail-gateway-cmd", default="privjail-gateway",
-                        help="privjail-gateway command name or path on the gateway; a bare name "
-                             "is looked up via the user's PATH (like gocryptfs), a path containing "
-                             "'/' is used as-is; '{user}' is substituted if present")
-    grant.add_argument("--enc-dir", default="/data/enc",
-                        help="gocryptfs-encrypted data directory on the gateway")
-    grant.add_argument("--mount-point", default="/data/plain",
-                        help="plaintext mount point on the gateway")
+                       help="the user's SSH public key file (planted on both hosts)")
+    grant.add_argument("--privjail-gateway-cmd", default=DEFAULT_PRIVJAIL_GATEWAY_CMD,
+                       help="privjail-gateway path on the gateway; '~' is the user's home, '{user}' is substituted")
+    grant.add_argument("--enc-dir", default=DEFAULT_ENC_DIR,
+                       help="gocryptfs-encrypted data directory on the gateway ('~' = the user's home)")
+    grant.add_argument("--mount-point", default=DEFAULT_MOUNT_POINT,
+                       help="plaintext mount point on the gateway ('~' = the user's home)")
     grant.add_argument("--key-server-hostname", default=None,
-                        help="address the gateway should use for the key server in <user>'s "
-                             "~/.ssh/config (e.g. its internal IP); defaults to what the key "
-                             "server host resolves to in the operator's own ssh config")
-    grant.add_argument("--dry-run", action="store_true",
-                        help="check the environment and report what would change; make no changes")
+                       help="address the gateway should use for the key server (e.g. its internal IP); "
+                            "defaults to what the key server host resolves to in your ssh config")
+    grant.add_argument("--dry-run", action="store_true", help="check and show what would change; change nothing")
     grant.set_defaults(func=cmd_grant)
 
-    revoke = subparsers.add_parser("revoke", help="revoke a user's access to the gateway",
-                                formatter_class=DefaultsFormatter)
-    add_common_args(revoke)
+    revoke = sub.add_parser("revoke", help="revoke a user's access to the gateway", formatter_class=DefaultsFormatter)
+    revoke.add_argument("user", help="OS account name")
+    add_host_args(revoke)
     revoke.add_argument("--match", required=True,
-                         help="substring identifying which authorized_keys line to remove "
-                              "(e.g. the pubkey's own comment, like 'tau@namo'); must match "
-                              "exactly one line per host, or that host is left unchanged")
-    revoke.add_argument("--dry-run", action="store_true",
-                         help="show what would be removed; make no changes")
+                        help="substring identifying the authorized_keys line to remove (e.g. the key's comment)")
+    revoke.add_argument("--dry-run", action="store_true", help="show what would be removed; change nothing")
     revoke.set_defaults(func=cmd_revoke)
 
     args = parser.parse_args()
     args.key_server_host, args.key_server_port = parse_key_server(args.key_server)
-
     adm_user = args.adm_user or getpass.getuser()
-    args.gateway_adm_user = args.gateway_adm_user or adm_user
-    args.key_server_adm_user = args.key_server_adm_user or adm_user
-    # All admin-side SSH connections (login checks, sudo -u, authorized_keys
-    # read/write) go to these; args.gateway/args.key_server_host stay as bare
-    # hostnames for display and for the runtime --key-server value baked into
-    # the gateway's forced command.
-    args.gateway_ssh = f"{args.gateway_adm_user}@{args.gateway}"
-    args.key_server_ssh = f"{args.key_server_adm_user}@{args.key_server_host}"
-
+    args.gateway_ssh = f"{args.gateway_adm_user or adm_user}@{args.gateway}"
+    args.key_server_ssh = f"{args.key_server_adm_user or adm_user}@{args.key_server_host}"
     args.func(args)
 
 
