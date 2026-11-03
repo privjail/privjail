@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>privjail-admin</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676; --line: #d9dde4;
+    --accent: #2457c5; --accent-text: #ffffff; --ok: #1f7a3a; --warn: #9a6400; --ng: #b42318;
+    --code: #eef1f5; --granted: #e3ecff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #9aa3b2; --line: #313743;
+      --accent: #6f9bff; --accent-text: #0d1117; --ok: #5bc77a; --warn: #e3b341; --ng: #ff7b72;
+      --code: #232833; --granted: #22304d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 16px; }
+  section, details.box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+                         padding: 14px 16px; margin-bottom: 16px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  input, textarea { display: block; width: 100%; margin-top: 3px; padding: 6px 8px; font: 14px ui-monospace, monospace;
+                    color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  textarea { resize: vertical; min-height: 56px; }
+  button { padding: 5px 12px; font: inherit; font-size: 14px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.small { padding: 1px 8px; font-size: 12px; }
+  button:disabled { opacity: .5; cursor: default; }
+  code, .mono { font-family: ui-monospace, monospace; font-size: 13px; }
+  .muted { color: var(--muted); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .ng { color: var(--ng); }
+  .hosts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
+  .dirs { margin: 0; padding: 0; list-style: none; }
+  .dirs li { padding: 4px 0; border-top: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
+  .dirs li:first-child { border-top: 0; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-top: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  thead th { border-top: 0; font-weight: 600; font-size: 13px; color: var(--muted); }
+  thead th.dir { font-family: ui-monospace, monospace; font-weight: 400; word-break: break-all; min-width: 9em; }
+  td.cell, thead th.dir { text-align: center; vertical-align: middle; }
+  .cell button { min-width: 6.5em; }
+  .cell button.granted { background: var(--granted); border-color: var(--accent); }
+  .cell button.bad { border-color: var(--ng); color: var(--ng); }
+  .user-name { font-weight: 600; }
+  .user details { margin-top: 4px; font-size: 13px; }
+  .user details summary { font-weight: 400; color: var(--muted); }
+  .items { font: 12px/1.6 ui-monospace, monospace; margin-top: 4px; }
+  .items div { display: grid; grid-template-columns: 1.2em minmax(8em, 13em) 1fr; gap: 4px; }
+  .items .value { word-break: break-all; }
+  .keyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font: 12px ui-monospace, monospace; margin: 2px 0; }
+  #action { position: sticky; bottom: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.18); border-color: var(--accent); }
+  pre.cmd { background: var(--code); padding: 8px 10px; border-radius: 6px; margin: 8px 0; white-space: pre-wrap;
+            word-break: break-all; font: 13px ui-monospace, monospace; }
+  .report { font: 13px/1.6 ui-monospace, monospace; max-height: 40vh; overflow: auto; }
+  .report .line { white-space: pre-wrap; min-height: 1.6em; }
+  .report .item { display: grid; grid-template-columns: 1.5em minmax(10em, 16em) 1fr; gap: 6px; }
+  .report .item .value { word-break: break-all; }
+  .outcome { margin-top: 8px; font-weight: 600; }
+  .error { color: var(--ng); }
+  .buttons { display: flex; gap: 8px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>privjail-admin</h1>
+  <p class="sub">Who may use the PrivJail gateway, and on which encrypted directories. Every change is first
+    shown as a dry run of the same <code>privjail-admin</code> command, then run on confirmation.</p>
+
+  <details class="box" id="settings">
+    <summary>Hosts and admin accounts (blank = default)</summary>
+    <div class="grid">
+      <label>Gateway (ssh alias) <input data-common="gateway"></label>
+      <label>Key server [host][:port] <input data-common="key_server"></label>
+      <label>Key server state dir <input data-common="ks_dir"></label>
+      <label>Admin account (both hosts) <input data-common="adm_user"></label>
+      <label>Admin account on gateway <input data-common="gateway_adm_user"></label>
+      <label>Admin account on key server <input data-common="key_server_adm_user"></label>
+    </div>
+  </details>
+
+  <section>
+    <div class="bar"><div class="hosts" id="hosts"><span class="muted">Checking both hosts…</span></div>
+      <button id="refresh">Refresh</button></div>
+  </section>
+
+  <section>
+    <div class="bar"><h2>Encrypted directories</h2>
+      <span class="muted" style="font-size: 13px">registered on the key server (<code>passwords</code>); these can be granted</span></div>
+    <ul class="dirs" id="dirs"><li class="muted">…</li></ul>
+  </section>
+
+  <section>
+    <div class="bar"><h2>Users</h2>
+      <span class="muted" style="font-size: 13px">click a cell to grant or revoke</span></div>
+    <div class="scroll"><table id="users"></table></div>
+    <details style="margin-top: 12px">
+      <summary>Add a user</summary>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))">
+        <label>OS account (exists on both hosts) <input id="add-user" placeholder="data-user"></label>
+        <label>User's SSH public key (.pub line) <textarea id="add-pubkey" placeholder="ssh-ed25519 AAAA… name"></textarea></label>
+        <label>privjail-gateway path on the gateway (optional) <input id="add-cmd" placeholder="/opt/privjail/.venv/bin/privjail-gateway"></label>
+        <label>Key server address seen from the gateway (optional) <input id="add-ksh" placeholder="(from your ssh config)"></label>
+      </div>
+      <button class="primary" id="add-button">Check (dry run)</button>
+    </details>
+  </section>
+
+  <details class="box">
+    <summary>Status as text (privjail-admin status)</summary>
+    <div class="report" id="status-text" style="margin-top: 10px; max-height: none"></div>
+  </details>
+
+  <section id="action" hidden>
+    <div class="bar"><h2 id="action-title"></h2><button class="small" id="action-close">Close</button></div>
+    <pre class="cmd" id="action-cmd"></pre>
+    <div class="report" id="action-report"></div>
+    <div class="buttons"><button class="primary" id="action-run" disabled>Run</button></div>
+  </section>
+</main>
+
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const STORE = "privjail-admin-web-common";
+const MARK = { ok: "", warn: "!", ng: "x" };
+
+function loadSaved() { try { return JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { return {}; } }
+function saveCommon() {
+  const v = {}; $$("[data-common]").forEach(i => { v[i.dataset.common] = i.value; });
+  try { localStorage.setItem(STORE, JSON.stringify(v)); } catch {}
+}
+function common() {
+  const v = {}; $$("[data-common]").forEach(i => { if (i.value.trim()) v[i.dataset.common] = i.value.trim(); });
+  return v;
+}
+
+async function call(command, fields, dryRun) {
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Privjail-Admin": "1" },
+      body: JSON.stringify({ command, fields, common: common(), dry_run: dryRun }),
+    });
+    try { return await res.json(); } catch { return { error: `HTTP ${res.status}` }; }
+  } catch (err) { return { error: String(err) }; }
+}
+
+function renderEntries(target, entries) {
+  target.replaceChildren(...entries.map(e => e.kind === "line"
+    ? el("div", { className: "line", textContent: e.text })
+    : el("div", { className: "item" },
+        el("span", { className: e.level, textContent: MARK[e.level] }),
+        el("span", { textContent: e.label }),
+        el("span", { className: "value " + (e.level === "ok" ? "" : e.level), textContent: e.value }))));
+}
+
+// ---------------------------------------------------------------- status
+
+let busy = false;
+function setBusy(on) {
+  busy = on;
+  $$("button").forEach(b => {
+    if (b.id === "action-close") return;
+    b.disabled = on || (b.id === "action-run" && !pending);   // Run only right after a clean dry run
+  });
+}
+
+async function refresh() {
+  setBusy(true);
+  $("#hosts").replaceChildren(el("span", { className: "muted", textContent: "Checking both hosts…" }));
+  const res = await call("status", {}, false);
+  setBusy(false);
+  if (res.error) { $("#hosts").replaceChildren(el("span", { className: "error", textContent: res.error })); return; }
+  renderEntries($("#status-text"), res.entries);
+  const d = res.data;
+
+  const ks = d.key_server, gw = d.gateway;
+  $("#hosts").replaceChildren(
+    el("span", {}, "key server ", el("code", { textContent: ks.host }), " ",
+       ks.login ? el("span", { className: ks.listening ? "ok" : "ng",
+                               textContent: ks.listening ? `listening on ${ks.port}` : `NOT listening on ${ks.port}` })
+                : el("span", { className: "ng", textContent: `ssh failed: ${ks.error}` })),
+    el("span", {}, "gateway ", el("code", { textContent: gw.host }), " ",
+       el("span", { className: gw.login ? "ok" : "ng", textContent: gw.login ? "reachable" : `ssh failed: ${gw.error}` })));
+
+  $("#dirs").replaceChildren(...(d.dirs.length ? d.dirs.map(x => el("li", {},
+      el("code", { textContent: x.path }),
+      el("span", { className: x.level === "ok" ? "ok" : x.level, textContent: x.note || "ok" })))
+    : [el("li", { className: "muted", textContent: "none: add \"<path> <password>\" lines to passwords on the key server" })]));
+
+  renderUsers(d);
+}
+
+function renderUsers(d) {
+  const table = $("#users");
+  if (!d.users.length) { table.replaceChildren(el("tr", {}, el("td", { className: "muted", textContent: "No users yet." }))); return; }
+  const head = el("tr", {}, el("th", { textContent: "user" }),
+                  ...d.dirs.map(x => el("th", { className: "dir", textContent: x.path })));
+  const rows = d.users.map(u => {
+    const status = u.problems ? el("span", { className: "ng", textContent: ` ${u.problems} problem(s)` })
+                 : !u.added ? el("span", { className: "warn", textContent: " not added" })
+                 : el("span", { className: "ok", textContent: " ok" });
+    const items = el("div", { className: "items" }, ...u.details.filter(e => e.kind === "item").map(e =>
+      el("div", {}, el("span", { className: e.level, textContent: MARK[e.level] }),
+         el("span", { textContent: e.label }), el("span", { className: "value " + e.level, textContent: e.value }))));
+    const keys = u.keys.map(k => el("div", { className: "keyrow" },
+      el("span", { textContent: k.label }),
+      el("span", { className: "muted", textContent: [k.gateway && "gateway", k.key_server && "key server"].filter(Boolean).join(" + ") }),
+      el("button", { className: "small", textContent: "remove key…",
+                     onclick: () => act("remove-user", { user: u.name, match: k.match }, `Remove key ${k.label} of ${u.name}`) })));
+    const cell = el("td", { className: "user" },
+      el("span", { className: "user-name", textContent: u.name }), status,
+      el("details", {}, el("summary", { textContent: "details" }), items, ...keys,
+         el("div", { style: "margin-top: 6px" }, el("button", { className: "small", textContent: "remove user…",
+            onclick: () => act("remove-user", { user: u.name }, `Remove user ${u.name}`) }))));
+    return el("tr", {}, cell, ...d.dirs.map(x => {
+      const problems = u.grants[x.path];
+      const granted = problems !== undefined;
+      const b = el("button", {
+        className: granted ? "granted" + (problems.length ? " bad" : "") : "",
+        textContent: granted ? (problems.length ? "granted ✗" : "granted ✓") : "—",
+        title: granted ? (problems.join("; ") || "click to revoke") : "click to grant",
+        onclick: () => granted
+          ? act("revoke", { user: u.name, path: x.path }, `Revoke ${x.path} from ${u.name}`)
+          : act("grant", { user: u.name, path: x.path }, `Grant ${x.path} to ${u.name}`),
+      });
+      return el("td", { className: "cell" }, b);
+    }));
+  });
+  table.replaceChildren(el("thead", {}, head), el("tbody", {}, ...rows));
+}
+
+// ---------------------------------------------------------------- actions: dry run, then Run
+
+let pending = null;
+
+async function act(command, fields, title) {
+  if (busy) return;
+  pending = null;
+  $("#action").hidden = false;
+  $("#action-title").textContent = title;
+  $("#action-cmd").textContent = "…";
+  $("#action-report").replaceChildren(el("div", { className: "muted", textContent: "Dry run…" }));
+  $("#action-run").disabled = true;
+  setBusy(true);
+  const res = await call(command, fields, true);
+  setBusy(false);
+  show(res);
+  $("#action-run").disabled = res.outcome !== "dry-run";
+  if (res.outcome === "dry-run") pending = { command, fields };
+  $("#action").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function show(res) {
+  $("#action-cmd").textContent = res.command || "";
+  if (res.error) { $("#action-report").replaceChildren(el("div", { className: "error", textContent: res.error })); return; }
+  renderEntries($("#action-report"), res.entries);
+  const text = { problems: "Problems found; nothing changed.", nothing: "Nothing to change.",
+                 "dry-run": "Dry run: nothing changed yet. Press Run to apply.", done: "Done." }[res.outcome];
+  if (text) $("#action-report").append(el("div", { className: "outcome " + (res.outcome === "problems" ? "ng" : res.outcome === "done" ? "ok" : ""), textContent: text }));
+}
+
+async function runPending() {
+  if (!pending) return;
+  const { command, fields } = pending;
+  pending = null;
+  $("#action-run").disabled = true;
+  setBusy(true);
+  const res = await call(command, fields, false);
+  setBusy(false);
+  $("#action-run").disabled = true;
+  show(res);
+  if (res.outcome === "done") refresh();
+}
+
+// ---------------------------------------------------------------- init
+
+(async function init() {
+  const saved = loadSaved();
+  let defaults = {};
+  try { defaults = await (await fetch("/api/defaults")).json(); } catch {}
+  $$("[data-common]").forEach(i => {
+    i.placeholder = defaults[i.dataset.common] || "(current user)";
+    i.value = saved[i.dataset.common] || "";
+    i.addEventListener("change", saveCommon);
+  });
+  $("#refresh").addEventListener("click", refresh);
+  $("#action-run").addEventListener("click", runPending);
+  $("#action-close").addEventListener("click", () => { $("#action").hidden = true; pending = null; });
+  $("#add-button").addEventListener("click", () => {
+    const user = $("#add-user").value.trim();
+    act("add-user", { user, pubkey: $("#add-pubkey").value, privjail_gateway_cmd: $("#add-cmd").value,
+                      key_server_hostname: $("#add-ksh").value }, `Add user ${user}`);
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -54,6 +54,7 @@ import sys
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import Any, NoReturn
 
 from privjail.dirspec import path_error
 
@@ -468,18 +469,32 @@ class Writer:
 # reporting
 
 class Report:
-    def __init__(self) -> None:
+    """What a command found and did. The CLI echoes it as text as it goes;
+    the web UI (privjail-admin web) returns `entries` as JSON."""
+
+    def __init__(self, echo: bool = True) -> None:
         self.errors = 0
+        self.echo = echo
+        self.entries: list[dict[str, str]] = []
+        self.outcome = ""   # problems / nothing / dry-run / done (changing commands)
+        self.data: dict[str, Any] = {}   # structured results (status), for the web UI
+
+    def line(self, text: str = "") -> None:
+        self.entries.append({"kind": "line", "text": text})
+        if self.echo:
+            print(text)
 
     def item(self, label: str, value: str, level: str = "ok") -> None:
         mark = {"ok": " ", "warn": "!", "ng": "x"}[level]
         if level == "ng":
             self.errors += 1
-        print(f"  {mark} {label:<22} {value}")
+        self.entries.append({"kind": "item", "label": label, "value": value, "level": level})
+        if self.echo:
+            print(f"  {mark} {label:<22} {value}")
 
 
 def host_header(rep: Report, title: str, host: str, facts: HostFacts) -> bool:
-    print(f"{title} {host}")
+    rep.line(f"{title} {host}")
     if not facts.login:
         rep.item("ssh", facts.error, "ng")
     return facts.login
@@ -515,61 +530,79 @@ def dir_problems(spec: str, user: str, ks: HostFacts, gw: HostFacts) -> tuple[st
 
 
 def finish(rep: Report, args: argparse.Namespace, writers: list[tuple[str, Writer]], done: str) -> None:
-    print()
+    rep.line()
     if rep.errors:
-        print(f"{rep.errors} problem(s) (marked x); nothing changed.")
-        sys.exit(1)
+        rep.outcome = "problems"
+        rep.line(f"{rep.errors} problem(s) (marked x); nothing changed.")
+        return
     if not any(w.steps for _, w in writers):
-        print("Nothing to change.")
+        rep.outcome = "nothing"
+        rep.line("Nothing to change.")
         return
     if args.dry_run:
-        print("--dry-run: nothing changed.")
+        rep.outcome = "dry-run"
+        rep.line("--dry-run: nothing changed.")
         return
     for host, w in writers:
         w.run(host)
-    print(done)
+    rep.outcome = "done"
+    rep.line(done)
 
 
 # --------------------------------------------------------------------------
 # status
 
-def cmd_status(args: argparse.Namespace) -> None:
+def cmd_status(args: argparse.Namespace, rep: Report) -> None:
     # round 1: who (privjail-admin sudoers entries, grants) and which directories;
     # round 2: the per-user details
     ks0, gw0 = probe_both(args, [])
     names = args.users or sorted(set(gw0.sudoers_users) | {u for u, _ in ks0.grants})
     dirs = sorted(set(ks0.registered) | {d for _, d in ks0.grants})
     ks, gw = probe_both(args, names, dirs=dirs)
-    rep = Report()
+    data: dict[str, Any] = {
+        "key_server": {"host": args.key_server_ssh, "login": ks.login, "error": ks.error,
+                       "listening": ks.listening, "port": args.key_server_port},
+        "gateway": {"host": args.gateway_ssh, "login": gw.login, "error": gw.error},
+        "dirs": [], "users": [],
+    }
+    rep.data = data
 
     if ks.login:
-        print(f"key server {args.key_server_ssh}: "
+        rep.line(f"key server {args.key_server_ssh}: "
               + (f"listening on {args.key_server_port}" if ks.listening else f"NOT listening on {args.key_server_port}"))
         if not ks.listening:
             rep.errors += 1
     else:
-        print(f"key server {args.key_server_ssh}: ssh failed ({ks.error})")
-    print(f"gateway    {args.gateway_ssh}: " + ("reachable" if gw.login else f"ssh failed ({gw.error})"))
+        rep.line(f"key server {args.key_server_ssh}: ssh failed ({ks.error})")
+    rep.line(f"gateway    {args.gateway_ssh}: " + ("reachable" if gw.login else f"ssh failed ({gw.error})"))
 
     if ks.login:
-        print("\nencrypted dirs (passwords registered on the key server)")
+        rep.line()
+        rep.line("encrypted dirs (passwords registered on the key server)")
         if not ks.registered:
-            print("    (none)")
+            rep.line("    (none)")
         for d in ks.registered:
             exists, initialized = gw.dirs.get(d, (False, False))
             if not gw.login:
-                rep.item(d, "")
+                note, level = "", "ok"
             elif not exists:
-                rep.item(d, "does not exist on gateway", "warn")
+                note, level = "does not exist on gateway", "warn"
             else:
-                rep.item(d, "" if initialized else "not a gocryptfs directory", "ok" if initialized else "warn")
+                note, level = ("", "ok") if initialized else ("not a gocryptfs directory", "warn")
+            rep.item(d, note, level)
+            data["dirs"].append({"path": d, "registered": True, "note": note, "level": level})
+    for d in sorted({d for _, d in ks.grants} - set(ks.registered)):
+        data["dirs"].append({"path": d, "registered": False, "note": "no password registered", "level": "ng"})
 
     if not names:
-        print("\nno users (no privjail-admin sudoers entry on the gateway, no grants on the key server)")
+        rep.line()
+        rep.line("no users (no privjail-admin sudoers entry on the gateway, no grants on the key server)")
         return
 
     for user in names:
-        print(f"\n{user}")
+        rep.line()
+        rep.line(f"{user}")
+        first, errors0 = len(rep.entries), rep.errors
         kf, gf = ks.users.get(user), gw.users.get(user)
         if ks.login and not (kf and kf.exists and kf.sudo):
             user_ready(rep, user, kf, "account (key server)")
@@ -611,22 +644,34 @@ def cmd_status(args: argparse.Namespace) -> None:
             if managed_block(gf.ssh_config):
                 rep.item("leftover", "managed ~/.ssh/config block", "warn")
 
+        details = rep.entries[first:]   # the account-level checks above
         granted = sorted(d for u, d in ks.grants if u == user)
         if not granted:
             rep.item("grants", "none")
+        grants: dict[str, list[str]] = {}
         for d in granted:
             _, problems = dir_problems(d, user, ks, gw)
+            grants[d] = problems
             rep.item("grant", d + ("  (" + "; ".join(problems) + ")" if problems else ""),
                      "ng" if problems else "ok")
+        keys = {k.blob: k for k in gw_entries + ks_entries}
+        data["users"].append({
+            "name": user,
+            "added": bool(gw_entries),
+            "problems": rep.errors - errors0,
+            "details": details,
+            "keys": [{"label": k.label, "fingerprint": k.fingerprint,
+                      "match": k.comment or k.blob[-40:],   # a substring that identifies the line
+                      "gateway": b in gw_blobs, "key_server": b in ks_blobs} for b, k in keys.items()],
+            "grants": grants,
+        })
 
-    if rep.errors:
-        sys.exit(1)
 
 
 # --------------------------------------------------------------------------
 # add-user / remove-user
 
-def cmd_add_user(args: argparse.Namespace) -> None:
+def cmd_add_user(args: argparse.Namespace, rep: Report) -> None:
     user = args.user
     pubkey = read_pubkey_line(args.user_pubkey)
     key = parse_key_line(pubkey)
@@ -636,7 +681,6 @@ def cmd_add_user(args: argparse.Namespace) -> None:
         else resolve_ssh_target(args.key_server_host)
 
     ks, gw = probe_both(args, [user], cmd=cmd, reach=ks_addr)
-    rep = Report()
     ks_writer, gw_writer = Writer(), Writer()
 
     if host_header(rep, "key server", args.key_server_ssh, ks):
@@ -653,7 +697,7 @@ def cmd_add_user(args: argparse.Namespace) -> None:
                 rep.item("authorized_keys", f"add ({key.label})")
                 ks_writer.put_user_file(user, "authorized_keys", kf.authorized_keys + [line])
 
-    print()
+    rep.line()
     if host_header(rep, "gateway", args.gateway_ssh, gw):
         gf = gw.users.get(user)
         if not gw.root:
@@ -698,10 +742,9 @@ def cmd_add_user(args: argparse.Namespace) -> None:
            f"this key and `ForwardAgent yes`.")
 
 
-def cmd_remove_user(args: argparse.Namespace) -> None:
+def cmd_remove_user(args: argparse.Namespace, rep: Report) -> None:
     user = args.user
     ks, gw = probe_both(args, [user])
-    rep = Report()
     removals: dict[str, list[str]] = {}
 
     for title, host, facts, gateway_side in (("key server", args.key_server_ssh, ks, False),
@@ -718,7 +761,7 @@ def cmd_remove_user(args: argparse.Namespace) -> None:
             if not entries:
                 rep.item("authorized_keys", "no matching entry")
             removals[title] = [k.line for k in entries]
-        print()
+        rep.line()
 
     ks_writer, gw_writer = Writer(), Writer()
     if removals.get("key server"):
@@ -731,14 +774,14 @@ def cmd_remove_user(args: argparse.Namespace) -> None:
             gw_writer.put_user_file(user, "authorized_keys", remaining)
         if not any(k.is_gateway_entry for k in (parse_key_line(l) for l in remaining) if k):
             if gf.sudoers:
-                print(f"no key left on the gateway: removing {sudoers_path(user)}")
+                rep.line(f"no key left on the gateway: removing {sudoers_path(user)}")
                 gw_writer.remove_sudoers(sudoers_path(user))
             if managed_block(gf.ssh_config):
-                print("no key left on the gateway: removing the managed ~/.ssh/config block")
+                rep.line("no key left on the gateway: removing the managed ~/.ssh/config block")
                 gw_writer.put_user_file(user, "config", strip_managed_block(gf.ssh_config))
             granted = {(u, d) for u, d in ks.grants if u == user}
             if granted:
-                print(f"no key left on the gateway: revoking {', '.join(sorted(d for _, d in granted))}")
+                rep.line(f"no key left on the gateway: revoking {', '.join(sorted(d for _, d in granted))}")
                 ks_writer.put_own_file(f"{args.ks_dir}/grants", without_grants(ks.grants_lines, granted))
 
     finish(rep, args, [(args.key_server_ssh, ks_writer), (args.gateway_ssh, gw_writer)], f"Removed '{user}'.")
@@ -753,15 +796,14 @@ def check_path_arg(path: str) -> None:
         raise SystemExit(f"invalid directory {path!r}: {err}")
 
 
-def cmd_grant(args: argparse.Namespace) -> None:
+def cmd_grant(args: argparse.Namespace, rep: Report) -> None:
     user, spec = args.user, args.path
     check_path_arg(spec)
     ks, gw = probe_both(args, [user], dirs=[spec])
-    rep = Report()
     writer = Writer()
 
     path, problems = dir_problems(spec, user, ks, gw)
-    print(f"{user} -> {path}")
+    rep.line(f"{user} -> {path}")
     if not ks.login:
         rep.item("key server", ks.error, "ng")
     if not gw.login:
@@ -782,7 +824,7 @@ def cmd_grant(args: argparse.Namespace) -> None:
     finish(rep, args, [(args.key_server_ssh, writer)], f"Granted {path} to '{user}'.")
 
 
-def cmd_revoke(args: argparse.Namespace) -> None:
+def cmd_revoke(args: argparse.Namespace, rep: Report) -> None:
     user, spec = args.user, args.path
     check_path_arg(spec)
     if spec.startswith("~/"):
@@ -793,10 +835,9 @@ def cmd_revoke(args: argparse.Namespace) -> None:
         path = uf.dirs[spec][0]
     else:
         ks, path = probe(args.key_server_ssh, "ks", [], args), spec
-    rep = Report()
     writer = Writer()
 
-    print(f"{user} -> {path}")
+    rep.line(f"{user} -> {path}")
     if not ks.login:
         rep.item("key server", ks.error, "ng")
     elif (user, path) not in ks.grants:
@@ -848,12 +889,24 @@ def add_common_args(parser: argparse.ArgumentParser, dry_run: bool = True) -> No
         parser.add_argument("--dry-run", action="store_true", help="check and show what would change; change nothing")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+class UsageError(Exception):
+    pass
+
+
+class _RaisingParser(argparse.ArgumentParser):
+    """For the web UI: report bad arguments as an exception, not exit(2)."""
+    def error(self, message: str) -> NoReturn:
+        raise UsageError(message)
+
+
+def build_parser(raising: bool = False) -> argparse.ArgumentParser:
+    cls = _RaisingParser if raising else argparse.ArgumentParser
+    parser = cls(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
     def subparser(name: str, help: str) -> argparse.ArgumentParser:
-        return sub.add_parser(name, help=help, formatter_class=DefaultsFormatter)
+        p: argparse.ArgumentParser = sub.add_parser(name, help=help, formatter_class=DefaultsFormatter)
+        return p
 
     p = subparser("status", "show users, their keys and grants, and what is missing")
     p.add_argument("users", nargs="*", metavar="user",
@@ -891,12 +944,44 @@ def main() -> None:
     add_common_args(p)
     p.set_defaults(func=cmd_revoke)
 
-    args = parser.parse_args()
+    p = subparser("web", "serve a local web page for status and these commands (no authentication)")
+    p.add_argument("--host", default="127.0.0.1", help="address to listen on; keep it local")
+    p.add_argument("--port", type=int, default=8881, help="port to listen on")
+    add_common_args(p, dry_run=False)
+    p.set_defaults(func=cmd_web)
+    return parser
+
+
+def finalize_args(args: argparse.Namespace) -> None:
     args.key_server_host, args.key_server_port = parse_key_server(args.key_server)
     adm_user = args.adm_user or getpass.getuser()
     args.gateway_ssh = f"{args.gateway_adm_user or adm_user}@{args.gateway}"
     args.key_server_ssh = f"{args.key_server_adm_user or adm_user}@{args.key_server_host}"
-    args.func(args)
+
+
+def run_command(argv: list[str], echo: bool) -> Report:
+    """Runs one subcommand (not web) and returns what it reported.
+    Raises UsageError for bad arguments when echo is False (web UI)."""
+    args = build_parser(raising=not echo).parse_args(argv)
+    if args.command == "web":
+        raise UsageError("web cannot be run from the web UI")
+    finalize_args(args)
+    rep = Report(echo)
+    args.func(args, rep)
+    return rep
+
+
+def cmd_web(args: argparse.Namespace, rep: Report) -> None:
+    from .web import serve
+    serve(args)
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    finalize_args(args)
+    rep = Report(echo=True)
+    args.func(args, rep)
+    sys.exit(1 if rep.errors else 0)
 
 
 if __name__ == "__main__":
