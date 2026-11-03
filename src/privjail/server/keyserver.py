@@ -59,9 +59,11 @@ def peer_uid(conn: socket.socket) -> int | None:
         next(f)
         for line in f:
             fields = line.split()
-            # the peer's socket: its local end is our remote end and vice versa
+            # the peer's socket: its local end is our remote end and vice versa.
+            # Only a live (ESTABLISHED, still owned by a process) socket counts:
+            # once its owner closes it, the kernel reports it as uid 0.
             if fields[1] == remote and fields[2] == local:
-                return int(fields[7])
+                return int(fields[7]) if fields[3] == "01" and fields[9] != "0" else None
     return None
 
 
