@@ -25,7 +25,7 @@ from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .array import PrivNDArray
 from .domain import NDArrayDomain
-from ..datapath import resolve as resolve_datapath
+from ..datapath import resolve as resolve_datapath, to_request_path
 
 def _find_privacy_axis(shape: list[int | None] | None) -> int:
     if shape is None:
@@ -36,7 +36,7 @@ def _find_privacy_axis(shape: list[int | None] | None) -> int:
     return null_indices[0]
 
 @egrpc.function
-def load(file         : str,
+def _load(file         : str,
          schema_path  : str | None        = None,
          *,
          accountant   : str | None        = "approx",
@@ -108,3 +108,16 @@ def load(file         : str,
         result[name] = priv_arr
 
     return result
+def load(file: str,
+         schema_path: str | None = None,
+         *,
+         accountant: str | None = "approx",
+         budget_limit: BudgetType | None = None,
+         ) -> dict[str, PrivNDArray | _npt.NDArray[Any]]:
+    """Under a session opened with dirs, paths refer to the mounted directories
+    (see privjail.datapath)."""
+    return _load(to_request_path(file),
+                 to_request_path(schema_path) if schema_path is not None else None,
+                 accountant=accountant, budget_limit=budget_limit)
+
+

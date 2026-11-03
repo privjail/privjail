@@ -1,30 +1,82 @@
-"""datapath.py -- maps the paths a client asks for to files on the server.
+"""datapath.py -- "mounting" data directories into the client's file namespace.
 
-By default paths are used as given (local mode, or a dataserver someone
-started by hand). A dataserver launched by the gateway instead gets a table
-of names, e.g. {"mydata": "/home/u/.privjail/mnt/1234/0"}: the client
-then says "mydata/train.csv", and only paths below one of those names
-can be opened -- absolute paths, "..", and unknown first components are
-refused. The real mount points are never shown to the client.
+A session opened with dirs={A: B} (local_session, spawn_session,
+gateway_session) makes directory B -- wherever the data server runs --
+appear to privjail's file-reading functions (read_csv, load, and their
+schema files) as the client's local directory A, much like a mount:
+
+  - A must be an existing, empty local directory; mount points may not be
+    nested. Only privjail's functions see B there -- `ls A` stays empty.
+  - client side (`to_request_path`): a path given to those functions is made
+    absolute against the current directory at call time, and must lie under
+    one of the mount points; it is then sent to the server as that absolute
+    path.
+  - server side (`resolve`): the server holds the table {absolute A: B},
+    replaces the A prefix with B, and opens nothing outside the table.
+
+Without dirs, paths are passed and opened as given (unchanged behavior; also
+for connect_session, which does not take dirs).
 """
 from __future__ import annotations
 
 import os
-from pathlib import PurePosixPath
+import posixpath
+from collections.abc import Mapping
 
-_roots: dict[str, str] | None = None
+_client_mounts: list[str] | None = None   # absolute local mount points, client side
+_server_roots: dict[str, str] | None = None  # absolute local mount point -> real dir, server side
 
 
-def set_roots(roots: dict[str, str]) -> None:
-    global _roots
-    _roots = dict(roots)
+def _under(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def check_mount_points(points: list[str]) -> list[str]:
+    """Absolute forms of the client-side mount points; each must be an
+    existing empty directory, and none may contain another."""
+    absolute = [os.path.normpath(os.path.abspath(os.path.expanduser(p))) for p in points]
+    for given, a in zip(points, absolute):
+        if not os.path.isdir(a):
+            raise FileNotFoundError(f"mount point {given!r} ({a}) is not an existing directory")
+        if os.listdir(a):
+            raise OSError(f"mount point {given!r} ({a}) is not empty")
+    for i, a in enumerate(absolute):
+        for b in absolute[i + 1:]:
+            if _under(a, b) or _under(b, a):
+                raise ValueError(f"mount points may not be nested or repeated: {a}, {b}")
+    return absolute
+
+
+# -------------------------------------------------------------- client side
+
+def set_client_mounts(mounts: list[str] | None) -> None:
+    global _client_mounts
+    _client_mounts = list(mounts) if mounts is not None else None
+
+
+def to_request_path(path: str) -> str:
+    if _client_mounts is None:
+        return path
+    p = os.path.normpath(os.path.join(os.getcwd(), os.path.expanduser(path)))
+    if not any(_under(p, m) for m in _client_mounts):
+        raise PermissionError(f"{path!r} ({p}) is not under a mounted directory; "
+                              f"mounted: {', '.join(_client_mounts)}")
+    return p
+
+
+# -------------------------------------------------------------- server side
+
+def set_roots(roots: Mapping[str, str] | None) -> None:
+    global _server_roots
+    _server_roots = dict(roots) if roots is not None else None
 
 
 def resolve(path: str) -> str:
-    if _roots is None:
+    if _server_roots is None:
         return path
-    p = PurePosixPath(path)
-    names = ", ".join(sorted(_roots)) or "(none)"
-    if p.is_absolute() or ".." in p.parts or not p.parts or p.parts[0] not in _roots:
-        raise PermissionError(f"{path!r} is not under an available directory; available: {names}")
-    return os.path.join(_roots[p.parts[0]], *p.parts[1:])
+    if posixpath.isabs(path) and ".." not in path.split("/"):
+        for mount, real in _server_roots.items():
+            if _under(path, mount):
+                return real + path[len(mount.rstrip("/")):]
+    raise PermissionError(f"{path!r} is not under a mounted directory; "
+                          f"mounted: {', '.join(_server_roots) or '(none)'}")
