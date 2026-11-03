@@ -41,6 +41,7 @@ from typing import Callable, Mapping, Optional, Sequence
 
 from egrpc import connect as _egrpc_connect, disconnect as _egrpc_disconnect
 
+from .dirspec import NAME_RE, default_name, path_error
 from .helper import shutdown_remote_server
 
 _SERVER_STARTED_RE = re.compile(r"Server started on port (\d+) \(pid = (\d+)\)")
@@ -161,9 +162,6 @@ def spawn_session(port: int = 0, timeout: float = 10.0) -> Session:
     return Session(port=assigned_port, close_fn=_close)
 
 
-_DIR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-
 def gateway_session(host: str, local_port: int,
                     dirs: Sequence[str] | Mapping[str, str] = (),
                     timeout: float = 60.0) -> Session:
@@ -172,17 +170,23 @@ def gateway_session(host: str, local_port: int,
     remote server to shut down, disconnects, and tears down both ssh
     processes.
 
-    `dirs` names the encrypted directories to use, as granted by the data
-    owner: ["adult"] makes directory adult visible as "adult/...", and
-    {"mydata": "adult"} makes it visible as "mydata/..." instead."""
-    pairs = list(dirs.items()) if isinstance(dirs, Mapping) else [(d, d) for d in dirs]
+    `dirs` are the encrypted directories to use, by their path on the
+    gateway as granted by the data owner (absolute, or ~/... in your home
+    there): {"mydata": "~/data_enc"} makes it visible as "mydata/...";
+    ["~/data_enc"] names it after its last component ("data_enc/...")."""
+    pairs = list(dirs.items()) if isinstance(dirs, Mapping) else [(default_name(d), d) for d in dirs]
     if not pairs:
         raise ValueError("gateway_session needs at least one directory in `dirs`")
     words = []
-    for name, dirname in pairs:
-        if not (_DIR_NAME_RE.match(name) and _DIR_NAME_RE.match(dirname)):
-            raise ValueError(f"invalid directory name: {name!r} -> {dirname!r}")
-        words.append(name if name == dirname else f"{name}={dirname}")
+    for name, path in pairs:
+        err = path_error(path)
+        if err:
+            raise ValueError(f"invalid directory {path!r}: {err}")
+        if not NAME_RE.match(name):
+            raise ValueError(f"invalid name {name!r} for {path!r}")
+        words.append(f"{name}={path}")
+    if len({name for name, _ in pairs}) != len(pairs):
+        raise ValueError(f"names must be distinct: {[name for name, _ in pairs]}")
     gateway_proc = subprocess.Popen(
         ["ssh", host, *words],
         # kept open for the session: the gateway shuts down when it closes

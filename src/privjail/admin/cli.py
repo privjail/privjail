@@ -10,14 +10,16 @@ add-user / remove-user   whether an OS account (existing on both hosts) can
                          gateway needs to run for it.
 grant / revoke           which encrypted directories that user may mount.
                          Recorded on the key server, which holds the
-                         directories' keys and hands one out only for a
-                         granted (user, directory) pair.
+                         directories' passwords and hands one out only for
+                         a granted (user, directory) pair.
 
-Conventions (owner's side, outside this tool): an encrypted directory NAME
-is a gocryptfs directory <enc-root>/NAME on the gateway (default
-/srv/privjail/enc/NAME; gocryptfs.conf readable by users), and its password
-is the file <ks-dir>/keys/NAME on the key server (default ~/privjail-ks).
-How data gets into it is up to the owner.
+An encrypted directory is a gocryptfs directory on the gateway, identified
+by its path there: absolute, or ~/... for the granted user's home (expanded
+when granting; the key server only records absolute paths). Creating it,
+filling it with data, and registering its password -- a "<path> <password>"
+line in <ks-dir>/passwords on the key server (default ~/privjail-ks) -- is
+the owner's business, outside this tool. The user must be able to read its
+gocryptfs.conf.
 
 Subcommands
 -----------
@@ -30,8 +32,8 @@ add-user     registers the user's key (--user-pubkey) on both hosts --
              privjail-get-quote and a ~/.ssh/config block for the key server.
 remove-user  removes those (all, or the key matching --match), and the
              user's grants once no key is left.
-grant        USER DIR: lets USER mount DIR.
-revoke       USER DIR: takes it back (applies from the next session).
+grant        USER PATH: lets USER mount the encrypted directory at PATH.
+revoke       USER PATH: takes it back (applies from the next session).
 
 Every subcommand inspects each host with one ssh session (both hosts in
 parallel) and changes it with at most one more; --dry-run shows the changes
@@ -47,21 +49,22 @@ import re
 import shlex
 import subprocess
 import sys
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+
+from privjail.dirspec import path_error
 
 DEFAULT_GATEWAY = "privjail-gw"
 DEFAULT_KEY_SERVER_HOST = "privjail-ks"
 DEFAULT_KEY_SERVER_PORT = 9443
 DEFAULT_KS_DIR = "~/privjail-ks"
-DEFAULT_ENC_ROOT = "/srv/privjail/enc"
 DEFAULT_PRIVJAIL_GATEWAY_CMD = "/opt/privjail/.venv/bin/privjail-gateway"
 
 SUDOERS_DIR = "/etc/sudoers.d"
 QUOTE_COMMAND = "privjail-get-quote"
 SSH_CONFIG_BEGIN = "# BEGIN privjail-admin (managed block; edits here are overwritten)"
 SSH_CONFIG_END = "# END privjail-admin"
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 # --------------------------------------------------------------------------
@@ -114,16 +117,14 @@ e root "$(yn sudo -n true)"
 if [ "$ROLE" = ks ]; then
   KS_DIR=${KS_DIR/#\~/$HOME}
   e listening "$(yn timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/$KS_PORT")"
-  e keys "$(ls -1 "$KS_DIR/keys" 2>/dev/null | tr '\n' ' ')"
+  # only the registered paths, never the passwords
+  e dirs "$(sed 's/#.*//' "$KS_DIR/passwords" 2>/dev/null | awk 'NF == 2 {print $1}' | tr '\n' ' ')"
   e grants "$(cat "$KS_DIR/grants" 2>/dev/null | b64)"
 else
   e gocryptfs "$(command -v gocryptfs || true)"
   [ -n "$REACH_HOST" ] && e reach "$(yn timeout 5 bash -c "exec 3<>/dev/tcp/$REACH_HOST/$REACH_PORT")"
-  ENCS=()
-  for d in "$ENC_ROOT"/*/; do
-    [ -d "$d" ] || continue
-    n=$(basename "$d"); ENCS+=("$n")
-    e "enc:$n" "$(yn test -e "$d/gocryptfs.conf")"
+  for d in ${DIRS[@]+"${DIRS[@]}"}; do
+    case "$d" in /*) e "dir:$d" "$(yn sudo -n test -d "$d")$(yn sudo -n test -e "$d/gocryptfs.conf")" ;; esac
   done
 fi
 
@@ -147,8 +148,9 @@ for u in ${USERS[@]+"${USERS[@]}"}; do
 
   e "$p:config" "$(sudo -n -u "$u" cat "$h/.ssh/config" 2>/dev/null | b64)"
   e "$p:sudoers" "$(sudo -n cat "$SUDOERS_DIR/privjail-${u//./_}" 2>/dev/null | b64)"
-  for n in ${ENCS[@]+"${ENCS[@]}"}; do
-    e "$p:encr:$n" "$(yn sudo -n -u "$u" test -r "$ENC_ROOT/$n/gocryptfs.conf")"
+  for d in ${DIRS[@]+"${DIRS[@]}"}; do
+    x=$d; case "$d" in "~/"*) x="$h/${d#\~/}" ;; esac
+    e "$p:dir:$d" "$x $(yn sudo -n -u "$u" test -d "$x")$(yn sudo -n -u "$u" test -e "$x/gocryptfs.conf")$(yn sudo -n -u "$u" test -r "$x/gocryptfs.conf")"
   done
   cmds=()
   [ -n "$CMD" ] && cmds+=("$CMD")
@@ -183,7 +185,8 @@ class UserFacts:
     ssh_config: list[str] = field(default_factory=list)
     sudoers: str = ""
     cmds: dict[str, CmdState] = field(default_factory=dict)
-    enc_readable: dict[str, bool] = field(default_factory=dict)
+    # dir spec as asked -> (expanded path, exists, initialized, gocryptfs.conf readable), as this user
+    dirs: dict[str, tuple[str, bool, bool, bool]] = field(default_factory=dict)
 
 
 @dataclass
@@ -194,12 +197,12 @@ class HostFacts:
     root: bool = False
     # key server
     listening: bool = False
-    keys: list[str] = field(default_factory=list)
+    registered: list[str] = field(default_factory=list)  # paths in <ks-dir>/passwords
     grants_lines: list[str] = field(default_factory=list)
     # gateway
     gocryptfs: str = ""
     reach: bool | None = None
-    encs: dict[str, bool] = field(default_factory=dict)  # name -> initialized
+    dirs: dict[str, tuple[bool, bool]] = field(default_factory=dict)  # abs path -> (exists, initialized)
     users: dict[str, UserFacts] = field(default_factory=dict)
 
     @property
@@ -212,16 +215,17 @@ def _b64text(value: str) -> str:
 
 
 def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespace,
-          cmd: str = "", reach: tuple[str, int] | None = None) -> HostFacts:
+          cmd: str = "", reach: tuple[str, int] | None = None, dirs: Sequence[str] = ()) -> HostFacts:
     """users=None means: every regular account on this host."""
     params = {
         "ROLE": role, "ALL": "1" if users is None else "0",
-        "KS_PORT": str(args.key_server_port), "KS_DIR": args.ks_dir, "ENC_ROOT": args.enc_root,
+        "KS_PORT": str(args.key_server_port), "KS_DIR": args.ks_dir,
         "CMD": cmd, "REACH_HOST": reach[0] if reach else "", "REACH_PORT": str(reach[1]) if reach else "",
         "SUDOERS_DIR": SUDOERS_DIR, "QUOTE_COMMAND": QUOTE_COMMAND,
     }
     header = "".join(f"{k}={shlex.quote(v)}\n" for k, v in params.items())
     header += "USERS=(" + " ".join(shlex.quote(u) for u in users or []) + ")\n"
+    header += "DIRS=(" + " ".join(shlex.quote(d) for d in dirs) + ")\n"
     facts = HostFacts(host)
     try:
         result = run_remote_script(host, header + PROBE_SCRIPT)
@@ -240,16 +244,16 @@ def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespac
             facts.root = value == "1"
         elif key == "listening":
             facts.listening = value == "1"
-        elif key == "keys":
-            facts.keys = value.split()
+        elif key == "dirs":
+            facts.registered = value.split()
         elif key == "grants":
             facts.grants_lines = _b64text(value).splitlines()
         elif key == "gocryptfs":
             facts.gocryptfs = value
         elif key == "reach":
             facts.reach = value == "1"
-        elif key.startswith("enc:"):
-            facts.encs[key[4:]] = value == "1"
+        elif key.startswith("dir:"):
+            facts.dirs[key[4:]] = (value[0] == "1", value[1] == "1")
         elif key.startswith("u:"):
             _, user, attr = key.split(":", 2)
             uf = facts.users.setdefault(user, UserFacts())
@@ -265,8 +269,9 @@ def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespac
                 uf.ssh_config = _b64text(value).splitlines()
             elif attr == "sudoers":
                 uf.sudoers = _b64text(value)
-            elif attr.startswith("encr:"):
-                uf.enc_readable[attr[5:]] = value == "1"
+            elif attr.startswith("dir:"):
+                expanded, flags = value.rsplit(" ", 1)
+                uf.dirs[attr[4:]] = (expanded, flags[0] == "1", flags[1] == "1", flags[2] == "1")
             elif attr.startswith("cmd:"):
                 x, qx, *q = value.split(" ", 2)
                 uf.cmds[attr[4:]] = CmdState(x == "1", qx == "1", q[0] if q else "")
@@ -274,10 +279,10 @@ def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespac
 
 
 def probe_both(args: argparse.Namespace, users: list[str] | None, cmd: str = "",
-               reach: tuple[str, int] | None = None) -> tuple[HostFacts, HostFacts]:
+               reach: tuple[str, int] | None = None, dirs: Sequence[str] = ()) -> tuple[HostFacts, HostFacts]:
     with ThreadPoolExecutor(2) as pool:
         ks = pool.submit(probe, args.key_server_ssh, "ks", users, args)
-        gw = pool.submit(probe, args.gateway_ssh, "gw", users, args, cmd, reach)
+        gw = pool.submit(probe, args.gateway_ssh, "gw", users, args, cmd, reach, dirs)
         return ks.result(), gw.result()
 
 
@@ -485,18 +490,23 @@ def user_ready(rep: Report, user: str, uf: UserFacts | None, label: str = "accou
     return True
 
 
-def dir_problems(dirname: str, user: str, ks: HostFacts, gw: HostFacts) -> list[str]:
+def dir_problems(spec: str, user: str, ks: HostFacts, gw: HostFacts) -> tuple[str, list[str]]:
+    """(absolute path, problems) for directory `spec` as seen by `user`;
+    needs gw probed with `spec` in dirs for `user`."""
+    uf = gw.users.get(user)
+    if not (gw.login and uf and spec in uf.dirs):
+        return spec, ([] if not gw.login else ["cannot check on gateway"])
+    path, exists, initialized, readable = uf.dirs[spec]
     problems = []
-    if ks.login and dirname not in ks.keys:
-        problems.append("no key on key server")
-    if gw.login:
-        if dirname not in gw.encs:
-            problems.append("no encrypted dir on gateway")
-        elif not gw.encs[dirname]:
-            problems.append("encrypted dir not initialized")
-        elif user in gw.users and not gw.users[user].enc_readable.get(dirname, False):
-            problems.append("gocryptfs.conf not readable by user")
-    return problems
+    if ks.login and path not in ks.registered:
+        problems.append("no password registered on key server")
+    if not exists:
+        problems.append("does not exist on gateway (or not accessible to the user)")
+    elif not initialized:
+        problems.append("not a gocryptfs directory")
+    elif not readable:
+        problems.append("gocryptfs.conf not readable by the user")
+    return path, problems
 
 
 def finish(rep: Report, args: argparse.Namespace, writers: list[tuple[str, Writer]], done: str) -> None:
@@ -527,22 +537,33 @@ def has_privjail_state(user: str, ks: HostFacts, gw: HostFacts) -> bool:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
-    ks, gw = probe_both(args, args.users or None)
+    # two rounds: the gateway checks need the paths the key server knows about
+    ks = probe(args.key_server_ssh, "ks", args.users or None, args)
+    dirs = sorted(set(ks.registered) | {d for _, d in ks.grants})
+    gw = probe(args.gateway_ssh, "gw", args.users or None, args, dirs=dirs)
     rep = Report()
 
     if ks.login:
         print(f"key server {args.key_server_ssh}: "
-              + (f"listening on {args.key_server_port}" if ks.listening else f"NOT listening on {args.key_server_port}")
-              + f"; keys: {', '.join(ks.keys) or '(none)'}")
+              + (f"listening on {args.key_server_port}" if ks.listening else f"NOT listening on {args.key_server_port}"))
         if not ks.listening:
             rep.errors += 1
     else:
         print(f"key server {args.key_server_ssh}: ssh failed ({ks.error})")
-    if gw.login:
-        encs = ", ".join(n if ok else f"{n} (not initialized)" for n, ok in sorted(gw.encs.items()))
-        print(f"gateway    {args.gateway_ssh}: encrypted dirs: {encs or '(none)'}")
-    else:
-        print(f"gateway    {args.gateway_ssh}: ssh failed ({gw.error})")
+    print(f"gateway    {args.gateway_ssh}: " + ("reachable" if gw.login else f"ssh failed ({gw.error})"))
+
+    if ks.login:
+        print("\nencrypted dirs (passwords registered on the key server)")
+        if not ks.registered:
+            print("    (none)")
+        for d in ks.registered:
+            exists, initialized = gw.dirs.get(d, (False, False))
+            if not gw.login:
+                rep.item(d, "")
+            elif not exists:
+                rep.item(d, "does not exist on gateway", "warn")
+            else:
+                rep.item(d, "" if initialized else "not a gocryptfs directory", "ok" if initialized else "warn")
 
     names = args.users or sorted(u for u in set(ks.users) | set(gw.users) | {u for u, _ in ks.grants}
                                  if has_privjail_state(u, ks, gw))
@@ -597,8 +618,9 @@ def cmd_status(args: argparse.Namespace) -> None:
         if not granted:
             rep.item("grants", "none")
         for d in granted:
-            problems = dir_problems(d, user, ks, gw)
-            rep.item(f"grant {d}", "; ".join(problems) or "ok", "ng" if problems else "ok")
+            _, problems = dir_problems(d, user, ks, gw)
+            rep.item("grant", d + ("  (" + "; ".join(problems) + ")" if problems else ""),
+                     "ng" if problems else "ok")
 
     if rep.errors:
         sys.exit(1)
@@ -652,8 +674,6 @@ def cmd_add_user(args: argparse.Namespace) -> None:
                      "ok" if quote_ok else "ng")
 
             forced = f"{cmd} --key-server {args.key_server_host}:{args.key_server_port}"
-            if args.enc_root != DEFAULT_ENC_ROOT:
-                forced += f" --enc-root {args.enc_root}"
             gw_line = f'command="{forced}",no-pty,no-X11-forwarding,permitopen="localhost:*" {pubkey}'
             if gw_line in gf.authorized_keys:
                 rep.item("authorized_keys", f"present ({key.label})")
@@ -730,50 +750,66 @@ def cmd_remove_user(args: argparse.Namespace) -> None:
 # --------------------------------------------------------------------------
 # grant / revoke
 
+def check_path_arg(path: str) -> None:
+    err = path_error(path)
+    if err:
+        raise SystemExit(f"invalid directory {path!r}: {err}")
+
+
 def cmd_grant(args: argparse.Namespace) -> None:
-    user, dirname = args.user, args.dir
-    if not NAME_RE.match(dirname):
-        raise SystemExit(f"invalid directory name {dirname!r}")
-    ks, gw = probe_both(args, [user])
+    user, spec = args.user, args.path
+    check_path_arg(spec)
+    ks, gw = probe_both(args, [user], dirs=[spec])
     rep = Report()
     writer = Writer()
 
-    print(f"{user} -> {dirname}")
+    path, problems = dir_problems(spec, user, ks, gw)
+    print(f"{user} -> {path}")
     if not ks.login:
         rep.item("key server", ks.error, "ng")
     if not gw.login:
         rep.item("gateway", gw.error, "ng")
-    for problem in dir_problems(dirname, user, ks, gw):
-        rep.item("directory", problem, "ng")
-    if gw.login and not any(k.is_gateway_entry for k in key_lines(gw.users.get(user))):
+    elif not user_ready(rep, user, gw.users.get(user)):
+        pass
+    elif not any(k.is_gateway_entry for k in key_lines(gw.users.get(user))):
         rep.item("user", f"not added (run privjail-admin add-user {user} first)", "ng")
-    if ks.login:
-        if (user, dirname) in ks.grants:
+    for problem in problems:
+        rep.item("directory", problem, "ng")
+    if ks.login and path.startswith("/"):
+        if (user, path) in ks.grants:
             rep.item("grant", "already present")
         else:
             rep.item("grant", f"add to {args.ks_dir}/grants")
-            writer.put_own_file(f"{args.ks_dir}/grants", ks.grants_lines + [f"{user} {dirname}"])
+            writer.put_own_file(f"{args.ks_dir}/grants", ks.grants_lines + [f"{user} {path}"])
 
-    finish(rep, args, [(args.key_server_ssh, writer)], f"Granted {dirname} to '{user}'.")
+    finish(rep, args, [(args.key_server_ssh, writer)], f"Granted {path} to '{user}'.")
 
 
 def cmd_revoke(args: argparse.Namespace) -> None:
-    user, dirname = args.user, args.dir
-    ks = probe(args.key_server_ssh, "ks", [], args)
+    user, spec = args.user, args.path
+    check_path_arg(spec)
+    if spec.startswith("~/"):
+        ks, gw = probe_both(args, [user], dirs=[spec])   # to expand ~ as on the gateway
+        uf = gw.users.get(user)
+        if not (uf and spec in uf.dirs):
+            raise SystemExit(f"cannot expand {spec!r} for '{user}' on the gateway; give the absolute path")
+        path = uf.dirs[spec][0]
+    else:
+        ks, path = probe(args.key_server_ssh, "ks", [], args), spec
     rep = Report()
     writer = Writer()
 
-    print(f"{user} -> {dirname}")
+    print(f"{user} -> {path}")
     if not ks.login:
         rep.item("key server", ks.error, "ng")
-    elif (user, dirname) not in ks.grants:
+    elif (user, path) not in ks.grants:
         rep.item("grant", "not present")
     else:
         rep.item("grant", f"remove from {args.ks_dir}/grants")
-        writer.put_own_file(f"{args.ks_dir}/grants", without_grants(ks.grants_lines, {(user, dirname)}))
+        writer.put_own_file(f"{args.ks_dir}/grants", without_grants(ks.grants_lines, {(user, path)}))
 
     finish(rep, args, [(args.key_server_ssh, writer)],
-           f"Revoked {dirname} from '{user}' (a session already running keeps its mount until it ends).")
+           f"Revoked {path} from '{user}' (a session already running keeps its mount until it ends).")
 
 
 # --------------------------------------------------------------------------
@@ -804,10 +840,8 @@ def add_common_args(parser: argparse.ArgumentParser, dry_run: bool = True) -> No
                         help=f"key server as [host][:port]; defaults to "
                              f"{DEFAULT_KEY_SERVER_HOST}:{DEFAULT_KEY_SERVER_PORT}")
     parser.add_argument("--ks-dir", default=DEFAULT_KS_DIR,
-                        help="key server state directory (keys/, grants), as given to privjail-keyserver "
+                        help="key server state directory (passwords, grants), as given to privjail-keyserver "
                              "--state-dir; '~' is the operator's home there")
-    parser.add_argument("--enc-root", default=DEFAULT_ENC_ROOT,
-                        help="directory on the gateway holding the encrypted directories")
     parser.add_argument("--adm-user", default=None,
                         help="SSH username used to administer both hosts; defaults to the current user")
     parser.add_argument("--gateway-adm-user", default=None, help="SSH username for the gateway; defaults to --adm-user")
@@ -849,13 +883,13 @@ def main() -> None:
 
     p = subparser("grant", "let a user mount an encrypted directory")
     p.add_argument("user", help="OS account name")
-    p.add_argument("dir", help="encrypted directory name (as under --enc-root and <ks-dir>/keys)")
+    p.add_argument("path", help="encrypted directory on the gateway: absolute, or ~/... in the user's home")
     add_common_args(p)
     p.set_defaults(func=cmd_grant)
 
     p = subparser("revoke", "take back a user's access to an encrypted directory")
     p.add_argument("user", help="OS account name")
-    p.add_argument("dir", help="encrypted directory name")
+    p.add_argument("path", help="encrypted directory on the gateway: absolute, or ~/... in the user's home")
     add_common_args(p)
     p.set_defaults(func=cmd_revoke)
 
