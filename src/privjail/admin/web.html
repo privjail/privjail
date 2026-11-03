@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>privjail-admin</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676; --line: #d9dde4;
+    --accent: #2457c5; --accent-text: #ffffff; --ok: #1f7a3a; --warn: #9a6400; --ng: #b42318;
+    --code: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #9aa3b2; --line: #313743;
+      --accent: #6f9bff; --accent-text: #0d1117; --ok: #5bc77a; --warn: #e3b341; --ng: #ff7b72;
+      --code: #232833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 2px 0 18px; }
+  section, details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+                     padding: 14px 16px; margin-bottom: 16px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .cards section { margin: 0; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  input, textarea { display: block; width: 100%; margin-top: 3px; padding: 6px 8px; font: 14px ui-monospace, monospace;
+                    color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  textarea { resize: vertical; min-height: 64px; }
+  .hint { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+  .buttons { display: flex; gap: 8px; margin-top: 4px; }
+  button { padding: 6px 14px; font: inherit; font-size: 14px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  button.run { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .5; cursor: progress; }
+  pre.cmd { background: var(--code); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 0 0 10px;
+            font: 13px ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+  .report { font: 13px/1.6 ui-monospace, monospace; overflow-x: auto; }
+  .report .line { white-space: pre-wrap; min-height: 1.6em; }
+  .report .item { display: grid; grid-template-columns: 1.5em minmax(10em, 16em) 1fr; gap: 6px; }
+  .report .item .value { word-break: break-all; }
+  .mark-ok { color: var(--ok); } .mark-warn { color: var(--warn); font-weight: 700; }
+  .mark-ng { color: var(--ng); font-weight: 700; }
+  .item.ng .value { color: var(--ng); } .item.warn .value { color: var(--warn); }
+  .outcome { margin-top: 10px; font-weight: 600; }
+  .outcome.problems, .error { color: var(--ng); } .outcome.done { color: var(--ok); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>privjail-admin</h1>
+  <p class="sub">Who may use the PrivJail gateway, and on which encrypted directories. Each button runs the
+    same <code>privjail-admin</code> command as the CLI; the command line is shown with the result.</p>
+
+  <details id="settings">
+    <summary>Hosts and admin accounts (blank = default)</summary>
+    <div class="grid" style="margin-top: 12px">
+      <label>Gateway (ssh alias) <input data-common="gateway"></label>
+      <label>Key server [host][:port] <input data-common="key_server"></label>
+      <label>Key server state dir <input data-common="ks_dir"></label>
+      <label>Admin account (both hosts) <input data-common="adm_user"></label>
+      <label>Admin account on gateway <input data-common="gateway_adm_user"></label>
+      <label>Admin account on key server <input data-common="key_server_adm_user"></label>
+    </div>
+  </details>
+
+  <section>
+    <div class="bar"><h2>Status</h2><button id="refresh">Refresh</button></div>
+    <div id="status" class="report muted">Loading…</div>
+  </section>
+
+  <div class="cards">
+    <section data-command="add-user">
+      <h2>Add user</h2>
+      <label>OS account (exists on both hosts) <input data-field="user" placeholder="data-user"></label>
+      <label>User's SSH public key <textarea data-field="pubkey" placeholder="ssh-ed25519 AAAA… name"></textarea></label>
+      <div class="hint">Paste the .pub line; its comment identifies the key later.</div>
+      <details style="padding: 0; border: 0; margin: 0 0 8px"><summary class="muted" style="font-weight: 400">More options</summary>
+        <label>privjail-gateway path on the gateway <input data-field="privjail_gateway_cmd" placeholder="/opt/privjail/.venv/bin/privjail-gateway"></label>
+        <label>Key server address seen from the gateway <input data-field="key_server_hostname" placeholder="(from your ssh config)"></label>
+      </details>
+      <div class="buttons"><button data-dry>Dry run</button><button class="run">Run</button></div>
+    </section>
+
+    <section data-command="grant">
+      <h2>Grant directory</h2>
+      <label>OS account <input data-field="user" placeholder="data-user"></label>
+      <label>Encrypted directory on the gateway <input data-field="path" placeholder="~/data_enc"></label>
+      <div class="hint">Absolute, or ~/… in the user's home on the gateway.</div>
+      <div class="buttons"><button data-dry>Dry run</button><button class="run">Run</button></div>
+    </section>
+
+    <section data-command="revoke">
+      <h2>Revoke directory</h2>
+      <label>OS account <input data-field="user" placeholder="data-user"></label>
+      <label>Encrypted directory on the gateway <input data-field="path" placeholder="~/data_enc"></label>
+      <div class="hint">Applies from the user's next session.</div>
+      <div class="buttons"><button data-dry>Dry run</button><button class="run">Run</button></div>
+    </section>
+
+    <section data-command="remove-user">
+      <h2>Remove user</h2>
+      <label>OS account <input data-field="user" placeholder="data-user"></label>
+      <label>Only the key matching (optional) <input data-field="match" placeholder="e.g. the key's comment"></label>
+      <div class="hint">With the last key, also removes the sudoers entry, ssh config block and grants.</div>
+      <div class="buttons"><button data-dry>Dry run</button><button class="run">Run</button></div>
+    </section>
+  </div>
+
+  <section id="result-panel" style="margin-top: 16px" hidden>
+    <h2 id="result-title">Result</h2>
+    <pre class="cmd" id="result-cmd"></pre>
+    <div id="result" class="report"></div>
+  </section>
+</main>
+
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const STORE = "privjail-admin-web-common";
+
+function load() { try { return JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { return {}; } }
+function save() {
+  const v = {}; $$("[data-common]").forEach(i => { v[i.dataset.common] = i.value; });
+  try { localStorage.setItem(STORE, JSON.stringify(v)); } catch {}
+}
+function common() {
+  const v = {}; $$("[data-common]").forEach(i => { if (i.value.trim()) v[i.dataset.common] = i.value.trim(); });
+  return v;
+}
+
+function render(target, data) {
+  target.replaceChildren();
+  target.classList.remove("muted");
+  if (data.error) {
+    const d = document.createElement("div"); d.className = "error"; d.textContent = data.error;
+    target.append(d); return;
+  }
+  for (const e of data.entries) {
+    const row = document.createElement("div");
+    if (e.kind === "line") { row.className = "line"; row.textContent = e.text; }
+    else {
+      row.className = "item " + e.level;
+      const mark = document.createElement("span");
+      mark.className = "mark-" + e.level; mark.textContent = { ok: "", warn: "!", ng: "x" }[e.level];
+      const label = document.createElement("span"); label.textContent = e.label;
+      const value = document.createElement("span"); value.className = "value"; value.textContent = e.value;
+      row.append(mark, label, value);
+    }
+    target.append(row);
+  }
+}
+
+async function call(command, fields, dryRun) {
+  const res = await fetch("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Privjail-Admin": "1" },
+    body: JSON.stringify({ command, fields, common: common(), dry_run: dryRun }),
+  });
+  try { return await res.json(); } catch { return { error: `HTTP ${res.status}` }; }
+}
+
+function busy(on) { $$("button").forEach(b => { b.disabled = on; }); }
+
+async function refresh() {
+  busy(true); $("#status").textContent = "Checking both hosts…"; $("#status").classList.add("muted");
+  try { render($("#status"), await call("status", {}, false)); }
+  catch (err) { render($("#status"), { error: String(err) }); }
+  finally { busy(false); }
+}
+
+async function runCard(card, dryRun) {
+  const command = card.dataset.command;
+  const fields = {}; $$("[data-field]", card).forEach(i => { fields[i.dataset.field] = i.value; });
+  if (!dryRun && !confirm(`Run ${command} for real? This changes the key server and/or the gateway.`)) return;
+  busy(true);
+  $("#result-panel").hidden = false;
+  $("#result-title").textContent = `${command}${dryRun ? " (dry run)" : ""}`;
+  $("#result-cmd").textContent = "…"; $("#result").replaceChildren();
+  let data;
+  try { data = await call(command, fields, dryRun); } catch (err) { data = { error: String(err) }; }
+  busy(false);
+  $("#result-cmd").textContent = data.command || "";
+  render($("#result"), data);
+  if (data.outcome) {
+    const o = document.createElement("div");
+    o.className = "outcome " + data.outcome;
+    o.textContent = { problems: "Problems found; nothing changed.", nothing: "Nothing to change.",
+                      "dry-run": "Dry run: nothing changed.", done: "Done." }[data.outcome] || data.outcome;
+    $("#result").append(o);
+  }
+  $("#result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (data.outcome === "done") refresh();
+}
+
+(async function init() {
+  const saved = load();
+  let defaults = {};
+  try { defaults = await (await fetch("/api/defaults")).json(); } catch {}
+  $$("[data-common]").forEach(i => {
+    i.placeholder = defaults[i.dataset.common] || "(current user)";
+    i.value = saved[i.dataset.common] || "";
+    i.addEventListener("change", save);
+  });
+  $$("[data-command]").forEach(card => {
+    $("[data-dry]", card).addEventListener("click", () => runCard(card, true));
+    $("button.run", card).addEventListener("click", () => runCard(card, false));
+  });
+  $("#refresh").addEventListener("click", refresh);
+  refresh();
+})();
+</script>
+</body>
+</html>
