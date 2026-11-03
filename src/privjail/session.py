@@ -37,7 +37,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional, Sequence
 
 from egrpc import connect as _egrpc_connect, disconnect as _egrpc_disconnect
 
@@ -161,13 +161,32 @@ def spawn_session(port: int = 0, timeout: float = 10.0) -> Session:
     return Session(port=assigned_port, close_fn=_close)
 
 
-def gateway_session(host: str, local_port: int, timeout: float = 30.0) -> Session:
+_DIR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def gateway_session(host: str, local_port: int,
+                    dirs: Sequence[str] | Mapping[str, str] = (),
+                    timeout: float = 60.0) -> Session:
     """Mode 3b: launch the gateway over ssh (attestation, mount,
     dataserver), tunnel a local port to it, and connect. close() asks the
     remote server to shut down, disconnects, and tears down both ssh
-    processes."""
+    processes.
+
+    `dirs` names the encrypted directories to use, as granted by the data
+    owner: ["adult"] makes directory adult visible as "adult/...", and
+    {"mydata": "adult"} makes it visible as "mydata/..." instead."""
+    pairs = list(dirs.items()) if isinstance(dirs, Mapping) else [(d, d) for d in dirs]
+    if not pairs:
+        raise ValueError("gateway_session needs at least one directory in `dirs`")
+    words = []
+    for name, dirname in pairs:
+        if not (_DIR_NAME_RE.match(name) and _DIR_NAME_RE.match(dirname)):
+            raise ValueError(f"invalid directory name: {name!r} -> {dirname!r}")
+        words.append(name if name == dirname else f"{name}={dirname}")
     gateway_proc = subprocess.Popen(
-        ["ssh", host],
+        ["ssh", host, *words],
+        # kept open for the session: the gateway shuts down when it closes
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -184,7 +203,13 @@ def gateway_session(host: str, local_port: int, timeout: float = 30.0) -> Sessio
             _shutdown_and_disconnect()
         finally:
             tunnel_proc.terminate()
-            if gateway_proc.poll() is None:
+            # closing stdin ends the remote session; give the gateway a moment
+            # to stop the dataserver and unmount before cutting the connection
+            if gateway_proc.stdin is not None:
+                gateway_proc.stdin.close()
+            try:
+                gateway_proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
                 gateway_proc.terminate()
 
     return Session(port=local_port, close_fn=_close)
