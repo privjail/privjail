@@ -1,12 +1,12 @@
 """dataserver.py -- brings up the privjail server-side process, listening
 for privjail clients on the given port.
 
-  python -m privjail.server.dataserver [PORT] [--root MOUNT PATH ...]
+  python -m privjail.server.dataserver [PORT] [--root DIR REAL CANONICAL ...]
 
-With --root (as launched by spawn_session / gateway.py), PATH appears to the
-client as its absolute local directory MOUNT, and only files under the
-mounts can be opened (see privjail.datapath); without it, paths are used as
-given.
+With --root (as launched by spawn_session / gateway.py), clients may open
+files only under the given DIRs (the directories they mounted, as they name
+them); DIR is actually found at REAL, and named CANONICAL for budget
+accounting (see privjail.datapath). Without it, paths are used as given.
 """
 import argparse
 import io
@@ -21,14 +21,11 @@ def main() -> None:
         sys.stdout.reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("port", type=int, nargs="?", default=0, help="port to listen on (0 = any)")
-    parser.add_argument("--root", action="append", nargs=2, default=None, metavar=("MOUNT", "PATH"),
-                        help="expose directory PATH to clients as their absolute path MOUNT (repeatable)")
+    parser.add_argument("--root", action="append", nargs=3, default=None, metavar=("DIR", "REAL", "CANONICAL"),
+                        help="let clients open files under DIR, found at REAL, named CANONICAL (repeatable)")
     args = parser.parse_args()
     if args.root is not None:
-        for mount, _ in args.root:
-            if not mount.startswith("/"):
-                parser.error(f"--root MOUNT must be absolute, got {mount!r}")
-        set_roots(dict(args.root))
+        set_roots({d: (real, canon) for d, real, canon in args.root})
     pj.serve(args.port)
 
 

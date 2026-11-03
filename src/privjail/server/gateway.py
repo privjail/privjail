@@ -1,9 +1,9 @@
 """gateway.py -- runs on the gateway host as the forced command of a
 privjail user's ssh key (see privjail-admin add-user). The client
-(privjail.gateway_session) runs `ssh <gateway> MOUNT=PATH ...`; each word asks
-for the encrypted directory at PATH (absolute, or ~/... in this user's home)
-to appear as the client's local directory MOUNT (an absolute path on the
-client; see privjail.datapath). For this session it:
+(privjail.gateway_session) runs `ssh <gateway> PATH ...`; each word asks
+for the encrypted directory at PATH (absolute, or ~/... in this user's home).
+Where the client mounts it locally is the client's business (see
+privjail.datapath); it sends paths under PATH. For this session it:
 
   1. opens an ssh tunnel to the key server (authenticated with the user's
      forwarded agent), whose local end is a Unix socket only this user can
@@ -13,8 +13,9 @@ client; see privjail.datapath). For this session it:
      key server releases it only if this user is granted PATH;
   3. mounts PATH read-only at a private, per-session mount point
      (--mnt-root/<pid>/<n>, never shown to the client);
-  4. runs the privjail dataserver with the MOUNT -> mount point table, so the
-     client opens "MOUNT/file" and nothing outside the table;
+  4. runs the privjail dataserver with the PATH -> mount point table, so the
+     client opens "PATH/file" and nothing outside the table (budgets are
+     named by PATH with ~ expanded);
   5. when the dataserver exits, or the ssh session ends (EOF on stdin), stops
      the dataserver and unmounts everything it mounted.
 
@@ -45,18 +46,13 @@ def log(msg: str) -> None:
 
 
 def parse_requests(words: list[str], home: str) -> dict[str, str]:
-    """["/c/data=~/enc"] -> {"/c/data": "<home>/enc"} (client mount -> gateway path)"""
+    """["~/enc", "/srv/x"] -> {"~/enc": "<home>/enc", "/srv/x": "/srv/x"} (as asked -> absolute)"""
     requests: dict[str, str] = {}
-    for word in words:
-        mount, sep, path = word.rpartition("=")   # PATH never contains "="
+    for path in words:
         err = path_error(path)
-        if not sep or err:
-            raise SystemExit(f"[gateway] invalid request {word!r}: {err or 'expected MOUNT=PATH'}")
-        if not mount.startswith("/") or os.path.normpath(mount) != mount or "\0" in mount:
-            raise SystemExit(f"[gateway] invalid mount point {mount!r}: must be a normalized absolute path")
-        if mount in requests:
-            raise SystemExit(f"[gateway] mount point {mount!r} used twice")
-        requests[mount] = expand(path, home)
+        if err:
+            raise SystemExit(f"[gateway] invalid directory {path!r}: {err}")
+        requests[path] = expand(path, home)
     return requests
 
 
@@ -170,7 +166,7 @@ def main() -> None:
     words = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", "")) or args.dirs
     requests = parse_requests(words, os.path.expanduser("~"))
     if not requests:
-        raise SystemExit("[gateway] no directory requested (e.g. `ssh <gateway> /home/me/data=~/data_enc`)")
+        raise SystemExit("[gateway] no directory requested (e.g. `ssh <gateway> ~/data_enc`)")
 
     mnt_root = os.path.expanduser(args.mnt_root)
     os.makedirs(mnt_root, mode=0o700, exist_ok=True)
@@ -179,7 +175,7 @@ def main() -> None:
     session_dir = os.path.join(mnt_root, str(os.getpid()))
     os.makedirs(session_dir, mode=0o700)
 
-    roots: dict[str, str] = {}
+    roots: dict[str, tuple[str, str]] = {}
     try:
         tunnel = KeyServerTunnel(*parse_key_server(args.key_server),
                                  sock_path=os.path.join(mnt_root, f".ks-{os.getpid()}.sock"))
@@ -194,13 +190,13 @@ def main() -> None:
                 log(f"mounted {dirpath}")
         finally:
             tunnel.close()
-        for name, dirpath in requests.items():
-            roots[name] = mounts[dirpath]
+        for asked, dirpath in requests.items():
+            roots[asked] = (mounts[dirpath], dirpath)
 
-        log("launching the data server for " + ", ".join(f"{name}={p}" for name, p in requests.items()))
+        log("launching the data server for " + ", ".join(requests))
         server = subprocess.Popen(
             [sys.executable, "-m", "privjail.server.dataserver", str(args.port),
-             *[x for mount, path in roots.items() for x in ("--root", mount, path)]],
+             *[x for asked, (real, canon) in roots.items() for x in ("--root", asked, real, canon)]],
             stdin=subprocess.DEVNULL,
         )
 
