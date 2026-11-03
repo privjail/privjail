@@ -26,6 +26,7 @@ from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAcco
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
+from ..datapath import resolve as resolve_datapath
 
 T = TypeVar("T")
 
@@ -37,10 +38,10 @@ def read_csv(filepath     : str,
              budget_limit : BudgetType | None = None,
              ) -> PrivDataFrame:
     # TODO: more vaildation for the input data
-    df = _pd.read_csv(filepath)
+    df = _pd.read_csv(resolve_datapath(filepath))
 
     if schemapath is not None:
-        with open(schemapath, "r") as f:
+        with open(resolve_datapath(schemapath), "r") as f:
             schema = json.load(f)
     else:
         schema = dict()

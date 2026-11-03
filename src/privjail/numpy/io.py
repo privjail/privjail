@@ -25,6 +25,7 @@ from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .array import PrivNDArray
 from .domain import NDArrayDomain
+from ..datapath import resolve as resolve_datapath
 
 def _find_privacy_axis(shape: list[int | None] | None) -> int:
     if shape is None:
@@ -41,11 +42,11 @@ def load(file         : str,
          accountant   : str | None        = "approx",
          budget_limit : BudgetType | None = None,
          ) -> dict[str, PrivNDArray | _npt.NDArray[Any]]:
-    npz_file = _np.load(file)
+    npz_file = _np.load(resolve_datapath(file))
 
     schema: dict[str, Any] = {}
     if schema_path is not None:
-        with open(schema_path, "r") as f:
+        with open(resolve_datapath(schema_path), "r") as f:
             schema = json.load(f)
 
     acc: Accountant[Any]
