@@ -64,6 +64,23 @@ def get_quote_privileged(nonce: bytes) -> bytes:
     return proc.stdout
 
 
+def tunnel_failure_hint(host: str, returncode: int) -> str:
+    """Extra lines after ssh's own message, for the common causes."""
+    if returncode != 255:   # 255: ssh itself failed (connection or authentication)
+        return ""
+    user = os.environ.get("USER") or "this user"
+    if not os.environ.get("SSH_AUTH_SOCK"):
+        why = ("no ssh-agent was forwarded to this session (SSH_AUTH_SOCK is not set): on the "
+               "user's PC, connect with `ForwardAgent yes` and have the key loaded in ssh-agent "
+               "(ssh-add, or `AddKeysToAgent yes`)")
+    else:
+        why = (f"if ssh said \"Permission denied (publickey)\" above: the forwarded ssh-agent "
+               f"does not hold the key registered for {user} on the key server -- on the user's "
+               f"PC, load it (ssh-add, or `AddKeysToAgent yes`); the owner registers it with "
+               f"`privjail-admin add-user`")
+    return f"\n[gateway] hint: logging in to the key server ({host}) as {user} uses the user's forwarded ssh-agent; {why}"
+
+
 class KeyServerTunnel:
     """`ssh -N -L <private unix socket>:localhost:<port> <host>`."""
 
@@ -72,6 +89,9 @@ class KeyServerTunnel:
         if os.path.exists(sock_path):
             os.unlink(sock_path)
         log(f"opening ssh tunnel to {host}:{port}")
+        # ssh's own stderr is deliberately not captured: its message (e.g.
+        # "Permission denied (publickey).") goes to the client as is, and
+        # tunnel_failure_hint() only adds an explanation after it
         self.proc = subprocess.Popen(
             ["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "BatchMode=yes",
              "-L", f"{sock_path}:localhost:{port}", host],
@@ -80,7 +100,8 @@ class KeyServerTunnel:
         deadline = time.monotonic() + timeout
         while not os.path.exists(sock_path):
             if self.proc.poll() is not None:
-                raise RuntimeError(f"ssh tunnel to {host} exited early (code {self.proc.returncode})")
+                raise RuntimeError(f"ssh tunnel to {host} exited early (code {self.proc.returncode})"
+                                   + tunnel_failure_hint(host, self.proc.returncode))
             if time.monotonic() > deadline:
                 self.close()
                 raise TimeoutError(f"timed out waiting for ssh tunnel to {host}:{port}")
