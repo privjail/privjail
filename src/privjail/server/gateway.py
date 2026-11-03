@@ -1,17 +1,18 @@
 """gateway.py -- runs on the gateway host as the forced command of a
 privjail user's ssh key (see privjail-admin add-user). The client
-(privjail.gateway_session) runs `ssh <gateway> NAME=DIR ...`; each word asks
-for encrypted directory DIR (under --enc-root) to be visible as NAME
-(a bare DIR means DIR=DIR). For this session it:
+(privjail.gateway_session) runs `ssh <gateway> NAME=PATH ...`; each word asks
+for the encrypted directory at PATH (absolute, or ~/... in this user's home)
+to be visible as NAME (a bare PATH means NAME is its last component). For
+this session it:
 
   1. opens an ssh tunnel to the key server (authenticated with the user's
      forwarded agent), whose local end is a Unix socket only this user can
      use;
-  2. for each requested DIR, proves via TDX remote attestation that it runs
-     inside a genuine TDX VM and receives DIR's gocryptfs password -- the
-     key server releases it only if this user is granted DIR;
-  3. mounts DIR read-only at a private, per-session mount point
-     (--mnt-root/<pid>/DIR, never shown to the client);
+  2. for each requested PATH, proves via TDX remote attestation that it runs
+     inside a genuine TDX VM and receives PATH's gocryptfs password -- the
+     key server releases it only if this user is granted PATH;
+  3. mounts PATH read-only at a private, per-session mount point
+     (--mnt-root/<pid>/<n>, never shown to the client);
   4. runs the privjail dataserver with the NAME -> mount point table, so the
      client opens "NAME/file" and nothing outside the table;
   5. when the dataserver exits, or the ssh session ends (EOF on stdin), stops
@@ -24,7 +25,6 @@ privjail-admin add-user allows in sudoers.
 """
 import argparse
 import os
-import re
 import shlex
 import signal
 import socket
@@ -33,30 +33,32 @@ import sys
 import threading
 import time
 
+from privjail.dirspec import NAME_RE, default_name, expand, path_error
 from privjail.server.attestation.net import read_full, recv_frame, send_frame
 from privjail.server.attestation.quote import REPORTDATA_LEN
 
 MAX_RESPONSE_LEN = 1 << 20
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def log(msg: str) -> None:
     print(f"[gateway] {msg}", flush=True)
 
 
-def parse_requests(words: list[str]) -> dict[str, str]:
-    """["mydata=adult", "medical"] -> {"mydata": "adult", "medical": "medical"}"""
+def parse_requests(words: list[str], home: str) -> dict[str, str]:
+    """["mydata=~/enc", "/srv/x"] -> {"mydata": "<home>/enc", "x": "/srv/x"}"""
     requests: dict[str, str] = {}
     for word in words:
-        name, sep, dirname = word.partition("=")
+        name, sep, path = word.partition("=")
         if not sep:
-            dirname = name
-        for x in (name, dirname):
-            if not NAME_RE.match(x):
-                raise SystemExit(f"[gateway] invalid name {x!r} in {word!r}")
+            name, path = default_name(word), word
+        err = path_error(path)
+        if err:
+            raise SystemExit(f"[gateway] invalid directory {path!r}: {err}")
+        if not NAME_RE.match(name):
+            raise SystemExit(f"[gateway] invalid name {name!r} in {word!r}")
         if name in requests:
-            raise SystemExit(f"[gateway] {name!r} requested twice")
-        requests[name] = dirname
+            raise SystemExit(f"[gateway] name {name!r} used twice")
+        requests[name] = expand(path, home)
     return requests
 
 
@@ -90,10 +92,10 @@ class KeyServerTunnel:
                 raise TimeoutError(f"timed out waiting for ssh tunnel to {host}:{port}")
             time.sleep(0.1)
 
-    def request_key(self, dirname: str) -> bytes:
+    def request_key(self, dirpath: str) -> bytes:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.connect(self.sock_path)
-            send_frame(sock, dirname.encode())
+            send_frame(sock, dirpath.encode())
             if read_full(sock, 1)[0] != 1:
                 raise PermissionError(recv_frame(sock, MAX_RESPONSE_LEN).decode(errors="replace"))
             nonce = read_full(sock, REPORTDATA_LEN)
@@ -162,17 +164,15 @@ def main() -> None:
                         help="for local testing; over ssh, the words come from the client's command")
     parser.add_argument("--key-server", default="privjail-ks:9443",
                         help="key server as host[:port]; reached via an ssh tunnel (default: privjail-ks:9443)")
-    parser.add_argument("--enc-root", default="/srv/privjail/enc",
-                        help="directory holding the encrypted directories (default: /srv/privjail/enc)")
     parser.add_argument("--mnt-root", default="~/.privjail/mnt",
                         help="where per-session mount points are made (default: ~/.privjail/mnt)")
     parser.add_argument("--port", type=int, default=0, help="dataserver port (default: any free port)")
     args = parser.parse_args()
 
     words = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", "")) or args.dirs
-    requests = parse_requests(words)
+    requests = parse_requests(words, os.path.expanduser("~"))
     if not requests:
-        raise SystemExit("[gateway] no directory requested (e.g. `ssh <gateway> mydata=adult`)")
+        raise SystemExit("[gateway] no directory requested (e.g. `ssh <gateway> mydata=~/data_enc`)")
 
     mnt_root = os.path.expanduser(args.mnt_root)
     os.makedirs(mnt_root, mode=0o700, exist_ok=True)
@@ -186,20 +186,20 @@ def main() -> None:
         tunnel = KeyServerTunnel(*parse_key_server(args.key_server),
                                  sock_path=os.path.join(mnt_root, f".ks-{os.getpid()}.sock"))
         try:
-            for dirname in sorted(set(requests.values())):
-                mount_point = os.path.join(session_dir, dirname)
-                password = tunnel.request_key(dirname)
+            mounts: dict[str, str] = {}
+            for i, dirpath in enumerate(sorted(set(requests.values()))):
+                mount_point = os.path.join(session_dir, str(i))
+                password = tunnel.request_key(dirpath)
                 os.makedirs(mount_point, mode=0o700)
-                subprocess.run(["gocryptfs", "-ro", "-q", os.path.join(args.enc_root, dirname), mount_point],
-                               input=password, check=True)
-                log(f"mounted {dirname}")
+                subprocess.run(["gocryptfs", "-ro", "-q", dirpath, mount_point], input=password, check=True)
+                mounts[dirpath] = mount_point
+                log(f"mounted {dirpath}")
         finally:
             tunnel.close()
-        for name, dirname in requests.items():
-            roots[name] = os.path.join(session_dir, dirname)
+        for name, dirpath in requests.items():
+            roots[name] = mounts[dirpath]
 
-        log("launching the data server for " + ", ".join(
-            name if name == d else f"{name}={d}" for name, d in requests.items()))
+        log("launching the data server for " + ", ".join(f"{name}={p}" for name, p in requests.items()))
         server = subprocess.Popen(
             [sys.executable, "-m", "privjail.server.dataserver", str(args.port),
              *[f"--root={name}={path}" for name, path in roots.items()]],

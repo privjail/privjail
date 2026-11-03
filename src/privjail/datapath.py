@@ -2,8 +2,8 @@
 
 By default paths are used as given (local mode, or a dataserver someone
 started by hand). A dataserver launched by the gateway instead gets a table
-of names, e.g. {"mydata": "/home/u/.privjail/mnt/1234/adult"}: the client
-then says "mydata/adult_train.csv", and only paths below one of those names
+of names, e.g. {"mydata": "/home/u/.privjail/mnt/1234/0"}: the client
+then says "mydata/train.csv", and only paths below one of those names
 can be opened -- absolute paths, "..", and unknown first components are
 refused. The real mount points are never shown to the client.
 """
