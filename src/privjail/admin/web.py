@@ -41,6 +41,8 @@ COMMANDS: dict[str, dict[str, Any]] = {   # positional fields, option fields
     "remove-user": {"positional": ["user"], "options": {"match": "--match"}},
     "grant": {"positional": ["user", "path"], "options": {}},
     "revoke": {"positional": ["user", "path"], "options": {}},
+    "add-dir": {"positional": ["path"], "options": {"owner": "--owner"}},
+    "remove-dir": {"positional": ["path"], "options": {}},
 }
 HEADER = "X-Privjail-Admin"
 
@@ -90,6 +92,22 @@ def run_request(req: dict[str, Any]) -> dict[str, Any]:
                 f.write(key + "\n")
             argv += ["--user-pubkey", key_file]
             shown += ["--user-pubkey", "USER_KEY.pub"]
+        if command == "add-dir":
+            if fields.get("existing") is True:
+                argv.append("--existing")
+                shown.append("--existing")
+            password = fields.get("password", "")
+            if not isinstance(password, str):
+                raise UsageError("password must be a string")
+            if password:   # never shown, never kept: a private temp file, gone with tmp
+                pass_file = os.path.join(tmp, "dir.pass")
+                fd = os.open(pass_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    f.write(password + "\n")
+                argv += ["--dir-passfile", pass_file]
+                shown += ["--dir-passfile", "PASSFILE"]
+            elif fields.get("existing") is True:
+                raise UsageError("the directory's gocryptfs password is required with --existing")
         if command != "status" and req.get("dry_run", True):
             argv.append("--dry-run")
             shown.append("--dry-run")
