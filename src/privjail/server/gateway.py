@@ -1,9 +1,9 @@
 """gateway.py -- runs on the gateway host as the forced command of a
 privjail user's ssh key (see privjail-admin add-user). The client
-(privjail.gateway_session) runs `ssh <gateway> NAME=PATH ...`; each word asks
+(privjail.gateway_session) runs `ssh <gateway> MOUNT=PATH ...`; each word asks
 for the encrypted directory at PATH (absolute, or ~/... in this user's home)
-to be visible as NAME (a bare PATH means NAME is its last component). For
-this session it:
+to appear as the client's local directory MOUNT (an absolute path on the
+client; see privjail.datapath). For this session it:
 
   1. opens an ssh tunnel to the key server (authenticated with the user's
      forwarded agent), whose local end is a Unix socket only this user can
@@ -13,8 +13,8 @@ this session it:
      key server releases it only if this user is granted PATH;
   3. mounts PATH read-only at a private, per-session mount point
      (--mnt-root/<pid>/<n>, never shown to the client);
-  4. runs the privjail dataserver with the NAME -> mount point table, so the
-     client opens "NAME/file" and nothing outside the table;
+  4. runs the privjail dataserver with the MOUNT -> mount point table, so the
+     client opens "MOUNT/file" and nothing outside the table;
   5. when the dataserver exits, or the ssh session ends (EOF on stdin), stops
      the dataserver and unmounts everything it mounted.
 
@@ -33,7 +33,7 @@ import sys
 import threading
 import time
 
-from privjail.dirspec import NAME_RE, default_name, expand, path_error
+from privjail.dirspec import expand, path_error
 from privjail.server.attestation.net import read_full, recv_frame, send_frame
 from privjail.server.attestation.quote import REPORTDATA_LEN
 
@@ -45,20 +45,18 @@ def log(msg: str) -> None:
 
 
 def parse_requests(words: list[str], home: str) -> dict[str, str]:
-    """["mydata=~/enc", "/srv/x"] -> {"mydata": "<home>/enc", "x": "/srv/x"}"""
+    """["/c/data=~/enc"] -> {"/c/data": "<home>/enc"} (client mount -> gateway path)"""
     requests: dict[str, str] = {}
     for word in words:
-        name, sep, path = word.partition("=")
-        if not sep:
-            name, path = default_name(word), word
+        mount, sep, path = word.rpartition("=")   # PATH never contains "="
         err = path_error(path)
-        if err:
-            raise SystemExit(f"[gateway] invalid directory {path!r}: {err}")
-        if not NAME_RE.match(name):
-            raise SystemExit(f"[gateway] invalid name {name!r} in {word!r}")
-        if name in requests:
-            raise SystemExit(f"[gateway] name {name!r} used twice")
-        requests[name] = expand(path, home)
+        if not sep or err:
+            raise SystemExit(f"[gateway] invalid request {word!r}: {err or 'expected MOUNT=PATH'}")
+        if not mount.startswith("/") or os.path.normpath(mount) != mount or "\0" in mount:
+            raise SystemExit(f"[gateway] invalid mount point {mount!r}: must be a normalized absolute path")
+        if mount in requests:
+            raise SystemExit(f"[gateway] mount point {mount!r} used twice")
+        requests[mount] = expand(path, home)
     return requests
 
 
@@ -172,7 +170,7 @@ def main() -> None:
     words = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", "")) or args.dirs
     requests = parse_requests(words, os.path.expanduser("~"))
     if not requests:
-        raise SystemExit("[gateway] no directory requested (e.g. `ssh <gateway> mydata=~/data_enc`)")
+        raise SystemExit("[gateway] no directory requested (e.g. `ssh <gateway> /home/me/data=~/data_enc`)")
 
     mnt_root = os.path.expanduser(args.mnt_root)
     os.makedirs(mnt_root, mode=0o700, exist_ok=True)
@@ -202,7 +200,7 @@ def main() -> None:
         log("launching the data server for " + ", ".join(f"{name}={p}" for name, p in requests.items()))
         server = subprocess.Popen(
             [sys.executable, "-m", "privjail.server.dataserver", str(args.port),
-             *[f"--root={name}={path}" for name, path in roots.items()]],
+             *[x for mount, path in roots.items() for x in ("--root", mount, path)]],
             stdin=subprocess.DEVNULL,
         )
 

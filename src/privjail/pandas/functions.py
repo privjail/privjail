@@ -26,12 +26,12 @@ from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAcco
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
-from ..datapath import resolve as resolve_datapath
+from ..datapath import resolve as resolve_datapath, to_request_path
 
 T = TypeVar("T")
 
 @egrpc.function
-def read_csv(filepath     : str,
+def _read_csv(filepath     : str,
              schemapath   : str | None        = None,
              *,
              accountant   : str | None        = "approx",
@@ -87,6 +87,19 @@ def read_csv(filepath     : str,
                          distance   = RealExpr(1),
                          user_key   = user_key,
                          accountant = acc)
+
+def read_csv(filepath: str,
+             schemapath: str | None = None,
+             *,
+             accountant: str | None = "approx",
+             budget_limit: BudgetType | None = None,
+             ) -> PrivDataFrame:
+    """Under a session opened with dirs, paths refer to the mounted directories
+    (see privjail.datapath)."""
+    return _read_csv(to_request_path(filepath),
+                     to_request_path(schemapath) if schemapath is not None else None,
+                     accountant=accountant, budget_limit=budget_limit)
+
 
 @egrpc.function
 def crosstab(index        : PrivSeries[ElementType], # TODO: support Sequence[PrivSeries[ElementType]]
