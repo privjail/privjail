@@ -1,21 +1,23 @@
 """datapath.py -- "mounting" data directories into the client's file namespace.
 
-A session opened with dirs={A: B} (local_session, spawn_session,
-gateway_session) makes directory B -- wherever the data server runs --
+A session opened with mounts={R: L} (local_session, spawn_session,
+gateway_session) makes directory R -- wherever the data server runs --
 appear to privjail's file-reading functions (read_csv, load, and their
-schema files) as the client's local directory A, much like a mount:
+schema files) as the client's local directory L, like `mount R L`:
 
-  - A must be an existing, empty local directory; mount points may not be
-    nested. Only privjail's functions see B there -- `ls A` stays empty.
+  - L must be an existing, empty local directory; mount points may not be
+    nested or repeated. Only privjail's functions see R there -- `ls L`
+    stays empty.
   - client side (`to_request_path`): a path given to those functions is made
     absolute against the current directory at call time, and must lie under
     one of the mount points; it is then sent to the server as that absolute
     path.
-  - server side (`resolve`): the server holds the table {absolute A: B},
-    replaces the A prefix with B, and opens nothing outside the table.
+  - server side (`resolve`): the server holds the table {absolute L: R}
+    (keyed by mount point, so one R could be mounted at several places),
+    replaces the L prefix with R, and opens nothing outside the table.
 
-Without dirs, paths are passed and opened as given (unchanged behavior; also
-for connect_session, which does not take dirs).
+Without mounts, paths are passed and opened as given (unchanged behavior;
+also for connect_session, which does not take mounts).
 """
 from __future__ import annotations
 

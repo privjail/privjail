@@ -15,22 +15,22 @@
 """session.py -- unified session/lifecycle interface for privjail's
 deployment modes:
 
-  local_session(dirs)          -- everything runs in-process; no server.
+  local_session(mounts)        -- everything runs in-process; no server.
   connect_session(host, port)  -- connect to a server someone else launched
                                    and manages; never touches its lifecycle.
-  spawn_session(port, dirs)    -- launch a dataserver as a local subprocess,
+  spawn_session(port, mounts)  -- launch a dataserver as a local subprocess,
                                    own its whole lifecycle.
-  gateway_session(host, ..., dirs)
+  gateway_session(host, ..., mounts)
                                -- launch the gateway over ssh (attestation,
                                    mount, dataserver), own its whole
                                    lifecycle including both ssh processes.
 
-dirs={A: B} means the same in local, spawn and gateway sessions: directory B
-where the data server runs (this machine, or the gateway) appears to
-privjail's file-reading functions as the local directory A, like a mount. A
-must be an existing empty directory (relative to the current directory);
-only files under the mount points can be read. ["B"] is short for
-{basename(B): B}. Without dirs, paths are used as given. See
+mounts={R: L} means the same in local, spawn and gateway sessions, in the
+order of `mount R L`: directory R where the data server runs (this machine,
+or the gateway) appears to privjail's file-reading functions as the local
+directory L. L must be an existing empty directory (relative to the current
+directory); only files under the mount points can be read. ["R"] is short
+for {R: basename(R)}. Without mounts, paths are used as given. See
 privjail.datapath.
 
 All four return a Session, usable as a context manager (or via explicit
@@ -86,16 +86,17 @@ class Session:
         self.close()
 
 
-DirsArg = Sequence[str] | Mapping[str, str] | None
+MountsArg = Sequence[str] | Mapping[str, str] | None
 
 
-def _mount_pairs(dirs: DirsArg) -> list[tuple[str, str]]:
-    """[(absolute local mount point, B)], with the mount points checked."""
-    if dirs is None:
+def _mount_pairs(mounts: MountsArg) -> list[tuple[str, str]]:
+    """[(absolute local mount point, R)], with the mount points checked
+    (each an existing empty directory, no two the same or nested)."""
+    if mounts is None:
         return []
-    pairs = list(dirs.items()) if isinstance(dirs, Mapping) else [(default_name(d), d) for d in dirs]
-    mounts = check_mount_points([a for a, _ in pairs])
-    return [(m, b) for m, (_, b) in zip(mounts, pairs)]
+    pairs = list(mounts.items()) if isinstance(mounts, Mapping) else [(r, default_name(r)) for r in mounts]
+    points = check_mount_points([local for _, local in pairs])
+    return [(point, remote) for point, (remote, _) in zip(points, pairs)]
 
 
 def _local_dir(path: str) -> str:
@@ -117,16 +118,16 @@ def _with_mounts(session_close: Callable[[], None], mounts: list[str] | None) ->
     return close
 
 
-def local_session(dirs: DirsArg = None) -> Session:
-    """Mode 1: no server; everything runs in-process. With dirs (local
+def local_session(mounts: MountsArg = None) -> Session:
+    """Mode 1: no server; everything runs in-process. With mounts (of local
     directories), the same mount rules as the other modes apply in-process.
     close() only drops the mounts."""
-    pairs = [(m, _local_dir(b)) for m, b in _mount_pairs(dirs)]
-    set_roots(dict(pairs) if dirs is not None else None)
+    pairs = [(m, _local_dir(b)) for m, b in _mount_pairs(mounts)]
+    set_roots(dict(pairs) if mounts is not None else None)
 
     def _close() -> None:
         set_roots(None)
-    return Session(port=None, close_fn=_with_mounts(_close, [m for m, _ in pairs] if dirs is not None else None))
+    return Session(port=None, close_fn=_with_mounts(_close, [m for m, _ in pairs] if mounts is not None else None))
 
 
 def connect_session(host: str, port: int) -> Session:
@@ -184,12 +185,12 @@ def _shutdown_and_disconnect() -> None:
         _egrpc_disconnect()
 
 
-def spawn_session(port: int = 0, timeout: float = 10.0, dirs: DirsArg = None) -> Session:
+def spawn_session(port: int = 0, timeout: float = 10.0, mounts: MountsArg = None) -> Session:
     """Mode 3a: launch a dataserver as a local subprocess and connect to
     it. close() asks it to shut down over RPC and disconnects, falling
-    back to killing the subprocess if it doesn't exit promptly. dirs are
-    local directories, mounted as in the other modes."""
-    pairs = [(m, _local_dir(b)) for m, b in _mount_pairs(dirs)]
+    back to killing the subprocess if it doesn't exit promptly. mounts are
+    of local directories, as in the other modes."""
+    pairs = [(m, _local_dir(b)) for m, b in _mount_pairs(mounts)]
     proc = subprocess.Popen(
         [sys.executable, "-m", "privjail.server.dataserver", str(port),
          *[x for m, b in pairs for x in ("--root", m, b)]],
@@ -213,28 +214,28 @@ def spawn_session(port: int = 0, timeout: float = 10.0, dirs: DirsArg = None) ->
                     proc.kill()
 
     return Session(port=assigned_port,
-                   close_fn=_with_mounts(_close, [m for m, _ in pairs] if dirs is not None else None))
+                   close_fn=_with_mounts(_close, [m for m, _ in pairs] if mounts is not None else None))
 
 
 def gateway_session(host: str, local_port: int,
-                    dirs: DirsArg = None,
+                    mounts: MountsArg = None,
                     timeout: float = 60.0) -> Session:
     """Mode 3b: launch the gateway over ssh (attestation, mount,
     dataserver), tunnel a local port to it, and connect. close() asks the
     remote server to shut down, disconnects, and tears down both ssh
     processes.
 
-    `dirs` maps local mount points to the encrypted directories to use, by
-    their path on the gateway as granted by the data owner (absolute, or
-    ~/... in your home there): {"data": "~/data_enc"} makes it appear as the
-    (existing, empty) local directory ./data."""
-    if not dirs:
-        raise ValueError("gateway_session needs at least one directory in `dirs`")
-    for b in (dirs.values() if isinstance(dirs, Mapping) else dirs):
-        err = path_error(b)
+    `mounts` maps the encrypted directories to use -- by their path on the
+    gateway as granted by the data owner (absolute, or ~/... in your home
+    there) -- to local mount points: {"~/data_enc": "data"} makes it appear
+    as the (existing, empty) local directory ./data."""
+    if not mounts:
+        raise ValueError("gateway_session needs at least one directory in `mounts`")
+    for remote in mounts:
+        err = path_error(remote)
         if err:
-            raise ValueError(f"invalid gateway directory {b!r}: {err}")
-    pairs = _mount_pairs(dirs)
+            raise ValueError(f"invalid gateway directory {remote!r}: {err}")
+    pairs = _mount_pairs(mounts)
     words = [shlex.quote(f"{m}={b}") for m, b in pairs]
     gateway_proc = subprocess.Popen(
         ["ssh", host, *words],
