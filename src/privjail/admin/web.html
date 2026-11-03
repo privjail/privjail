@@ -33,10 +33,10 @@
   input, textarea { display: block; width: 100%; margin-top: 3px; padding: 6px 8px; font: 14px ui-monospace, monospace;
                     color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
   textarea { resize: vertical; min-height: 56px; }
-  button { padding: 5px 12px; font: inherit; font-size: 14px; border-radius: 6px; cursor: pointer;
+  button { padding: 0 8px; font: inherit; font-size: 13px; line-height: 1.6; border-radius: 4px; cursor: pointer;
            border: 1px solid var(--line); background: var(--panel); color: var(--text); }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  button.small { padding: 1px 8px; font-size: 12px; }
+  button.small { padding: 0 6px; font-size: 12px; line-height: 1.5; }
   button:disabled { opacity: .5; cursor: default; }
   code, .mono { font-family: ui-monospace, monospace; font-size: 13px; }
   .muted { color: var(--muted); }
@@ -49,11 +49,11 @@
   table { border-collapse: collapse; width: 100%; }
   th, td { border-top: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
   thead th { border-top: 0; font-weight: 600; font-size: 13px; color: var(--muted); }
-  thead th.dir { font-family: ui-monospace, monospace; font-weight: 400; word-break: break-all; min-width: 9em; }
-  td.cell, thead th.dir { text-align: center; vertical-align: middle; }
-  .cell button { min-width: 6.5em; }
-  .cell button.granted { background: var(--granted); border-color: var(--accent); }
-  .cell button.bad { border-color: var(--ng); color: var(--ng); }
+  td.dir { font-family: ui-monospace, monospace; font-size: 13px; word-break: break-all; }
+  td.state { font-size: 13px; white-space: nowrap; }
+  tr.first td { border-top: 1px solid var(--line); }
+  tr.cont td { border-top: 1px dashed var(--line); }
+  tr.cont td.user { border-top: 0; }
   .user-name { font-weight: 600; }
   .user details { margin-top: 4px; font-size: 13px; }
   .user details summary { font-weight: 400; color: var(--muted); }
@@ -104,7 +104,7 @@
 
   <section>
     <div class="bar"><h2>Users</h2>
-      <span class="muted" style="font-size: 13px">click a cell to grant or revoke</span></div>
+      <span class="muted" style="font-size: 13px">one row per user and directory</span></div>
     <div class="scroll"><table id="users"></table></div>
     <details style="margin-top: 12px">
       <summary>Add a user</summary>
@@ -208,9 +208,9 @@ async function refresh() {
 function renderUsers(d) {
   const table = $("#users");
   if (!d.users.length) { table.replaceChildren(el("tr", {}, el("td", { className: "muted", textContent: "No users yet." }))); return; }
-  const head = el("tr", {}, el("th", { textContent: "user" }),
-                  ...d.dirs.map(x => el("th", { className: "dir", textContent: x.path })));
-  const rows = d.users.map(u => {
+  const head = el("tr", {}, ...["user", "directory", "status", ""].map(t => el("th", { textContent: t })));
+  const body = [];
+  for (const u of d.users) {
     const status = u.problems ? el("span", { className: "ng", textContent: ` ${u.problems} problem(s)` })
                  : !u.added ? el("span", { className: "warn", textContent: " not added" })
                  : el("span", { className: "ok", textContent: " ok" });
@@ -220,28 +220,34 @@ function renderUsers(d) {
     const keys = u.keys.map(k => el("div", { className: "keyrow" },
       el("span", { textContent: k.label }),
       el("span", { className: "muted", textContent: [k.gateway && "gateway", k.key_server && "key server"].filter(Boolean).join(" + ") }),
-      el("button", { className: "small", textContent: "remove key…",
+      el("button", { className: "small", textContent: "remove key",
                      onclick: () => act("remove-user", { user: u.name, match: k.match }, `Remove key ${k.label} of ${u.name}`) })));
-    const cell = el("td", { className: "user" },
+    // every directory that can be granted, plus anything granted that is not registered
+    const dirs = [...d.dirs.map(x => x.path), ...Object.keys(u.grants).filter(p => !d.dirs.some(x => x.path === p))];
+    const userCell = el("td", { className: "user", rowSpan: Math.max(dirs.length, 1) },
       el("span", { className: "user-name", textContent: u.name }), status,
       el("details", {}, el("summary", { textContent: "details" }), items, ...keys,
-         el("div", { style: "margin-top: 6px" }, el("button", { className: "small", textContent: "remove user…",
+         el("div", { style: "margin-top: 6px" }, el("button", { className: "small", textContent: "remove user",
             onclick: () => act("remove-user", { user: u.name }, `Remove user ${u.name}`) }))));
-    return el("tr", {}, cell, ...d.dirs.map(x => {
-      const problems = u.grants[x.path];
+    if (!dirs.length) {
+      body.push(el("tr", { className: "first" }, userCell,
+        el("td", { className: "muted", colSpan: 3, textContent: "no encrypted directories registered" })));
+      continue;
+    }
+    dirs.forEach((path, i) => {
+      const problems = u.grants[path];
       const granted = problems !== undefined;
-      const b = el("button", {
-        className: granted ? "granted" + (problems.length ? " bad" : "") : "",
-        textContent: granted ? (problems.length ? "granted ✗" : "granted ✓") : "—",
-        title: granted ? (problems.join("; ") || "click to revoke") : "click to grant",
-        onclick: () => granted
-          ? act("revoke", { user: u.name, path: x.path }, `Revoke ${x.path} from ${u.name}`)
-          : act("grant", { user: u.name, path: x.path }, `Grant ${x.path} to ${u.name}`),
-      });
-      return el("td", { className: "cell" }, b);
-    }));
-  });
-  table.replaceChildren(el("thead", {}, head), el("tbody", {}, ...rows));
+      const state = !granted ? el("span", { className: "muted", textContent: "not granted" })
+                  : problems.length ? el("span", { className: "ng", textContent: "granted, but: " + problems.join("; ") })
+                  : el("span", { className: "ok", textContent: "granted" });
+      const button = el("button", { className: "small", textContent: granted ? "revoke" : "grant",
+        onclick: () => granted ? act("revoke", { user: u.name, path }, `Revoke ${path} from ${u.name}`)
+                               : act("grant", { user: u.name, path }, `Grant ${path} to ${u.name}`) });
+      body.push(el("tr", { className: i ? "cont" : "first" }, ...(i ? [] : [userCell]),
+        el("td", { className: "dir", textContent: path }), el("td", { className: "state" }, state), el("td", {}, button)));
+    });
+  }
+  table.replaceChildren(el("thead", {}, head), el("tbody", {}, ...body));
 }
 
 // ---------------------------------------------------------------- actions: dry run, then Run
