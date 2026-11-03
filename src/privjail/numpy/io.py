@@ -25,7 +25,7 @@ from ..realexpr import RealExpr
 from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAccountant
 from .array import PrivNDArray
 from .domain import NDArrayDomain
-from ..datapath import resolve as resolve_datapath, to_request_path
+from ..datapath import canonical as canonical_datapath, resolve as resolve_datapath, to_request_path
 
 def _find_privacy_axis(shape: list[int | None] | None) -> int:
     if shape is None:
@@ -57,7 +57,7 @@ def _load(file         : str,
     else:
         raise ValueError(f"Unknown accountant: '{accountant}'")
 
-    acc.set_as_root(name=file)
+    acc.set_as_root(name=canonical_datapath(file))
 
     result: dict[str, PrivNDArray | _npt.NDArray[Any]] = {}
     signature_map: dict[str, AlignmentSignature] = {}

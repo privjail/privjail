@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import subprocess
 import sys
 import threading
@@ -90,8 +89,9 @@ MountsArg = Sequence[str] | Mapping[str, str] | None
 
 
 def _mount_pairs(mounts: MountsArg) -> list[tuple[str, str]]:
-    """[(absolute local mount point, R)], with the mount points checked
-    (each an existing empty directory, no two the same or nested)."""
+    """[(absolute local mount point L, R)], with the mount points checked
+    (each an existing empty directory, no two the same or nested). Only the
+    client keeps L; the server only learns R."""
     if mounts is None:
         return []
     pairs = list(mounts.items()) if isinstance(mounts, Mapping) else [(r, default_name(r)) for r in mounts]
@@ -106,7 +106,7 @@ def _local_dir(path: str) -> str:
     return p
 
 
-def _with_mounts(session_close: Callable[[], None], mounts: list[str] | None) -> Callable[[], None]:
+def _with_mounts(session_close: Callable[[], None], mounts: list[tuple[str, str]] | None) -> Callable[[], None]:
     """Activates the client-side mounts; the returned close undoes them."""
     set_client_mounts(mounts)
 
@@ -123,11 +123,11 @@ def local_session(mounts: MountsArg = None) -> Session:
     directories), the same mount rules as the other modes apply in-process.
     close() only drops the mounts."""
     pairs = [(m, _local_dir(b)) for m, b in _mount_pairs(mounts)]
-    set_roots(dict(pairs) if mounts is not None else None)
+    set_roots({r: (r, r) for _, r in pairs} if mounts is not None else None)
 
     def _close() -> None:
         set_roots(None)
-    return Session(port=None, close_fn=_with_mounts(_close, [m for m, _ in pairs] if mounts is not None else None))
+    return Session(port=None, close_fn=_with_mounts(_close, pairs if mounts is not None else None))
 
 
 def connect_session(host: str, port: int) -> Session:
@@ -193,7 +193,7 @@ def spawn_session(port: int = 0, timeout: float = 10.0, mounts: MountsArg = None
     pairs = [(m, _local_dir(b)) for m, b in _mount_pairs(mounts)]
     proc = subprocess.Popen(
         [sys.executable, "-m", "privjail.server.dataserver", str(port),
-         *[x for m, b in pairs for x in ("--root", m, b)]],
+         *[x for r in sorted({r for _, r in pairs}) for x in ("--root", r, r, r)]],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -214,7 +214,7 @@ def spawn_session(port: int = 0, timeout: float = 10.0, mounts: MountsArg = None
                     proc.kill()
 
     return Session(port=assigned_port,
-                   close_fn=_with_mounts(_close, [m for m, _ in pairs] if mounts is not None else None))
+                   close_fn=_with_mounts(_close, pairs if mounts is not None else None))
 
 
 def gateway_session(host: str, local_port: int,
@@ -236,7 +236,7 @@ def gateway_session(host: str, local_port: int,
         if err:
             raise ValueError(f"invalid gateway directory {remote!r}: {err}")
     pairs = _mount_pairs(mounts)
-    words = [shlex.quote(f"{m}={b}") for m, b in pairs]
+    words = sorted({r for _, r in pairs})   # plain characters only (path_error), no quoting needed
     gateway_proc = subprocess.Popen(
         ["ssh", host, *words],
         # kept open for the session: the gateway shuts down when it closes
@@ -266,4 +266,4 @@ def gateway_session(host: str, local_port: int,
             except subprocess.TimeoutExpired:
                 gateway_proc.terminate()
 
-    return Session(port=local_port, close_fn=_with_mounts(_close, [m for m, _ in pairs]))
+    return Session(port=local_port, close_fn=_with_mounts(_close, pairs))

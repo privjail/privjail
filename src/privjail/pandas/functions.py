@@ -26,7 +26,7 @@ from ..accountants import BudgetType, Accountant, PureDPAccountant, ApproxDPAcco
 from .domain import CategoryDomain, normalize_column_schema, apply_column_schema, column_schema2domain
 from .series import PrivSeries
 from .dataframe import PrivDataFrame, SensitiveDataFrame
-from ..datapath import resolve as resolve_datapath, to_request_path
+from ..datapath import canonical as canonical_datapath, resolve as resolve_datapath, to_request_path
 
 T = TypeVar("T")
 
@@ -77,7 +77,7 @@ def _read_csv(filepath     : str,
     else:
         raise ValueError(f"Unknown accountant: '{accountant}'")
 
-    acc.set_as_root(name=filepath)
+    acc.set_as_root(name=canonical_datapath(filepath))
 
     # consolidate dataframe blocks (for performance)
     df = df.copy()
