@@ -12,7 +12,10 @@
 
 Fetching a TDX quote needs root (creating the configfs-tsm entry); this
 process itself doesn't, so it elevates only for that one step by shelling
-out to `sudo ... -m privjail.server.attestation.quote`.
+out to `sudo <bin>/privjail-get-quote`, where <bin> is the directory of this
+interpreter (the venv's bin/). A console script rather than `python -m`, so
+that a sudoers entry can name one fixed command with no arguments, and so the
+privileged process never puts the caller's cwd on sys.path.
 """
 import argparse
 import os
@@ -34,7 +37,7 @@ def port_in_use(port: int) -> bool:
 
 def get_quote_privileged(nonce: bytes) -> bytes:
     proc = subprocess.run(
-        ["sudo", sys.executable, "-m", "privjail.server.attestation.quote"],
+        ["sudo", "-n", os.path.join(os.path.dirname(sys.executable), "privjail-get-quote")],
         input=nonce,
         capture_output=True,
         check=True,
@@ -94,7 +97,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-enc", default="data_enc", help="gocryptfs-encrypted source directory")
     parser.add_argument("--data", default="data", help="mount point for the decrypted view")
-    parser.add_argument("--key-server", default="ks:9443", help="key server as host:port; reached via an ssh tunnel")
+    parser.add_argument("--key-server", default="privjail-ks:9443", help="key server as host:port; reached via an ssh tunnel")
     parser.add_argument("--pw-file", default=None,
                         help="for local testing: read the gocryptfs password directly from this file, "
                              "skipping attestation and the key server entirely")
