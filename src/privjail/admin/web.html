@@ -100,6 +100,19 @@
     <div class="bar"><h2>Encrypted directories</h2>
       <span class="muted" style="font-size: 13px">registered on the key server (<code>passwords</code>); these can be granted</span></div>
     <ul class="dirs" id="dirs"><li class="muted">…</li></ul>
+    <details style="margin-top: 10px">
+      <summary>Add a directory</summary>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))">
+        <label>Absolute path on the gateway <input id="dir-path" placeholder="/srv/data/census"></label>
+        <div>
+          <label style="margin-bottom: 4px"><input type="radio" name="dir-mode" value="create" checked style="display: inline; width: auto"> create it (must not exist yet)</label>
+          <label><input type="radio" name="dir-mode" value="existing" style="display: inline; width: auto"> register an existing gocryptfs directory</label>
+        </div>
+        <label id="dir-owner-label">Owner of the new directory (optional) <input id="dir-owner" placeholder="(the admin account)"></label>
+        <label id="dir-password-label" hidden>Its gocryptfs password (checked by a test mount) <input id="dir-password" type="password" autocomplete="off"></label>
+      </div>
+      <button class="primary" id="dir-button">Check (dry run)</button>
+    </details>
   </section>
 
   <section>
@@ -199,8 +212,10 @@ async function refresh() {
 
   $("#dirs").replaceChildren(...(d.dirs.length ? d.dirs.map(x => el("li", {},
       el("code", { textContent: x.path }),
-      el("span", { className: x.level === "ok" ? "ok" : x.level, textContent: x.note || "ok" })))
-    : [el("li", { className: "muted", textContent: "none: add \"<path> <password>\" lines to passwords on the key server" })]));
+      el("span", { className: x.level === "ok" ? "ok" : x.level, textContent: x.note || "ok" }),
+      ...(x.registered ? [el("button", { className: "small", textContent: "unregister",
+          onclick: () => act("remove-dir", { path: x.path }, `Unregister ${x.path}`) })] : [])))
+    : [el("li", { className: "muted", textContent: "none yet: add one below" })]));
 
   renderUsers(d);
 }
@@ -307,6 +322,17 @@ async function runPending() {
   $("#refresh").addEventListener("click", refresh);
   $("#action-run").addEventListener("click", runPending);
   $("#action-close").addEventListener("click", () => { $("#action").hidden = true; pending = null; });
+  const dirMode = () => $("input[name=dir-mode]:checked").value;
+  $$("input[name=dir-mode]").forEach(r => r.addEventListener("change", () => {
+    $("#dir-owner-label").hidden = dirMode() !== "create";
+    $("#dir-password-label").hidden = dirMode() !== "existing";
+  }));
+  $("#dir-button").addEventListener("click", () => {
+    const path = $("#dir-path").value.trim(), existing = dirMode() === "existing";
+    act("add-dir", { path, existing, owner: existing ? "" : $("#dir-owner").value,
+                     password: existing ? $("#dir-password").value : "" },
+        existing ? `Register ${path}` : `Create and register ${path}`);
+  });
   $("#add-button").addEventListener("click", () => {
     const user = $("#add-user").value.trim();
     act("add-user", { user, pubkey: $("#add-pubkey").value, privjail_gateway_cmd: $("#add-cmd").value,

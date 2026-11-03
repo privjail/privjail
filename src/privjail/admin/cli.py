@@ -15,10 +15,11 @@ grant / revoke           which encrypted directories that user may mount.
 
 An encrypted directory is a gocryptfs directory on the gateway, identified
 by its path there: absolute, or ~/... for the granted user's home (expanded
-when granting; the key server only records absolute paths). Creating it,
-filling it with data, and registering its password -- a "<path> <password>"
-line in <ks-dir>/passwords on the key server (default ~/privjail-ks) -- is
-the owner's business, outside this tool. The user must be able to read its
+when granting; the key server only records absolute paths). Its password is
+a "<path> <password>" line in <ks-dir>/passwords on the key server (default
+~/privjail-ks), written by add-dir (or by hand); this tool never copies that
+file's contents off the key server. Filling a directory with data is the
+owner's business, outside this tool. The user must be able to read its
 gocryptfs.conf.
 
 Subcommands
@@ -36,6 +37,14 @@ remove-user  removes those (all, or the key matching --match), and the
              user's grants once no key is left.
 grant        USER PATH: lets USER mount the encrypted directory at PATH.
 revoke       USER PATH: takes it back (applies from the next session).
+add-dir      DIR: creates DIR on the gateway, initializes it with gocryptfs
+             under a new random password, and registers it on the key
+             server. With --existing, DIR must already be a gocryptfs
+             directory: its password (--dir-passfile, or asked) is checked
+             by a read-only test mount and then registered. Never "use it if
+             it exists, else create it" -- a mistyped path should fail.
+remove-dir   DIR: unregisters DIR on the key server (refused while granted);
+             the directory and its data are left alone.
 
 Every subcommand inspects each host with one ssh session (both hosts in
 parallel) and changes it with at most one more; --dry-run shows the changes
@@ -47,7 +56,9 @@ import argparse
 import base64
 import getpass
 import hashlib
+import os
 import re
+import secrets
 import shlex
 import subprocess
 import sys
@@ -423,6 +434,21 @@ put_own_file() {  # path b64: atomically replace a file of the operator ("~" = o
   f=${1/#\~/$HOME}
   (umask 077; mkdir -p "$(dirname "$f")" && printf '%s' "$2" | base64 -d > "$f.tmp" && mv "$f.tmp" "$f")
 }
+append_own_line() {  # path b64line: append to a file of the operator, kept mode 600
+  f=${1/#\~/$HOME}
+  (umask 077; mkdir -p "$(dirname "$f")" && printf '%s' "$2" | base64 -d >> "$f")
+}
+drop_own_entry() {  # path key: atomically drop the lines whose first field is exactly key
+  f=${1/#\~/$HOME}
+  (umask 077; awk -v k="$2" '$1 != k' "$f" > "$f.tmp" && mv "$f.tmp" "$f")
+}
+create_encrypted_dir() {  # dir owner b64password: mkdir + gocryptfs -init as owner
+  sudo -n mkdir -- "$1"
+  sudo -n chown -- "$2:$(id -gn "$2")" "$1"
+  sudo -n chmod 755 "$1"
+  printf '%s' "$3" | base64 -d | sudo -n -u "$2" gocryptfs -q -init "$1" > /dev/null
+  sudo -n chmod 444 "$1/gocryptfs.conf"
+}
 put_sudoers() {  # path b64: validated with visudo before going live
   tmp="$(dirname "$1")/.$(basename "$1").tmp"   # leading "." -> ignored by sudo
   printf '%s' "$2" | base64 -d | sudo -n tee "$tmp" >/dev/null
@@ -456,6 +482,15 @@ class Writer:
 
     def remove_sudoers(self, path: str) -> None:
         self.steps.append(f"sudo -n rm -f {shlex.quote(path)}")
+
+    def append_own_line(self, path: str, line: str) -> None:
+        self.steps.append(f"append_own_line {shlex.quote(path)} {_b64(line + chr(10))}")
+
+    def drop_own_entry(self, path: str, key: str) -> None:
+        self.steps.append(f"drop_own_entry {shlex.quote(path)} {shlex.quote(key)}")
+
+    def create_encrypted_dir(self, path: str, owner: str, password: str) -> None:
+        self.steps.append(f"create_encrypted_dir {shlex.quote(path)} {shlex.quote(owner)} {_b64(password + chr(10))}")
 
     def run(self, host: str) -> None:
         if not self.steps:
@@ -851,6 +886,146 @@ def cmd_revoke(args: argparse.Namespace, rep: Report) -> None:
 
 
 # --------------------------------------------------------------------------
+# add-dir / remove-dir
+
+ADD_DIR_CHECK = r"""
+set -u
+e() { printf '%s\t%s\n' "$1" "$2"; }
+yn() { "$@" >/dev/null 2>&1 && echo 1 || echo 0; }
+e login 1
+e root "$(yn sudo -n true)"
+e gocryptfs "$(command -v gocryptfs || true)"
+e exists "$(yn sudo -n test -e "$DIR")"
+e isdir "$(yn sudo -n test -d "$DIR")"
+e parent "$(yn sudo -n test -d "$(dirname "$DIR")")"
+e conf "$(yn sudo -n test -f "$DIR/gocryptfs.conf")"
+e conf_mode "$(sudo -n stat -c %A "$DIR/gocryptfs.conf" 2>/dev/null)"
+e owner "$(yn id -u "$OWNER")"
+if [ -n "$PWB64" ] && sudo -n test -f "$DIR/gocryptfs.conf"; then
+  # check the password the way the gateway will use it: a read-only mount
+  m=$(sudo -n mktemp -d)
+  if err=$(printf '%s' "$PWB64" | base64 -d | sudo -n gocryptfs -ro -q "$DIR" "$m" 2>&1 >/dev/null); then
+    e pw_ok 1
+    sudo -n fusermount -u "$m" 2>/dev/null || sudo -n umount "$m"
+  else
+    e pw_ok 0
+    e pw_err "$(printf '%s' "$err" | grep -v '^$' | tail -1)"
+  fi
+  sudo -n rmdir "$m"
+fi
+"""
+
+
+def read_dir_password(args: argparse.Namespace) -> str:
+    """From --dir-passfile (a file, or - for stdin), else asked on the terminal."""
+    if args.dir_passfile == "-":
+        text = sys.stdin.readline()
+    elif args.dir_passfile:
+        with open(os.path.expanduser(args.dir_passfile), encoding="utf-8") as f:
+            text = f.readline()
+    elif sys.stdin.isatty():
+        text = getpass.getpass(f"gocryptfs password of {args.path}: ")
+    else:
+        raise SystemExit("no terminal to ask the password on: give --dir-passfile FILE (or - for stdin)")
+    password = text.rstrip("\r\n")
+    if not password or any(c.isspace() for c in password):
+        raise SystemExit("the password must be one non-empty line without spaces")
+    return password
+
+
+def check_dir_arg(path: str) -> None:
+    err = path_error(path)
+    if err or not path.startswith("/"):
+        raise SystemExit(f"invalid directory {path!r}: {err or 'must be an absolute path'}")
+
+
+def cmd_add_dir(args: argparse.Namespace, rep: Report) -> None:
+    path, existing = args.path, args.existing
+    check_dir_arg(path)
+    password = read_dir_password(args) if existing or args.dir_passfile else secrets.token_urlsafe(32)
+    owner = args.owner or args.gateway_user
+    params = {"DIR": path, "OWNER": owner,
+              "PWB64": base64.b64encode((password + "\n").encode()).decode() if existing else ""}
+    script = "".join(f"{k}={shlex.quote(v)}\n" for k, v in params.items()) + ADD_DIR_CHECK
+
+    with ThreadPoolExecutor(2) as pool:
+        ks_f = pool.submit(probe, args.key_server_ssh, "ks", [], args)
+        gw_f = pool.submit(run_remote_script, args.gateway_ssh, script)
+        ks, gw_result = ks_f.result(), gw_f.result()
+    gw = dict(line.split("\t", 1) for line in gw_result.stdout.splitlines() if "\t" in line)
+    ks_writer, gw_writer = Writer(), Writer()
+
+    rep.line(f"{'register existing' if existing else 'create'} {path}")
+    if not gw.get("login"):
+        rep.item("gateway", last_error_line(gw_result.stderr) or "ssh failed", "ng")
+    else:
+        if gw.get("root") != "1":
+            rep.item("root", "operator cannot `sudo` on the gateway", "ng")
+        rep.item("gocryptfs", gw.get("gocryptfs") or "not found", "ok" if gw.get("gocryptfs") else "ng")
+        if existing:
+            if gw.get("isdir") != "1":
+                rep.item("directory", "does not exist on the gateway (to create it, omit --existing)", "ng")
+            elif gw.get("conf") != "1":
+                rep.item("directory", "exists, but is not a gocryptfs directory", "ng")
+            else:
+                rep.item("directory", "exists, gocryptfs")
+                if gw.get("pw_ok") == "1":
+                    rep.item("password", "verified (read-only test mount)")
+                else:
+                    rep.item("password", f"does not unlock it: {gw.get('pw_err') or 'mount failed'}", "ng")
+                if gw.get("conf_mode", "")[7:8] != "r":
+                    rep.item("gocryptfs.conf", f"{gw.get('conf_mode')}: only its owner can read it; other "
+                             f"users granted it need chmod 444", "warn")
+        else:
+            if gw.get("exists") == "1":
+                rep.item("directory", "already exists on the gateway (to register it, use --existing)", "ng")
+            elif gw.get("parent") != "1":
+                rep.item("directory", f"parent {os.path.dirname(path)} does not exist", "ng")
+            elif gw.get("owner") != "1":
+                rep.item("owner", f"{owner} does not exist on the gateway", "ng")
+            else:
+                rep.item("directory", f"create, owner {owner}, gocryptfs -init with a new random password"
+                         if not args.dir_passfile else
+                         f"create, owner {owner}, gocryptfs -init with the given password")
+                gw_writer.create_encrypted_dir(path, owner, password)
+
+    if not ks.login:
+        rep.item("key server", ks.error, "ng")
+    elif path in ks.registered:
+        rep.item("key server", f"{path} is already registered", "ng")
+    else:
+        rep.item("key server", f"register in {args.ks_dir}/passwords")
+        ks_writer.append_own_line(f"{args.ks_dir}/passwords", f"{path} {password}")
+
+    # the gateway first: nothing gets registered for a directory that failed to be created
+    finish(rep, args, [(args.gateway_ssh, gw_writer), (args.key_server_ssh, ks_writer)],
+           f"{'Registered' if existing else 'Created and registered'} {path}. Next: put data in it, "
+           f"then privjail-admin grant <user> {path}.")
+
+
+def cmd_remove_dir(args: argparse.Namespace, rep: Report) -> None:
+    path = args.path
+    check_dir_arg(path)
+    ks = probe(args.key_server_ssh, "ks", [], args)
+    writer = Writer()
+
+    rep.line(f"unregister {path}")
+    if not ks.login:
+        rep.item("key server", ks.error, "ng")
+    elif path not in ks.registered:
+        rep.item("key server", "not registered")
+    else:
+        holders = sorted(u for u, d in ks.grants if d == path)
+        if holders:
+            rep.item("grants", f"still granted to {', '.join(holders)}; revoke first", "ng")
+        else:
+            rep.item("key server", f"remove from {args.ks_dir}/passwords (the directory itself is kept)")
+            writer.drop_own_entry(f"{args.ks_dir}/passwords", path)
+
+    finish(rep, args, [(args.key_server_ssh, writer)], f"Unregistered {path}; its data is untouched.")
+
+
+# --------------------------------------------------------------------------
 # CLI
 
 class DefaultsFormatter(argparse.ArgumentDefaultsHelpFormatter):
@@ -944,6 +1119,24 @@ def build_parser(raising: bool = False) -> argparse.ArgumentParser:
     add_common_args(p)
     p.set_defaults(func=cmd_revoke)
 
+    p = subparser("add-dir", "create and register an encrypted directory (or, with --existing, register one)")
+    p.add_argument("path", help="absolute path of the directory on the gateway")
+    p.add_argument("--existing", action="store_true",
+                   help="the directory already exists as a gocryptfs directory: check its password and "
+                        "register it (without this, it must not exist yet)")
+    p.add_argument("--owner", default=None,
+                   help="account to own a newly created directory; defaults to the admin account on the gateway")
+    p.add_argument("--dir-passfile", default=None, metavar="FILE",
+                   help="read the directory's gocryptfs password from FILE ('-' = stdin); with --existing "
+                        "and no FILE it is asked on the terminal; when creating, defaults to a random one")
+    add_common_args(p)
+    p.set_defaults(func=cmd_add_dir)
+
+    p = subparser("remove-dir", "unregister an encrypted directory (its data is kept)")
+    p.add_argument("path", help="absolute path of the directory on the gateway")
+    add_common_args(p)
+    p.set_defaults(func=cmd_remove_dir)
+
     p = subparser("web", "serve a local web page for status and these commands (no authentication)")
     p.add_argument("--host", default="127.0.0.1", help="address to listen on; keep it local")
     p.add_argument("--port", type=int, default=8881, help="port to listen on")
@@ -955,7 +1148,8 @@ def build_parser(raising: bool = False) -> argparse.ArgumentParser:
 def finalize_args(args: argparse.Namespace) -> None:
     args.key_server_host, args.key_server_port = parse_key_server(args.key_server)
     adm_user = args.adm_user or getpass.getuser()
-    args.gateway_ssh = f"{args.gateway_adm_user or adm_user}@{args.gateway}"
+    args.gateway_user = args.gateway_adm_user or adm_user
+    args.gateway_ssh = f"{args.gateway_user}@{args.gateway}"
     args.key_server_ssh = f"{args.key_server_adm_user or adm_user}@{args.key_server_host}"
 
 
