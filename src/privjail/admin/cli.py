@@ -54,7 +54,7 @@ import sys
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import NoReturn
+from typing import Any, NoReturn
 
 from privjail.dirspec import path_error
 
@@ -477,6 +477,7 @@ class Report:
         self.echo = echo
         self.entries: list[dict[str, str]] = []
         self.outcome = ""   # problems / nothing / dry-run / done (changing commands)
+        self.data: dict[str, Any] = {}   # structured results (status), for the web UI
 
     def line(self, text: str = "") -> None:
         self.entries.append({"kind": "line", "text": text})
@@ -558,6 +559,13 @@ def cmd_status(args: argparse.Namespace, rep: Report) -> None:
     names = args.users or sorted(set(gw0.sudoers_users) | {u for u, _ in ks0.grants})
     dirs = sorted(set(ks0.registered) | {d for _, d in ks0.grants})
     ks, gw = probe_both(args, names, dirs=dirs)
+    data: dict[str, Any] = {
+        "key_server": {"host": args.key_server_ssh, "login": ks.login, "error": ks.error,
+                       "listening": ks.listening, "port": args.key_server_port},
+        "gateway": {"host": args.gateway_ssh, "login": gw.login, "error": gw.error},
+        "dirs": [], "users": [],
+    }
+    rep.data = data
 
     if ks.login:
         rep.line(f"key server {args.key_server_ssh}: "
@@ -576,11 +584,15 @@ def cmd_status(args: argparse.Namespace, rep: Report) -> None:
         for d in ks.registered:
             exists, initialized = gw.dirs.get(d, (False, False))
             if not gw.login:
-                rep.item(d, "")
+                note, level = "", "ok"
             elif not exists:
-                rep.item(d, "does not exist on gateway", "warn")
+                note, level = "does not exist on gateway", "warn"
             else:
-                rep.item(d, "" if initialized else "not a gocryptfs directory", "ok" if initialized else "warn")
+                note, level = ("", "ok") if initialized else ("not a gocryptfs directory", "warn")
+            rep.item(d, note, level)
+            data["dirs"].append({"path": d, "registered": True, "note": note, "level": level})
+    for d in sorted({d for _, d in ks.grants} - set(ks.registered)):
+        data["dirs"].append({"path": d, "registered": False, "note": "no password registered", "level": "ng"})
 
     if not names:
         rep.line()
@@ -590,6 +602,7 @@ def cmd_status(args: argparse.Namespace, rep: Report) -> None:
     for user in names:
         rep.line()
         rep.line(f"{user}")
+        first, errors0 = len(rep.entries), rep.errors
         kf, gf = ks.users.get(user), gw.users.get(user)
         if ks.login and not (kf and kf.exists and kf.sudo):
             user_ready(rep, user, kf, "account (key server)")
@@ -631,13 +644,27 @@ def cmd_status(args: argparse.Namespace, rep: Report) -> None:
             if managed_block(gf.ssh_config):
                 rep.item("leftover", "managed ~/.ssh/config block", "warn")
 
+        details = rep.entries[first:]   # the account-level checks above
         granted = sorted(d for u, d in ks.grants if u == user)
         if not granted:
             rep.item("grants", "none")
+        grants: dict[str, list[str]] = {}
         for d in granted:
             _, problems = dir_problems(d, user, ks, gw)
+            grants[d] = problems
             rep.item("grant", d + ("  (" + "; ".join(problems) + ")" if problems else ""),
                      "ng" if problems else "ok")
+        keys = {k.blob: k for k in gw_entries + ks_entries}
+        data["users"].append({
+            "name": user,
+            "added": bool(gw_entries),
+            "problems": rep.errors - errors0,
+            "details": details,
+            "keys": [{"label": k.label, "fingerprint": k.fingerprint,
+                      "match": k.comment or k.blob[-40:],   # a substring that identifies the line
+                      "gateway": b in gw_blobs, "key_server": b in ks_blobs} for b, k in keys.items()],
+            "grants": grants,
+        })
 
 
 

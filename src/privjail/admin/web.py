@@ -96,7 +96,7 @@ def run_request(req: dict[str, Any]) -> dict[str, Any]:
         rep = run_command(argv, echo=False)
 
     return {"command": shlex.join(shown), "entries": rep.entries,
-            "errors": rep.errors, "outcome": rep.outcome}
+            "errors": rep.errors, "outcome": rep.outcome, "data": rep.data}
 
 
 class Handler(BaseHTTPRequestHandler):
