@@ -24,7 +24,9 @@ gocryptfs.conf.
 Subcommands
 -----------
 status       users, their keys, the gateway setup, and their grants, with
-             what is missing. No arguments needed.
+             what is missing. Without arguments, the users are those this
+             tool knows about: a privjail-admin sudoers entry on the gateway
+             (made by add-user) or a line in the key server's grants.
 add-user     registers the user's key (--user-pubkey) on both hosts --
              gateway: forced command privjail-gateway, agent forwarding
              allowed; key server: nothing but forwarding to the key server
@@ -62,6 +64,7 @@ DEFAULT_KS_DIR = "~/privjail-ks"
 DEFAULT_PRIVJAIL_GATEWAY_CMD = "/opt/privjail/.venv/bin/privjail-gateway"
 
 SUDOERS_DIR = "/etc/sudoers.d"
+SUDOERS_MARK = "# managed by privjail-admin"
 QUOTE_COMMAND = "privjail-get-quote"
 SSH_CONFIG_BEGIN = "# BEGIN privjail-admin (managed block; edits here are overwritten)"
 SSH_CONFIG_END = "# END privjail-admin"
@@ -121,6 +124,11 @@ if [ "$ROLE" = ks ]; then
   e dirs "$(sed 's/#.*//' "$KS_DIR/passwords" 2>/dev/null | awk 'NF == 2 {print $1}' | tr '\n' ' ')"
   e grants "$(cat "$KS_DIR/grants" 2>/dev/null | b64)"
 else
+  # users that add-user has set up: the sudoers entries it wrote (marked)
+  e sudoers_users "$(sudo -n find "$SUDOERS_DIR" -maxdepth 1 -type f -name 'privjail-*' 2>/dev/null |
+    while IFS= read -r f; do
+      [ "$(sudo -n head -n1 "$f")" = "$SUDOERS_MARK" ] && sudo -n awk '/^[^#]/ {print $1; exit}' "$f"
+    done | tr '\n' ' ')"
   e gocryptfs "$(command -v gocryptfs || true)"
   [ -n "$REACH_HOST" ] && e reach "$(yn timeout 5 bash -c "exec 3<>/dev/tcp/$REACH_HOST/$REACH_PORT")"
   for d in ${DIRS[@]+"${DIRS[@]}"}; do
@@ -128,12 +136,6 @@ else
   done
 fi
 
-if [ "$ALL" = 1 ]; then
-  USERS=()
-  while IFS=: read -r name _ uid _ _ home _; do
-    [ "$uid" -ge 1000 ] 2>/dev/null && [ "$uid" -lt 65534 ] && USERS+=("$name")
-  done < <(getent passwd)
-fi
 
 for u in ${USERS[@]+"${USERS[@]}"}; do
   p="u:$u"
@@ -200,6 +202,7 @@ class HostFacts:
     registered: list[str] = field(default_factory=list)  # paths in <ks-dir>/passwords
     grants_lines: list[str] = field(default_factory=list)
     # gateway
+    sudoers_users: list[str] = field(default_factory=list)
     gocryptfs: str = ""
     reach: bool | None = None
     dirs: dict[str, tuple[bool, bool]] = field(default_factory=dict)  # abs path -> (exists, initialized)
@@ -214,17 +217,16 @@ def _b64text(value: str) -> str:
     return base64.b64decode(value).decode(errors="replace") if value else ""
 
 
-def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespace,
+def probe(host: str, role: str, users: Sequence[str], args: argparse.Namespace,
           cmd: str = "", reach: tuple[str, int] | None = None, dirs: Sequence[str] = ()) -> HostFacts:
-    """users=None means: every regular account on this host."""
     params = {
-        "ROLE": role, "ALL": "1" if users is None else "0",
+        "ROLE": role, "SUDOERS_MARK": SUDOERS_MARK,
         "KS_PORT": str(args.key_server_port), "KS_DIR": args.ks_dir,
         "CMD": cmd, "REACH_HOST": reach[0] if reach else "", "REACH_PORT": str(reach[1]) if reach else "",
         "SUDOERS_DIR": SUDOERS_DIR, "QUOTE_COMMAND": QUOTE_COMMAND,
     }
     header = "".join(f"{k}={shlex.quote(v)}\n" for k, v in params.items())
-    header += "USERS=(" + " ".join(shlex.quote(u) for u in users or []) + ")\n"
+    header += "USERS=(" + " ".join(shlex.quote(u) for u in users) + ")\n"
     header += "DIRS=(" + " ".join(shlex.quote(d) for d in dirs) + ")\n"
     facts = HostFacts(host)
     try:
@@ -248,6 +250,8 @@ def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespac
             facts.registered = value.split()
         elif key == "grants":
             facts.grants_lines = _b64text(value).splitlines()
+        elif key == "sudoers_users":
+            facts.sudoers_users = value.split()
         elif key == "gocryptfs":
             facts.gocryptfs = value
         elif key == "reach":
@@ -278,7 +282,7 @@ def probe(host: str, role: str, users: list[str] | None, args: argparse.Namespac
     return facts
 
 
-def probe_both(args: argparse.Namespace, users: list[str] | None, cmd: str = "",
+def probe_both(args: argparse.Namespace, users: Sequence[str], cmd: str = "",
                reach: tuple[str, int] | None = None, dirs: Sequence[str] = ()) -> tuple[HostFacts, HostFacts]:
     with ThreadPoolExecutor(2) as pool:
         ks = pool.submit(probe, args.key_server_ssh, "ks", users, args)
@@ -354,8 +358,9 @@ def sudoers_path(user: str) -> str:
 
 
 def sudoers_content(user: str, quote_path: str) -> str:
+    # the first line marks it as ours (status lists users by it);
     # the trailing "" forbids any arguments
-    return f'# managed by privjail-admin\n{user} ALL=(root) NOPASSWD: {quote_path} ""\n'
+    return f'{SUDOERS_MARK}\n{user} ALL=(root) NOPASSWD: {quote_path} ""\n'
 
 
 def ssh_config_block(alias: str, hostname: str, port: int) -> list[str]:
@@ -528,19 +533,13 @@ def finish(rep: Report, args: argparse.Namespace, writers: list[tuple[str, Write
 # --------------------------------------------------------------------------
 # status
 
-def has_privjail_state(user: str, ks: HostFacts, gw: HostFacts) -> bool:
-    keys = key_lines(ks.users.get(user)) + key_lines(gw.users.get(user))
-    uf = gw.users.get(user)
-    return (any(k.is_gateway_entry or k.is_keyserver_entry for k in keys)
-            or bool(uf and (uf.sudoers or managed_block(uf.ssh_config)))
-            or any(u == user for u, _ in ks.grants))
-
-
 def cmd_status(args: argparse.Namespace) -> None:
-    # two rounds: the gateway checks need the paths the key server knows about
-    ks = probe(args.key_server_ssh, "ks", args.users or None, args)
-    dirs = sorted(set(ks.registered) | {d for _, d in ks.grants})
-    gw = probe(args.gateway_ssh, "gw", args.users or None, args, dirs=dirs)
+    # round 1: who (privjail-admin sudoers entries, grants) and which directories;
+    # round 2: the per-user details
+    ks0, gw0 = probe_both(args, [])
+    names = args.users or sorted(set(gw0.sudoers_users) | {u for u, _ in ks0.grants})
+    dirs = sorted(set(ks0.registered) | {d for _, d in ks0.grants})
+    ks, gw = probe_both(args, names, dirs=dirs)
     rep = Report()
 
     if ks.login:
@@ -565,10 +564,8 @@ def cmd_status(args: argparse.Namespace) -> None:
             else:
                 rep.item(d, "" if initialized else "not a gocryptfs directory", "ok" if initialized else "warn")
 
-    names = args.users or sorted(u for u in set(ks.users) | set(gw.users) | {u for u, _ in ks.grants}
-                                 if has_privjail_state(u, ks, gw))
     if not names:
-        print("\nno user has privjail state on either host")
+        print("\nno users (no privjail-admin sudoers entry on the gateway, no grants on the key server)")
         return
 
     for user in names:
@@ -859,7 +856,8 @@ def main() -> None:
         return sub.add_parser(name, help=help, formatter_class=DefaultsFormatter)
 
     p = subparser("status", "show users, their keys and grants, and what is missing")
-    p.add_argument("users", nargs="*", metavar="user", help="accounts to show; default: all with privjail state")
+    p.add_argument("users", nargs="*", metavar="user",
+                   help="accounts to show; default: those with a privjail-admin sudoers entry or a grant")
     add_common_args(p, dry_run=False)
     p.set_defaults(func=cmd_status)
 
